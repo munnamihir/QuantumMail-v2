@@ -1,28 +1,20 @@
-// portal/admin.js
-const API = window.location.origin;
 const $ = (id) => document.getElementById(id);
 
-function setStatus(msg) { $("status").textContent = msg || ""; }
-function setError(msg) { $("error").textContent = msg || ""; }
+let token = "";
+let serverBase = window.location.origin;
 
-function saveSession(session) {
-  localStorage.setItem("qm_admin_session", JSON.stringify(session));
-}
-function loadSession() {
-  try { return JSON.parse(localStorage.getItem("qm_admin_session") || "null"); }
-  catch { return null; }
-}
-function clearSession() { localStorage.removeItem("qm_admin_session"); }
+function ok(id, msg) { $(id).textContent = msg || ""; }
+function err(id, msg) { $(id).textContent = msg || ""; }
 
-async function apiFetch(path, { method = "GET", token = null, json = null } = {}) {
+async function api(path, { method = "GET", body = null, auth = true } = {}) {
   const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (json) headers["Content-Type"] = "application/json";
+  if (body) headers["Content-Type"] = "application/json";
+  if (auth && token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`${serverBase}${path}`, {
     method,
     headers,
-    body: json ? JSON.stringify(json) : undefined
+    body: body ? JSON.stringify(body) : undefined
   });
 
   const data = await res.json().catch(() => ({}));
@@ -30,251 +22,167 @@ async function apiFetch(path, { method = "GET", token = null, json = null } = {}
   return data;
 }
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+/* -------------------------
+   1) Create Admin
+-------------------------- */
+$("btnCreateAdmin").addEventListener("click", async () => {
+  ok("seedOk", ""); err("seedErr", "");
+  try {
+    const orgId = String($("seedOrgId").value || "").trim();
+    const username = String($("seedUsername").value || "").trim();
+    const password = String($("seedPassword").value || "");
+
+    if (!orgId || !username || !password) {
+      throw new Error("orgId, username, password required");
+    }
+
+    const out = await api("/dev/create-admin", {
+      method: "POST",
+      auth: false,
+      body: { orgId, username, password }
+    });
+
+    ok("seedOk", `Admin created ✅\nOrg: ${out.orgId}\nUsername: ${out.username}`);
+  } catch (e) {
+    err("seedErr", e?.message || String(e));
+  }
+});
+
+/* -------------------------
+   2) Auth
+-------------------------- */
+async function login() {
+  ok("authOk", ""); err("authErr", "");
+  try {
+    const orgId = String($("orgId").value || "").trim();
+    const username = String($("username").value || "").trim();
+    const password = String($("password").value || "");
+
+    if (!orgId || !username || !password) throw new Error("orgId, username, password required");
+
+    const out = await api("/auth/login", {
+      method: "POST",
+      auth: false,
+      body: { orgId, username, password }
+    });
+
+    token = out.token;
+    $("who").textContent = `Logged in as ${out.user.username} (${out.user.role})`;
+    ok("authOk", "Logged in ✅");
+
+    await loadUsers();
+  } catch (e) {
+    token = "";
+    $("who").textContent = "";
+    err("authErr", e?.message || String(e));
+  }
 }
 
-function updatePills() {
-  const session = loadSession();
-  $("orgPill").textContent = session?.user?.orgId || $("orgId")?.value || "-";
-  $("sessionPill").textContent = session?.token ? `signed in as ${session.user.username}` : "signed out";
+function logout() {
+  token = "";
+  $("who").textContent = "";
+  ok("authOk", "Logged out.");
+  err("authErr", "");
+  $("usersTbody").innerHTML = `<tr><td colspan="5" class="muted">Login to load users…</td></tr>`;
 }
 
+$("btnLogin").addEventListener("click", login);
+$("btnLogout").addEventListener("click", logout);
+
+/* -------------------------
+   3) Users
+-------------------------- */
 function renderUsers(users) {
-  const tb = $("usersTable")?.querySelector("tbody");
+  const tb = $("usersTbody");
   tb.innerHTML = "";
+
+  if (!Array.isArray(users) || users.length === 0) {
+    tb.innerHTML = `<tr><td colspan="5" class="muted">No users</td></tr>`;
+    return;
+  }
 
   for (const u of users) {
     const tr = document.createElement("tr");
+
+    const keyPill = u.hasPublicKey
+      ? `<span class="pill">Has key</span>`
+      : `<span class="pill">No key</span>`;
+
     tr.innerHTML = `
-      <td>${escapeHtml(u.userId)}</td>
-      <td>${escapeHtml(u.username)}</td>
-      <td>${escapeHtml(u.role)}</td>
-      <td>${escapeHtml(u.status || "Active")}</td>
-      <td>${u.hasPublicKey ? "✅" : "❌"}</td>
-    `;
-    tb.appendChild(tr);
-  }
-}
-
-let LAST_AUDIT = [];
-
-function renderAudit(items) {
-  LAST_AUDIT = Array.isArray(items) ? items : [];
-  const tb = $("auditTable")?.querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const a of LAST_AUDIT) {
-    const details = { ...a };
-    delete details.id;
-    delete details.orgId;
-    delete details.userId;
-    delete details.action;
-    delete details.ip;
-    delete details.ua;
-    delete details.at;
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(a.at)}</td>
-      <td>${escapeHtml(a.action)}</td>
-      <td>${escapeHtml(a.userId || "")}</td>
-      <td><code>${escapeHtml(JSON.stringify(details))}</code></td>
-      <td>${escapeHtml(a.ip || "")}</td>
-    `;
-    tb.appendChild(tr);
-  }
-}
-
-function renderKeys(active, keys) {
-  const tb = $("keysTable")?.querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const k of keys) {
-    const isActive = String(k.version) === String(active);
-    const canRetire = !isActive && k.status !== "retired";
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(k.version)}${isActive ? " ✅" : ""}</td>
-      <td>${escapeHtml(k.status)}</td>
-      <td>${escapeHtml(k.createdAt || "")}</td>
-      <td>${escapeHtml(k.activatedAt || "")}</td>
-      <td>${escapeHtml(k.retiredAt || "")}</td>
+      <td><b>${u.username}</b><div class="muted"><code>${u.userId}</code></div></td>
+      <td>${u.role}</td>
+      <td>${u.status || "Active"}</td>
+      <td>${keyPill}</td>
       <td>
-        <button data-retire="${escapeHtml(k.version)}" ${canRetire ? "" : "disabled"}>Retire</button>
+        <button data-action="clearKey" data-id="${u.userId}" class="secondary">Remove Public Key</button>
+        <button data-action="deleteUser" data-id="${u.userId}" class="danger" style="margin-left:6px;">Remove User</button>
       </td>
     `;
     tb.appendChild(tr);
   }
 
-  tb.querySelectorAll("button[data-retire]").forEach((btn) => {
+  tb.querySelectorAll("button[data-action]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const v = btn.getAttribute("data-retire");
+      const action = btn.getAttribute("data-action");
+      const userId = btn.getAttribute("data-id");
+
+      ok("usersOk", ""); err("usersErr", "");
+
       try {
-        await retireKey(v);
+        if (!token) throw new Error("Login first.");
+
+        if (action === "clearKey") {
+          await api(`/admin/users/${encodeURIComponent(userId)}/clear-key`, { method: "POST" });
+          ok("usersOk", "Public key removed ✅ (user must login again to re-register).");
+          await loadUsers();
+        }
+
+        if (action === "deleteUser") {
+          const yes = confirm("Remove this user permanently?");
+          if (!yes) return;
+
+          await api(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+          ok("usersOk", "User removed ✅");
+          await loadUsers();
+        }
       } catch (e) {
-        setError(e.message || String(e));
+        err("usersErr", e?.message || String(e));
       }
     });
   });
 }
 
-async function seedAdmin() {
-  setError("");
-  setStatus("Seeding admin…");
-  const orgId = ($("orgId").value || "org_demo").trim();
-  const r = await apiFetch("/dev/seed-admin", { method: "POST", json: { orgId } });
-  setStatus(`Seeded ✅ Admin: ${r.admin} / ${r.password}`);
-  updatePills();
+async function loadUsers() {
+  ok("usersOk", ""); err("usersErr", "");
+  if (!token) return;
+
+  const out = await api("/admin/users");
+  renderUsers(out.users || []);
 }
 
-async function loginAdmin() {
-  setError("");
-  setStatus("Logging in…");
+$("btnCreateUser").addEventListener("click", async () => {
+  ok("usersOk", ""); err("usersErr", "");
+  try {
+    if (!token) throw new Error("Login first.");
 
-  const orgId = ($("orgId").value || "").trim();
-  const username = ($("username").value || "").trim();
-  const password = ($("password").value || "");
+    const username = String($("newUsername").value || "").trim();
+    const password = String($("newPassword").value || "");
+    const role = String($("newRole").value || "Member").trim() || "Member";
 
-  if (!orgId || !username || !password) throw new Error("orgId, username, password required");
+    if (!username || !password) throw new Error("username and password required");
 
-  const data = await apiFetch("/auth/login", { method: "POST", json: { orgId, username, password } });
-  if (data?.user?.role !== "Admin") throw new Error("Not an admin user");
+    await api("/admin/users", {
+      method: "POST",
+      body: { username, password, role }
+    });
 
-  saveSession({ token: data.token, user: data.user });
-  setStatus("Logged in ✅");
-  updatePills();
+    ok("usersOk", `User created ✅ (${username})`);
+    $("newUsername").value = "";
+    $("newPassword").value = "";
+    $("newRole").value = "Member";
 
-  await refreshAll();
-}
-
-async function refreshAll() {
-  setError("");
-  const session = loadSession();
-  if (!session?.token) throw new Error("Not logged in");
-
-  setStatus("Loading users + keys + audit…");
-  updatePills();
-
-  const [usersRes, keysRes, auditRes] = await Promise.all([
-    apiFetch("/admin/users", { token: session.token }),
-    apiFetch("/admin/keys", { token: session.token }),
-    apiFetch("/admin/audit?limit=300", { token: session.token })
-  ]);
-
-  renderUsers(usersRes.users || []);
-  renderKeys(keysRes.active, keysRes.keys || []);
-  renderAudit(auditRes.items || []);
-
-  setStatus("Updated ✅");
-}
-
-async function createMember() {
-  setError("");
-  const session = loadSession();
-  if (!session?.token) throw new Error("Not logged in");
-
-  const username = ($("newUsername").value || "").trim();
-  const password = ($("newPassword").value || "");
-  const role = ($("newRole").value || "Member").trim();
-
-  if (!username || !password) throw new Error("New username/password required");
-
-  setStatus("Creating user…");
-  await apiFetch("/admin/users", {
-    method: "POST",
-    token: session.token,
-    json: { username, password, role }
-  });
-
-  $("newUsername").value = "";
-  $("newPassword").value = "";
-  $("newRole").value = "Member";
-
-  setStatus("User created ✅");
-  await refreshAll();
-}
-
-async function rotateKey() {
-  setError("");
-  const session = loadSession();
-  if (!session?.token) throw new Error("Not logged in");
-
-  setStatus("Rotating key…");
-  await apiFetch("/admin/keys/rotate", { method: "POST", token: session.token });
-  setStatus("Key rotated ✅");
-  await refreshAll();
-}
-
-async function retireKey(version) {
-  setError("");
-  const session = loadSession();
-  if (!session?.token) throw new Error("Not logged in");
-
-  setStatus(`Retiring key v${version}…`);
-  await apiFetch(`/admin/keys/${version}/retire`, { method: "POST", token: session.token });
-  setStatus(`Key v${version} retired ✅`);
-  await refreshAll();
-}
-
-function logout() {
-  clearSession();
-  updatePills();
-  setStatus("Logged out.");
-  setError("");
-  renderUsers([]);
-  renderKeys("-", []);
-  renderAudit([]);
-}
-
-function downloadAuditCsv() {
-  const headers = ["at", "action", "userId", "ip", "details"];
-  const rows = [headers];
-
-  for (const a of LAST_AUDIT) {
-    const json = JSON.stringify(a);
-    const row = [
-      a.at || "",
-      a.action || "",
-      a.userId || "",
-      a.ip || "",
-      json
-    ].map((v) => `"${String(v).replaceAll('"', '""')}"`);
-
-    rows.push(row);
+    await loadUsers();
+  } catch (e) {
+    err("usersErr", e?.message || String(e));
   }
-
-  const csv = rows.map((r) => r.join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `quantummail-audit-${new Date().toISOString().slice(0,19).replaceAll(":","-")}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  URL.revokeObjectURL(url);
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  updatePills();
-
-  $("btnSeed").addEventListener("click", () => seedAdmin().catch((e) => setError(e.message || String(e))));
-  $("btnLogin").addEventListener("click", () => loginAdmin().catch((e) => setError(e.message || String(e))));
-  $("btnRefresh").addEventListener("click", () => refreshAll().catch((e) => setError(e.message || String(e))));
-  $("btnCreateUser").addEventListener("click", () => createMember().catch((e) => setError(e.message || String(e))));
-  $("btnRotateKey").addEventListener("click", () => rotateKey().catch((e) => setError(e.message || String(e))));
-  $("btnLogout").addEventListener("click", logout);
-  $("btnDownloadLog").addEventListener("click", downloadAuditCsv);
-
-  const session = loadSession();
-  if (session?.token) refreshAll().catch(() => {});
 });
