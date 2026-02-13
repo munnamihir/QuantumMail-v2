@@ -4,66 +4,314 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QuantumMail • Decrypt</title>
+
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 900px; }
-    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 16px; margin: 12px 0; }
-    .row { margin: 12px 0; }
-    label { display:block; font-weight: 600; margin-bottom: 6px; }
-    textarea, input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 10px; }
-    textarea { min-height: 160px; }
-    .btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
-    .muted { color: #666; font-size: 13px; }
-    #attachments a { display:inline-block; margin-top: 6px; }
-    #ok { color: #0b7a0b; white-space: pre-wrap; }
-    #err { color: #b00020; white-space: pre-wrap; }
-    code { background:#f6f6f6; padding:2px 6px; border-radius:8px; }
-    .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-    @media (max-width: 780px){ .grid { grid-template-columns: 1fr; } }
+    :root{
+      --bg:#0b0f1a;
+      --card:#12182a;
+      --text:#e9eefc;
+      --muted:#aab4d6;
+      --border:rgba(255,255,255,.10);
+      --accent:#6ea8fe;
+      --accent2:#2bd576;
+      --good:#2bd576;
+      --bad:#ff5c77;
+      --shadow: 0 18px 60px rgba(0,0,0,.35);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        var(--bg);
+    }
+    .container{ max-width: 980px; margin: 0 auto; padding: 22px 16px 48px; }
+
+    .topbar{
+      display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+      margin-bottom: 14px;
+    }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:42px; height:42px; border-radius: 14px;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.95));
+      box-shadow: 0 14px 40px rgba(110,168,254,.20);
+      flex: 0 0 auto;
+    }
+    .brand h1{ margin:0; font-size: 18px; letter-spacing:.2px; line-height: 1.1; }
+    .brand p{ margin:3px 0 0; font-size: 12px; color: var(--muted); }
+
+    .pills{ display:flex; gap:10px; flex-wrap: wrap; justify-content:flex-end; }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px; border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      max-width: 420px;
+      overflow:hidden; text-overflow: ellipsis;
+    }
+    .dot{
+      width:8px; height:8px; border-radius:999px;
+      background: rgba(255,255,255,.25);
+      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+    }
+    .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
+    .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    @media (min-width: 900px){
+      .grid{ grid-template-columns: 0.9fr 1.1fr; align-items: start; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card h3{ margin: 0 0 6px; font-size: 14px; letter-spacing:.2px; }
+    .muted{ color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .row{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .row > div{ flex: 1; min-width: 220px; }
+
+    label{
+      display:block;
+      font-size: 11px;
+      color: var(--muted);
+      margin: 6px 0 6px;
+      font-weight: 700;
+      letter-spacing: .15px;
+    }
+    input, select, textarea{
+      width:100%;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      outline: none;
+      font-family: inherit;
+    }
+    textarea{ min-height: 220px; resize: vertical; }
+    input::placeholder{ color: rgba(170,180,214,.70); }
+
+    input:focus, select:focus, textarea:focus{
+      border-color: rgba(110,168,254,.60);
+      box-shadow: 0 0 0 4px rgba(110,168,254,.12);
+    }
+
+    .actions{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; align-items:center; }
+    button{
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    button:hover{ filter: brightness(1.06); }
+    button.primary{
+      border: none;
+      color: #07101f;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
+    }
+    button:disabled{ opacity: .65; cursor:not-allowed; filter:none; }
+
+    .ok{ margin-top: 10px; color: var(--good); font-size: 12px; white-space: pre-wrap; }
+    .err{ margin-top: 10px; color: var(--bad); font-size: 12px; white-space: pre-wrap; }
+
+    .attachments{
+      margin-top: 10px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .attCard{
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      border-radius: 14px;
+      padding: 10px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    .attMeta{
+      display:flex;
+      flex-direction:column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .attName{
+      font-weight: 800;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      max-width: 520px;
+    }
+    .attSub{
+      font-size: 11px;
+      color: rgba(170,180,214,.90);
+    }
+    .attBtn{
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .attBtn:hover{ filter: brightness(1.06); }
+
+    .hint{
+      margin-top: 10px;
+      font-size: 11px;
+      color: rgba(170,180,214,.85);
+      line-height: 1.5;
+    }
+
+    code{
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: rgba(233,238,252,.95);
+    }
   </style>
 </head>
+
 <body>
-  <h1>QuantumMail • Decrypt</h1>
-  <p class="muted">Message ID: <code id="msgId">-</code></p>
-
-  <div class="card">
-    <div class="row">
-      <label for="serverBase">Server Base</label>
-      <input id="serverBase" />
-      <div class="muted">Auto-filled to current site.</div>
-    </div>
-
-    <div class="row grid">
-      <div>
-        <label for="orgId">Org ID</label>
-        <input id="orgId" placeholder="org_demo" value="org_demo" />
+  <div class="container">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>QuantumMail • Decrypt</h1>
+          <p>Login + extension handshake → decrypt message and attachments.</p>
+        </div>
       </div>
-      <div>
-        <label for="username">Username</label>
-        <input id="username" placeholder="admin" />
-      </div>
-      <div>
-        <label for="password">Password</label>
-        <input id="password" type="password" placeholder="••••••••" />
+
+      <div class="pills">
+        <div class="pill" title="Message ID">
+          <span class="dot"></span>
+          <span>Message: <code id="msgId">-</code></span>
+        </div>
+        <div class="pill" title="Extension status">
+          <span id="extDot" class="dot"></span>
+          <span id="extStatus">Waiting…</span>
+        </div>
       </div>
     </div>
 
-    <div class="row">
-      <button id="btnDecrypt" class="btn">Decrypt</button>
-      <div id="ok"></div>
-      <div id="err"></div>
+    <div class="grid">
+      <!-- Left: login + mode -->
+      <div class="card">
+        <h3>1) Login</h3>
+        <div class="muted">Decrypt is audited and requires org credentials. Extension must be installed.</div>
+
+        <div class="row">
+          <div>
+            <label for="orgId">Org Id</label>
+            <input id="orgId" placeholder="org_demo" value="org_demo" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="username">Username</label>
+            <input id="username" placeholder="alice" />
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" placeholder="••••••••" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="mode">Mode</label>
+            <select id="mode">
+              <option value="pqc">PQC (ML-KEM-768)</option>
+              <option value="passphrase">Passphrase</option>
+            </select>
+            <div class="hint">Select the mode used at encryption time.</div>
+          </div>
+        </div>
+
+        <div id="pqcFields" class="row">
+          <div>
+            <label for="recipientSk">Recipient Private Key (base64)</label>
+            <input id="recipientSk" type="password" placeholder="Paste ML-KEM-768 private key (base64)" />
+            <div class="hint">Generate via <code>/portal/keygen.html</code>.</div>
+          </div>
+        </div>
+
+        <div id="pwFields" class="row" style="display:none;">
+          <div>
+            <label for="passphrase">Passphrase</label>
+            <input id="passphrase" type="password" placeholder="Enter passphrase" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnDecrypt" class="primary">Decrypt</button>
+        </div>
+
+        <div id="ok" class="ok"></div>
+        <div id="err" class="err"></div>
+
+        <div class="hint">
+          If you see “extension not detected”: enable the extension → refresh this page → try again.
+        </div>
+      </div>
+
+      <!-- Right: output -->
+      <div class="card">
+        <h3>2) Decrypted Output</h3>
+        <div class="muted">Text appears here. Attachments appear as download cards below.</div>
+
+        <div class="row">
+          <div>
+            <label for="out">Decrypted Message</label>
+            <textarea id="out" readonly></textarea>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Attachments</label>
+            <div id="attachments" class="attachments"></div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Attachments are decrypted client-side and never stored as plaintext on your server.
+        </div>
+      </div>
     </div>
 
-    <div class="row">
-      <label for="out">Decrypted Message</label>
-      <textarea id="out" readonly></textarea>
-    </div>
-
-    <div class="row">
-      <div id="attachments"></div>
-    </div>
+    <!-- IMPORTANT: keep as module -->
+    <script type="module" src="./decrypt.js"></script>
   </div>
-
-  <!-- IMPORTANT: absolute path so it doesn't resolve to /m/decrypt.js -->
-  <script type="module" src="/portal/decrypt.js"></script>
 </body>
 </html>
