@@ -1,0 +1,44 @@
+Simple command can run all together:
+# 1) seed admin
+curl -s -X POST http://localhost:5173/dev/seed-admin \
+  -H "Content-Type: application/json" \
+  -d '{"orgId":"org_demo","username":"admin","password":"admin123"}' >/dev/null
+
+# 2) get admin token
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:5173/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"orgId":"org_demo","username":"admin","password":"admin123"}' | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).token")
+
+# 3) rotate key
+curl -s -X POST http://localhost:5173/admin/keys/rotate \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 4) create member (ignore if already exists)
+curl -s -X POST http://localhost:5173/admin/users \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"alice123","role":"Member"}' || true
+
+
+
+
+Seed Admin:
+curl -s -X POST http://localhost:5173/dev/seed-admin \
+  -H "Content-Type: application/json" \
+  -d '{"orgId":"org_demo","username":"admin","password":"admin123"}'
+
+Login Admin: (from here we need to copy the ADMIN_TOKEN)
+curl -s -X POST http://localhost:5173/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"orgId":"org_demo","username":"admin","password":"admin123"}'
+
+Create Member:
+curl -s -X POST http://localhost:5173/admin/users \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"alice123","role":"Member"}'
+
+
+Rotate Key:
+curl -s -X POST http://localhost:5173/admin/keys/rotate \
+  -H "Authorization: Bearer <ADMIN_TOKEN>"

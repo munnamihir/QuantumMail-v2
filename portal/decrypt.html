@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QuantumMail • Decrypt</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 900px; }
+    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 16px; margin: 12px 0; }
+    .row { margin: 12px 0; }
+    label { display:block; font-weight: 600; margin-bottom: 6px; }
+    textarea, input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 10px; }
+    textarea { min-height: 160px; }
+    .btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
+    .muted { color: #666; font-size: 13px; }
+    #attachments a { display:inline-block; margin-top: 6px; }
+    #ok { color: #0b7a0b; white-space: pre-wrap; }
+    #err { color: #b00020; white-space: pre-wrap; }
+    code { background:#f6f6f6; padding:2px 6px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>QuantumMail • Decrypt</h1>
+  <p class="muted">Message ID: <code id="msgId">-</code></p>
+
+  <div class="card">
+    <div class="row">
+      <label for="mode">Mode</label>
+      <select id="mode">
+        <option value="pqc">PQC (ML-KEM-768)</option>
+        <option value="passphrase">Passphrase</option>
+      </select>
+      <div class="muted">Select the mode used at encryption time.</div>
+    </div>
+
+    <div id="pqcFields" class="row">
+      <label for="recipientSk">Recipient Private Key (base64)</label>
+      <input id="recipientSk" type="password" placeholder="Paste recipient ML-KEM-768 private key (base64)" />
+      <div class="muted">Generate via <code>/portal/keygen.html</code>.</div>
+    </div>
+
+    <div id="pwFields" class="row" style="display:none;">
+      <label for="passphrase">Passphrase</label>
+      <input id="passphrase" type="password" placeholder="Enter passphrase" />
+    </div>
+
+    <div class="row">
+      <button id="btnDecrypt" class="btn">Decrypt</button>
+      <div id="ok"></div>
+      <div id="err"></div>
+    </div>
+
+    <div class="row">
+      <label for="out">Decrypted Message</label>
+      <textarea id="out" readonly></textarea>
+    </div>
+
+    <div class="row">
+      <div id="attachments"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./decrypt.js"></script>
+</body>
+</html>
