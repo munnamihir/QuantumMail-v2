@@ -54,9 +54,8 @@ function renderAttachments(list) {
 const msgId = getMsgIdFromPath();
 $("msgId").textContent = msgId || "-";
 
-// Auto-fill server base to current origin (keep your existing behavior)
+// ✅ Auto-fill server base
 $("serverBase").value = window.location.origin;
-$("serverBase").readOnly = true;
 
 function requestDecrypt() {
   ok(""); err("");
@@ -91,7 +90,6 @@ function requestDecrypt() {
     "*"
   );
 
-  // Extension-detection timeout
   const timeout = setTimeout(() => {
     setBusy(false);
     err(
