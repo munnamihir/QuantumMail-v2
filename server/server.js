@@ -287,31 +287,39 @@ app.use((req, res, next) => {
   next();
 });
 
-// ----------------------------
-// DEV: seed admin
-// ----------------------------
-app.post("/dev/seed-admin", (req, res) => {
-  const orgId = String(req.body?.orgId || "org_demo").trim();
-  const org = getOrg(orgId);
+// DEV/ADMIN: create admin with custom username/password (first-time setup)
+// POST /dev/create-admin  { orgId, username, password }
+app.post("/dev/create-admin", (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
 
-  let adminUser = org.users.find((u) => u.username.toLowerCase() === "admin");
-  if (!adminUser) {
-    adminUser = {
-      userId: nanoid(10),
-      username: "admin",
-      passwordHash: sha256("admin123"),
-      role: "Admin",
-      status: "Active",
-      publicKeySpkiB64: null,
-      createdAt: nowIso()
-    };
-    org.users.push(adminUser);
-    audit(req, orgId, adminUser.userId, "seed_admin", { username: "admin" });
-    saveData();
+  if (!orgId || !username || !password) {
+    return res.status(400).json({ error: "orgId, username, password required" });
   }
 
-  res.json({ ok: true, orgId, admin: "admin", password: "admin123" });
+  const org = getOrg(orgId);
+
+  const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  if (exists) return res.status(409).json({ error: "Username already exists" });
+
+  const newAdmin = {
+    userId: nanoid(10),
+    username,
+    passwordHash: sha256(password),
+    role: "Admin",
+    status: "Active",
+    publicKeySpkiB64: null,
+    createdAt: nowIso()
+  };
+
+  org.users.push(newAdmin);
+  audit(req, orgId, newAdmin.userId, "create_admin", { username });
+  saveData();
+
+  res.json({ ok: true, orgId, userId: newAdmin.userId, username });
 });
+
 
 // ----------------------------
 // AUTH: login
@@ -451,6 +459,68 @@ app.post("/admin/users", requireAuth, requireAdmin, (req, res) => {
 
   res.json({ ok: true, userId: newUser.userId });
 });
+
+// ADMIN: delete a user
+app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { org, user: admin } = req.qm;
+
+  const targetId = String(req.params.userId || "").trim();
+  if (!targetId) return res.status(400).json({ error: "userId required" });
+
+  // Prevent deleting yourself (optional but recommended)
+  if (targetId === admin.userId) {
+    return res.status(400).json({ error: "You cannot delete your own admin account." });
+  }
+
+  const idx = org.users.findIndex((u) => u.userId === targetId);
+  if (idx < 0) return res.status(404).json({ error: "User not found" });
+
+  // Remove wrapped keys for that user from stored messages (optional cleanup)
+  for (const mid of Object.keys(org.messages || {})) {
+    try {
+      const rec = org.messages[mid];
+      const kv = String(rec.kekVersion || org.keyring.active);
+      const kk = getKekByVersion(org, kv);
+      if (!kk) continue;
+
+      const msg = openWithKek(kk.kekBytes, rec.sealed);
+      if (msg?.wrappedKeys && msg.wrappedKeys[targetId]) {
+        delete msg.wrappedKeys[targetId];
+        // re-seal message
+        rec.sealed = sealWithKek(kk.kekBytes, msg);
+      }
+    } catch {
+      // ignore failures; we still delete user
+    }
+  }
+
+  const removed = org.users.splice(idx, 1)[0];
+  audit(req, orgId, admin.userId, "delete_user", { deletedUserId: targetId, username: removed.username });
+  saveData();
+
+  res.json({ ok: true, deletedUserId: targetId });
+});
+
+
+// ADMIN: clear a user's registered public key (forces re-register on next login)
+app.post("/admin/users/:userId/clear-key", requireAuth, requireAdmin, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { org, user: admin } = req.qm;
+
+  const targetId = String(req.params.userId || "").trim();
+  if (!targetId) return res.status(400).json({ error: "userId required" });
+
+  const user = org.users.find((u) => u.userId === targetId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  user.publicKeySpkiB64 = null;
+  audit(req, orgId, admin.userId, "clear_user_pubkey", { targetUserId: targetId, username: user.username });
+  saveData();
+
+  res.json({ ok: true });
+});
+
 
 // ----------------------------
 // ADMIN: audit
