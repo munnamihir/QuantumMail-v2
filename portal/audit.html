@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QuantumMail • Audit</title>
+  <style>
+    :root{
+      --bg:#0b0f1a; --text:#e9eefc; --muted:#aab4d6;
+      --border:rgba(255,255,255,.10);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        var(--bg);
+    }
+    .wrap{ max-width:1100px; margin:0 auto; padding:22px 16px 40px; }
+    .top{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    h1{ margin:0; font-size:18px; }
+    .muted{ color:var(--muted); font-size:12px; }
+    .card{
+      margin-top:12px;
+      border:1px solid var(--border);
+      border-radius:16px;
+      background: rgba(255,255,255,.04);
+      padding:12px;
+    }
+    label{ display:block; font-size:11px; color:var(--muted); margin:6px 0; font-weight:600; }
+    input{
+      width:100%;
+      padding:10px 11px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      outline:none;
+    }
+    button{
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      cursor:pointer;
+      font-weight:700;
+    }
+    button.primary{
+      border:none;
+      color:#07101f;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
+    }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; align-items:end; }
+    .row > div{ flex:1; min-width:220px; }
+    .ok{ color:#2bd576; white-space:pre-wrap; font-size:12px; }
+    .err{ color:#ff5c77; white-space:pre-wrap; font-size:12px; }
+
+    .tableWrap{
+      margin-top:12px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      overflow:hidden;
+      background: rgba(255,255,255,.03);
+    }
+    table{ width:100%; border-collapse: collapse; }
+    thead th{
+      font-size:11px; color: rgba(170,180,214,.92);
+      text-transform: uppercase;
+      letter-spacing:.12em;
+      background: rgba(255,255,255,.04);
+      padding:10px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      text-align:left;
+    }
+    tbody td{
+      padding:10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      vertical-align: top;
+      font-size:13px;
+    }
+    a{ color: rgba(110,168,254,.95); text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>QuantumMail • Audit Logs</h1>
+        <div class="muted">Shows recent org audit events from <code>/admin/audit</code>.</div>
+      </div>
+      <div class="muted"><a href="./admin.html">← Back to Admin</a></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Org Id (for login)</label>
+          <input id="orgId" placeholder="org_demo" value="org_demo" />
+        </div>
+        <div>
+          <label>Admin Username</label>
+          <input id="username" placeholder="admin" />
+        </div>
+        <div>
+          <label>Admin Password</label>
+          <input id="password" type="password" placeholder="••••••••" />
+        </div>
+        <div style="flex:0 0 auto;">
+          <button id="btnLogin" class="primary">Login</button>
+        </div>
+        <div style="flex:0 0 auto;">
+          <button id="btnRefresh">Refresh</button>
+        </div>
+      </div>
+
+      <div id="ok" class="ok"></div>
+      <div id="err" class="err"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Limit</label>
+          <input id="limit" placeholder="200" value="200" />
+        </div>
+      </div>
+
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:18%;">Time</th>
+              <th style="width:14%;">Action</th>
+              <th style="width:16%;">User</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="4" class="muted">Login then refresh…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script type="module" src="./audit.js"></script>
+  </div>
+</body>
+</html>
