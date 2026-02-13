@@ -54,7 +54,7 @@ function renderAttachments(list) {
 const msgId = getMsgIdFromPath();
 $("msgId").textContent = msgId || "-";
 
-// Auto-fill server base to current origin
+// Auto-fill server base to current origin (keep your existing behavior)
 $("serverBase").value = window.location.origin;
 $("serverBase").readOnly = true;
 
@@ -66,9 +66,9 @@ function requestDecrypt() {
   if (!msgId) { err("No message id in URL."); return; }
 
   const serverBase = window.location.origin;
-  const orgId = ($("orgId").value || "").trim();
-  const username = ($("username").value || "").trim();
-  const password = ($("password").value || "");
+  const orgId = String($("orgId").value || "").trim();
+  const username = String($("username").value || "").trim();
+  const password = String($("password").value || "");
 
   if (!orgId || !username || !password) {
     err("Please enter orgId, username, and password.");
@@ -91,6 +91,7 @@ function requestDecrypt() {
     "*"
   );
 
+  // Extension-detection timeout
   const timeout = setTimeout(() => {
     setBusy(false);
     err(
@@ -127,7 +128,6 @@ window.addEventListener("message", (event) => {
 });
 
 $("btnDecrypt").addEventListener("click", requestDecrypt);
-
 $("password")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") requestDecrypt();
 });
