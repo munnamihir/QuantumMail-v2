@@ -9,7 +9,6 @@
     :root{
       --bg:#0b0f1a;
       --card:#12182a;
-      --card2:#0f1526;
       --text:#e9eefc;
       --muted:#aab4d6;
       --border:rgba(255,255,255,.10);
@@ -19,7 +18,6 @@
       --bad:#ff5c77;
       --shadow: 0 18px 60px rgba(0,0,0,.35);
     }
-
     *{ box-sizing:border-box; }
     body{
       margin:0;
@@ -30,14 +28,11 @@
         radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
         var(--bg);
     }
-
     .container{
-      max-width: 1060px;
+      max-width: 1100px;
       margin: 0 auto;
       padding: 22px 16px 42px;
     }
-
-    /* Header */
     .topbar{
       display:flex;
       align-items:flex-start;
@@ -68,7 +63,6 @@
       font-size: 12px;
       color: var(--muted);
     }
-
     .pill{
       display:inline-flex;
       align-items:center;
@@ -80,7 +74,7 @@
       color: var(--muted);
       font-size: 12px;
       white-space: nowrap;
-      max-width: 360px;
+      max-width: 420px;
       overflow:hidden;
       text-overflow: ellipsis;
     }
@@ -93,22 +87,16 @@
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
 
-    /* Layout grid */
     .grid{
       display:grid;
       grid-template-columns: 1fr;
       gap: 12px;
     }
-
     @media (min-width: 980px){
-      .grid{
-        grid-template-columns: 1fr 1fr;
-        align-items: start;
-      }
+      .grid{ grid-template-columns: 1fr 1fr; align-items: start; }
       .span2{ grid-column: 1 / -1; }
     }
 
-    /* Cards */
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
       border: 1px solid var(--border);
@@ -126,8 +114,6 @@
       font-size: 12px;
       line-height: 1.45;
     }
-
-    /* Form */
     .row{
       display:flex;
       gap: 10px;
@@ -161,7 +147,6 @@
       box-shadow: 0 0 0 4px rgba(110,168,254,.12);
     }
 
-    /* Buttons */
     .actions{
       display:flex;
       gap: 10px;
@@ -196,7 +181,6 @@
       color: #0b0f1a;
     }
 
-    /* Alerts */
     .ok{
       margin-top: 10px;
       color: var(--good);
@@ -210,7 +194,6 @@
       white-space: pre-wrap;
     }
 
-    /* Table */
     .tableWrap{
       margin-top: 12px;
       border: 1px solid var(--border);
@@ -218,10 +201,7 @@
       overflow: hidden;
       background: rgba(255,255,255,.03);
     }
-    table{
-      width: 100%;
-      border-collapse: collapse;
-    }
+    table{ width: 100%; border-collapse: collapse; }
     thead th{
       font-size: 11px;
       color: rgba(170,180,214,.92);
@@ -237,9 +217,8 @@
       vertical-align: top;
       font-size: 13px;
     }
-    tbody tr:hover{
-      background: rgba(255,255,255,.03);
-    }
+    tbody tr:hover{ background: rgba(255,255,255,.03); }
+
     code{
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.08);
@@ -260,20 +239,52 @@
       font-size: 12px;
     }
 
-    .subtleLine{
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid rgba(255,255,255,.08);
+    /* Modal */
+    .modalBackdrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding: 14px;
+      z-index: 9999;
     }
-
-    .footerNote{
-      margin-top: 14px;
-      font-size: 11px;
-      color: rgba(170,180,214,.85);
+    .modal{
+      width: min(1040px, 100%);
+      max-height: 86vh;
+      overflow:auto;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(18,24,42,.98), rgba(15,21,38,.98));
+      box-shadow: 0 24px 90px rgba(0,0,0,.55);
+      padding: 14px;
     }
-    .footerNote a{
-      color: rgba(110,168,254,.95);
-      text-decoration: none;
+    .modalHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 8px;
+    }
+    .modalHeader h3{ margin:0; font-size: 14px; }
+    .modalHeader .muted{ margin:0; }
+    .modalActions{
+      display:flex;
+      gap: 8px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+    .json{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 12px;
+      padding: 12px;
+      overflow:auto;
     }
   </style>
 </head>
@@ -289,7 +300,6 @@
         </div>
       </div>
 
-      <!-- This is just visual; your JS already updates #who text -->
       <div class="pill" title="Session">
         <span id="who">Not logged in</span>
       </div>
@@ -299,9 +309,7 @@
       <!-- Create Admin -->
       <div class="card">
         <h3>1) Create Admin</h3>
-        <div class="muted">
-          First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.
-        </div>
+        <div class="muted">First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.</div>
 
         <div class="row">
           <div>
@@ -324,18 +332,12 @@
 
         <div id="seedOk" class="ok"></div>
         <div id="seedErr" class="err"></div>
-
-        <div class="footerNote subtleLine">
-          Tip: After creating admin, use the <b>Login</b> panel to obtain a token and manage users.
-        </div>
       </div>
 
       <!-- Login -->
       <div class="card">
         <h3>2) Login</h3>
-        <div class="muted">
-          Logs in via <code>/auth/login</code> and keeps the token in memory (not saved to disk).
-        </div>
+        <div class="muted">Logs in via <code>/auth/login</code> and keeps token in memory.</div>
 
         <div class="row">
           <div>
@@ -355,23 +357,22 @@
         <div class="actions">
           <button id="btnLogin" class="primary">Login</button>
           <button id="btnLogout" class="secondary">Logout</button>
-          <span class="kbadge"><span class="dot"></span> Token held in memory</span>
+
+          <!-- NEW: Audit + Analytics buttons -->
+          <button id="btnAudit" class="secondary">Audit Logs</button>
+          <button id="btnAnalytics" class="secondary">Analytics</button>
+
+          <span class="kbadge"><span id="sessionDot" class="dot"></span><span id="sessionText">Session: none</span></span>
         </div>
 
         <div id="authOk" class="ok"></div>
         <div id="authErr" class="err"></div>
-
-        <div class="footerNote subtleLine">
-          Make sure your server is running and reachable at the same origin as this page.
-        </div>
       </div>
 
-      <!-- Users (full width on desktop) -->
+      <!-- Users -->
       <div class="card span2">
         <h3>3) Users</h3>
-        <div class="muted">
-          Create users, remove users, and clear public keys (forces re-register on next login).
-        </div>
+        <div class="muted">Create users, remove users, clear public keys, and refresh list.</div>
 
         <div class="row">
           <div>
@@ -390,6 +391,10 @@
 
         <div class="actions">
           <button id="btnCreateUser" class="primary">Create User</button>
+
+          <!-- NEW: refresh users -->
+          <button id="btnRefreshUsers" class="secondary">Refresh Users</button>
+
           <span class="kbadge">Actions are audited server-side</span>
         </div>
 
@@ -412,9 +417,44 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
 
-        <div class="footerNote">
-          Recommended policy: don’t delete your own admin account; rotate KEKs periodically.
+    <!-- NEW: Audit modal -->
+    <div id="auditModalBackdrop" class="modalBackdrop" role="dialog" aria-modal="true" aria-label="Audit logs">
+      <div class="modal">
+        <div class="modalHeader">
+          <div>
+            <h3>Audit Logs</h3>
+            <p class="muted">Loaded from <code>/admin/audit</code>. Most recent entries first.</p>
+          </div>
+          <div class="modalActions">
+            <button id="btnAuditRefresh" class="secondary">Refresh</button>
+            <button id="btnAuditClose" class="danger">Close</button>
+          </div>
+        </div>
+
+        <div id="auditErr" class="err"></div>
+        <div id="auditOk" class="ok"></div>
+
+        <div class="tableWrap" style="margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 16%;">Time</th>
+                <th style="width: 14%;">User</th>
+                <th style="width: 16%;">Action</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="auditTbody">
+              <tr><td colspan="4" class="muted">No audit loaded.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="muted" style="margin-top:10px;">
+          Tip: Use Analytics page for counts and trends.
         </div>
       </div>
     </div>
