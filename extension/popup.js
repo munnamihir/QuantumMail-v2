@@ -3,18 +3,35 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 
+async function readFileToArrayBuffer(file) {
+  // try native first
+  try {
+    return await file.arrayBuffer();
+  } catch (e) {
+    // fallback FileReader (often succeeds where arrayBuffer fails)
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = () => reject(r.error || e);
+      r.onload = () => resolve(r.result);
+      r.readAsArrayBuffer(file);
+    });
+  }
+}
+
 async function collectAttachmentsImmediate() {
-  const input = document.getElementById("attachments");
+  const input = $("attachments");
   if (!input || !input.files || input.files.length === 0) return [];
 
-  // IMPORTANT: copy File objects NOW (do not keep input reference)
   const files = Array.from(input.files);
 
-  // Read all files immediately (before any other awaits/network calls)
   const out = [];
   for (const f of files) {
+    if (!f.size) {
+      throw new Error(`"${f.name}" is empty or not fully downloaded. Try "Download Now" (iCloud) then re-select.`);
+    }
+
     try {
-      const buf = await f.arrayBuffer(); // <-- can throw NotReadableError
+      const buf = await readFileToArrayBuffer(f);
       out.push({
         name: f.name,
         mimeType: f.type || "application/octet-stream",
@@ -22,16 +39,14 @@ async function collectAttachmentsImmediate() {
         bytes: Array.from(new Uint8Array(buf))
       });
     } catch (e) {
-      // give a clear per-file error
       throw new Error(
-        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid selecting from restricted folders. (${e?.name || "ReadError"})`
+        `Could not read "${f.name}". Move it to a local folder (Documents/Desktop), ensure it's downloaded (no iCloud cloud icon), then re-select. (${e?.name || "ReadError"})`
       );
     }
   }
 
   return out;
 }
-
 
 function setDot(state) {
   const dot = $("dot");
@@ -63,12 +78,6 @@ async function sendBg(type, payload = {}) {
 }
 
 function fillDefaults() {
-  // default server base to current origin if popup is opened on portal origin;
-  // otherwise leave blank so user can paste codespace URL.
-  if (!$("serverBase").value) {
-    // best-effort: if user previously logged in, reuse its server base
-    // else keep empty.
-  }
   if (!$("orgId").value) $("orgId").value = "org_demo";
 }
 
@@ -125,10 +134,9 @@ async function encryptSelected() {
   setStatus("Encrypting…");
 
   try {
-    // ✅ Read attachments FIRST (before any other awaits/network calls)
+    // ✅ read attachments first (prevents NotReadableError from popup losing handle)
     const attachments = await collectAttachmentsImmediate();
 
-    // ✅ Now check session/login
     const s = await getSession();
     if (!s?.token) {
       err("Please login first.");
@@ -136,9 +144,7 @@ async function encryptSelected() {
       return;
     }
 
-    // ✅ Send to background
     const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments });
-
     if (!resp?.ok) {
       err(resp?.error || "Encrypt failed");
       setStatus("Error", "bad");
@@ -159,12 +165,11 @@ async function encryptSelected() {
   }
 }
 
-
 async function openAdmin() {
   const s = await getSession();
   const base = s?.serverBase || normalizeBase($("serverBase").value.trim());
   if (!base) {
-    err("Set Server Base first (your codespace URL).");
+    err("Set Server Base first (your server URL).");
     return;
   }
   chrome.tabs.create({ url: `${base}/portal/admin.html` });
