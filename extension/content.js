@@ -203,7 +203,7 @@ if (location.pathname.startsWith("/m/")) {
       },
       (resp) => {
         const out = resp?.ok
-          ? { source: "quantummail-extension", type: "QM_DECRYPT_RESULT", ok: true, plaintext: resp.plaintext }
+          ? { source: "quantummail-extension", type: "QM_DECRYPT_RESULT", ok: true, plaintext: resp.plaintext, attachments: resp.attachments || [] }
           : { source: "quantummail-extension", type: "QM_DECRYPT_RESULT", ok: false, error: resp?.error || "Decrypt failed" };
 
         window.postMessage(out, "*");
