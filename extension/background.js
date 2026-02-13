@@ -9,35 +9,9 @@ import {
   importPublicSpkiB64,
   rsaWrapDek,
   b64UrlToBytes,
+  bytesToB64Url,
   getOrCreateRsaKeypair
 } from "./qm.js";
-import { bytesToB64Url } from "./qm.js";
-
-async function encryptAttachmentBytes(rawDekBytes, file) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-
-  const dek = await crypto.subtle.importKey(
-    "raw",
-    rawDekBytes,
-    { name: "AES-GCM" },
-    false,
-    ["encrypt"]
-  );
-
-  const ct = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    dek,
-    new Uint8Array(file.bytes)
-  );
-
-  return {
-    name: file.name,
-    mimeType: file.mimeType,
-    iv: bytesToB64Url(iv),
-    ciphertext: bytesToB64Url(new Uint8Array(ct))
-  };
-}
-
 
 async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
   const headers = {};
@@ -66,33 +40,59 @@ async function getActiveTab() {
   return tab;
 }
 
-// async function tabMessage(tabId, message) {
-//   return new Promise((resolve) => {
-//     chrome.tabs.sendMessage(tabId, message, (resp) => resolve(resp));
-//   });
-// }
 async function tabMessage(tabId, message) {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, message, (resp) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        reject(new Error(`Content script not available. Refresh the Gmail tab and try again. (${err.message})`));
-        return;
-      }
-      resolve(resp);
-    });
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (resp) => resolve(resp));
   });
 }
 
+// --------------------------
+// AES-GCM with raw DEK bytes (for attachments)
+// --------------------------
+async function aesEncryptBytesWithRawDek(rawDekBytes, plainBytes) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const dek = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, [
+    "encrypt"
+  ]);
+
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    dek,
+    plainBytes
+  );
+
+  return {
+    ivB64Url: bytesToB64Url(iv),
+    ctB64Url: bytesToB64Url(new Uint8Array(ct))
+  };
+}
+
+async function aesDecryptBytesWithRawDek(rawDekBytes, ivB64Url, ctB64Url) {
+  const iv = b64UrlToBytes(ivB64Url);
+  const ct = b64UrlToBytes(ctB64Url);
+
+  const dek = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, [
+    "decrypt"
+  ]);
+
+  const pt = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    dek,
+    ct
+  );
+
+  return new Uint8Array(pt);
+}
 
 /**
  * Org-wide envelope encryption:
- * - Per-message AES-GCM key (DEK)
+ * - Per-message AES-GCM key (DEK) for message body
+ * - Same raw DEK used to AES-GCM encrypt attachments
  * - DEK wrapped (RSA-OAEP) for every active user with a registered public key
- * - Anyone in the org (with a public key) can decrypt after login.
  */
-async function encryptSelectionOrgWide(session, attachmentsInput = []){
+async function encryptSelectionOrgWide(session, attachmentsFromPopup = []) {
   if (!session?.token) throw new Error("Not logged in");
+  if (!session?.serverBase) throw new Error("Missing serverBase in session (login again).");
 
   const tab = await getActiveTab();
 
@@ -107,13 +107,6 @@ async function encryptSelectionOrgWide(session, attachmentsInput = []){
 
   // 3) Encrypt plaintext with per-message AES-GCM
   const enc = await aesEncrypt(selectedText, "gmail");
-  // Encrypt attachments using SAME raw DEK
-  const encryptedAttachments = [];
-
-  for (const file of attachmentsInput || []) {
-    const encFile = await encryptAttachmentBytes(enc.rawDek, file);
-    encryptedAttachments.push(encFile);
-  }
 
   // 4) Wrap DEK for all active users with pubkeys
   const wrappedKeys = {};
@@ -131,12 +124,11 @@ async function encryptSelectionOrgWide(session, attachmentsInput = []){
   let skippedNoKey = 0;
 
   for (const u of users) {
-    // You can enforce additional policy here (e.g., only 'Active' users)
     if (u.status && String(u.status).toLowerCase() === "disabled") continue;
 
     if (!u.publicKeySpkiB64) {
       skippedNoKey++;
-      continue; // user must login once to register pubkey
+      continue;
     }
 
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
@@ -144,7 +136,7 @@ async function encryptSelectionOrgWide(session, attachmentsInput = []){
     wrappedCount++;
   }
 
-  // Safety: ensure sender included
+  // ensure sender included
   if (!wrappedKeys[me.userId]) {
     const pub = await importPublicSpkiB64(me.publicKeySpkiB64);
     wrappedKeys[me.userId] = await rsaWrapDek(pub, enc.rawDek);
@@ -155,7 +147,30 @@ async function encryptSelectionOrgWide(session, attachmentsInput = []){
     throw new Error("No users with public keys found. Ask users to login once to register keys.");
   }
 
-  // 5) Store message on server
+  // 5) Encrypt attachments (optional) using SAME raw DEK
+  const encryptedAttachments = [];
+  const files = Array.isArray(attachmentsFromPopup) ? attachmentsFromPopup : [];
+
+  for (const f of files) {
+    const name = String(f?.name || "attachment");
+    const mimeType = String(f?.mimeType || "application/octet-stream");
+    const size = Number(f?.size || 0);
+
+    const bytesArr = Array.isArray(f?.bytes) ? f.bytes : [];
+    const plainBytes = new Uint8Array(bytesArr);
+
+    const aEnc = await aesEncryptBytesWithRawDek(enc.rawDek, plainBytes);
+
+    encryptedAttachments.push({
+      name,
+      mimeType,
+      size,
+      iv: aEnc.ivB64Url,
+      ciphertext: aEnc.ctB64Url
+    });
+  }
+
+  // 6) Store message on server (body + wrappedKeys + attachments)
   const saved = await apiJson(session.serverBase, "/api/messages", {
     method: "POST",
     token: session.token,
@@ -166,13 +181,12 @@ async function encryptSelectionOrgWide(session, attachmentsInput = []){
       wrappedKeys,
       attachments: encryptedAttachments
     }
-
   });
 
   const url = saved.url;
   if (!url) throw new Error("Server did not return url");
 
-  // 6) Insert link into Gmail/editor
+  // 7) Insert link into Gmail/editor
   const ins = await tabMessage(tab.id, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
   if (!ins?.ok) throw new Error(ins?.error || "Could not insert link");
 
@@ -185,7 +199,6 @@ async function login(serverBase, orgId, username, password) {
     body: { orgId, username, password }
   });
 
-  // Save session
   await setSession({ serverBase, token: data.token, user: data.user });
 
   // Ensure this browser has RSA keypair + register pubkey to server
@@ -195,7 +208,7 @@ async function login(serverBase, orgId, username, password) {
 }
 
 async function loginAndDecrypt({ serverBase, orgId, username, password, msgId }) {
-  // 1) Login (audited on server when message fetched)
+  // 1) Login
   const auth = await apiJson(serverBase, "/auth/login", {
     method: "POST",
     body: { orgId, username, password }
@@ -204,16 +217,15 @@ async function loginAndDecrypt({ serverBase, orgId, username, password, msgId })
   // 2) Ensure pubkey exists (first-time user)
   await ensureKeypairAndRegister(serverBase, auth.token);
 
-  // 3) Fetch message payload (server returns wrappedDek for THIS user only)
+  // 3) Fetch message payload
   const payload = await apiJson(serverBase, `/api/messages/${encodeURIComponent(msgId)}`, {
     token: auth.token
   });
 
-  //const { iv, ciphertext, aad, wrappedDek } = payload || {};
   const { iv, ciphertext, aad, wrappedDek, attachments = [] } = payload || {};
   if (!iv || !ciphertext || !wrappedDek) throw new Error("Message not loaded (missing fields)");
 
-  // 4) Unwrap DEK with RSA private key (stored in this browser extension)
+  // 4) Unwrap DEK with RSA private key
   const { privateKey } = await getOrCreateRsaKeypair();
   const wrappedBytes = b64UrlToBytes(wrappedDek);
 
@@ -225,37 +237,24 @@ async function loginAndDecrypt({ serverBase, orgId, username, password, msgId })
     throw new Error("Failed to unwrap key. Wrong user or key mismatch on this browser.");
   }
 
-  // 5) AES-GCM decrypt
+  // 5) Decrypt body
   const plaintext = await aesDecrypt(iv, ciphertext, aad || "gmail", rawDekBytes);
+
+  // 6) Decrypt attachments
   const decryptedAttachments = [];
+  for (const a of (Array.isArray(attachments) ? attachments : [])) {
+    const name = String(a?.name || "attachment");
+    const mimeType = String(a?.mimeType || "application/octet-stream");
+    const bytes = await aesDecryptBytesWithRawDek(rawDekBytes, a.iv, a.ciphertext);
 
-for (const a of attachments) {
-  const fileIv = b64UrlToBytes(a.iv);
-  const fileCt = b64UrlToBytes(a.ciphertext);
-
-  const dek = await crypto.subtle.importKey(
-    "raw",
-    rawDekBytes,
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"]
-  );
-
-  const filePlain = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: fileIv },
-    dek,
-    fileCt
-  );
-
-  decryptedAttachments.push({
-    name: a.name,
-    mimeType: a.mimeType || "application/octet-stream",
-    bytes: Array.from(new Uint8Array(filePlain))
-  });
-}
+    decryptedAttachments.push({
+      name,
+      mimeType,
+      bytes: Array.from(bytes)
+    });
+  }
 
   return { plaintext, attachments: decryptedAttachments };
-
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -280,23 +279,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       // -----------------------
-      // ENCRYPT SELECTION (recipientless / org-wide)
+      // ENCRYPT SELECTION (org-wide) + attachments
       // -----------------------
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
         const s = await getSession();
-        const attachments = msg.attachments || [];
         if (!s?.token) throw new Error("Not logged in");
+        if (!s?.serverBase) throw new Error("Missing serverBase in session (login again).");
 
-        //const out = await encryptSelectionOrgWide(s);
-        // const out = await encryptSelectionOrgWide(s, attachments);
-        // sendResponse({ ok: true, url: out.url, wrappedCount: out.wrappedCount, skippedNoKey: out.skippedNoKey });
-        const out = await loginAndDecrypt({ serverBase, orgId, username, password, msgId });
-        sendResponse({ ok: true, plaintext: out.plaintext, attachments: out.attachments || [] });
+        const out = await encryptSelectionOrgWide(s, msg.attachments || []);
+        sendResponse({
+          ok: true,
+          url: out.url,
+          wrappedCount: out.wrappedCount,
+          skippedNoKey: out.skippedNoKey
+        });
         return;
       }
 
       // -----------------------
-      // LOGIN + DECRYPT (decrypt page provides creds)
+      // LOGIN + DECRYPT (decrypt page provides creds) + attachments
       // -----------------------
       if (msg?.type === "QM_LOGIN_AND_DECRYPT") {
         const serverBase = normalizeBase(msg.serverBase);
@@ -308,10 +309,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!serverBase || !orgId || !username || !password) throw new Error("Missing credentials");
         if (!msgId) throw new Error("Missing message id");
 
-        const plaintext = await loginAndDecrypt({ serverBase, orgId, username, password, msgId });
-        //sendResponse({ ok: true, plaintext });
-        sendResponse({ ok: true, plaintext, attachments });
-
+        const out = await loginAndDecrypt({ serverBase, orgId, username, password, msgId });
+        sendResponse({ ok: true, plaintext: out.plaintext, attachments: out.attachments || [] });
         return;
       }
 
