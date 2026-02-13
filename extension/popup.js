@@ -3,24 +3,56 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 
-async function collectAttachments() {
+async function collectAttachmentsImmediate() {
   const input = document.getElementById("attachments");
-  if (!input || !input.files?.length) return [];
+  if (!input || !input.files || input.files.length === 0) return [];
 
+  // IMPORTANT: copy File objects NOW (do not keep input reference)
   const files = Array.from(input.files);
-  const out = [];
 
+  // Read all files immediately (before any other awaits/network calls)
+  const out = [];
   for (const f of files) {
-    const buf = await f.arrayBuffer();
-    out.push({
-      name: f.name,
-      mimeType: f.type || "application/octet-stream",
-      bytes: Array.from(new Uint8Array(buf)) // transferable safe
-    });
+    try {
+      const buf = await f.arrayBuffer(); // <-- can throw NotReadableError
+      out.push({
+        name: f.name,
+        mimeType: f.type || "application/octet-stream",
+        size: f.size,
+        bytes: Array.from(new Uint8Array(buf))
+      });
+    } catch (e) {
+      // give a clear per-file error
+      throw new Error(
+        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid selecting from restricted folders. (${e?.name || "ReadError"})`
+      );
+    }
   }
 
   return out;
 }
+
+el("encryptBtn").addEventListener("click", async () => {
+  try {
+    // 🔥 CRITICAL: read attachments BEFORE any other async logic
+    const attachments = await collectAttachmentsImmediate();
+
+    // Now call background with attachments
+    chrome.runtime.sendMessage(
+      {
+        type: "QM_ENCRYPT_SELECTION",
+        attachments
+      },
+      (resp) => {
+        if (!resp?.ok) {
+          console.error(resp?.error);
+        }
+      }
+    );
+  } catch (e) {
+    console.error(e);
+  }
+});
 
 
 function setDot(state) {
