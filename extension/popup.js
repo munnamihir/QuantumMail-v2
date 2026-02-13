@@ -32,28 +32,6 @@ async function collectAttachmentsImmediate() {
   return out;
 }
 
-el("encryptBtn").addEventListener("click", async () => {
-  try {
-    // 🔥 CRITICAL: read attachments BEFORE any other async logic
-    const attachments = await collectAttachmentsImmediate();
-
-    // Now call background with attachments
-    chrome.runtime.sendMessage(
-      {
-        type: "QM_ENCRYPT_SELECTION",
-        attachments
-      },
-      (resp) => {
-        if (!resp?.ok) {
-          console.error(resp?.error);
-        }
-      }
-    );
-  } catch (e) {
-    console.error(e);
-  }
-});
-
 
 function setDot(state) {
   const dot = $("dot");
@@ -146,30 +124,41 @@ async function encryptSelected() {
   ok(""); $("err").textContent = "";
   setStatus("Encrypting…");
 
-  const s = await getSession();
-  if (!s?.token) {
-    err("Please login first.");
-    return;
+  try {
+    // ✅ Read attachments FIRST (before any other awaits/network calls)
+    const attachments = await collectAttachmentsImmediate();
+
+    // ✅ Now check session/login
+    const s = await getSession();
+    if (!s?.token) {
+      err("Please login first.");
+      setStatus("Not signed in", "bad");
+      return;
+    }
+
+    // ✅ Send to background
+    const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments });
+
+    if (!resp?.ok) {
+      err(resp?.error || "Encrypt failed");
+      setStatus("Error", "bad");
+      return;
+    }
+
+    const extra =
+      (typeof resp.skippedNoKey === "number" && resp.skippedNoKey > 0)
+        ? `\nSkipped ${resp.skippedNoKey} users (no public key yet).`
+        : "";
+
+    ok(`Link inserted ✅\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
+    setStatus("Ready", "good");
+  } catch (e) {
+    console.error(e);
+    err(e?.message || String(e));
+    setStatus("Error", "bad");
   }
-
-  // recipients intentionally omitted -> org-wide mode
-  const attachments = await collectAttachments();
-
-  const resp = await sendBg("QM_ENCRYPT_SELECTION", {
-    attachments
-  });
-  if (!resp?.ok) {
-    err(resp?.error || "Encrypt failed");
-    return;
-  }
-
-  const extra = (typeof resp.skippedNoKey === "number" && resp.skippedNoKey > 0)
-    ? `\nSkipped ${resp.skippedNoKey} users (no public key yet).`
-    : "";
-
-  ok(`Link inserted ✅\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
-  setStatus("Ready", "good");
 }
+
 
 async function openAdmin() {
   const s = await getSession();
