@@ -1,43 +1,41 @@
 // portal/admin.js
-
 const $ = (id) => document.getElementById(id);
 
 let token = "";
-let session = { orgId: "", username: "" };
+let sessionUser = null;
 
-// ---------- helpers ----------
-function setText(id, text) {
+function setText(id, msg) {
   const el = $(id);
-  if (el) el.textContent = text || "";
+  if (el) el.textContent = msg || "";
 }
 
-function showOk(id, msg) {
-  setText(id, msg || "");
+function ok(id, msg) {
+  setText(id, msg);
 }
 
-function showErr(id, msg) {
-  setText(id, msg || "");
+function err(id, msg) {
+  setText(id, msg);
 }
 
-function setSessionBadge() {
+function setSessionPill() {
   const who = $("who");
   const dot = $("sessionDot");
-  const st = $("sessionText");
 
-  if (token) {
-    if (who) who.textContent = `${session.username}@${session.orgId}`;
-    if (dot) { dot.classList.remove("bad"); dot.classList.add("good"); }
-    if (st) st.textContent = "Session: active";
-  } else {
-    if (who) who.textContent = "Not logged in";
-    if (dot) { dot.classList.remove("good"); dot.classList.remove("bad"); }
-    if (st) st.textContent = "Session: none";
+  if (who) {
+    who.textContent = token && sessionUser
+      ? `${sessionUser.username}@${sessionUser.orgId} (${sessionUser.role})`
+      : "Not logged in";
+  }
+
+  if (dot) {
+    dot.classList.remove("good", "bad");
+    if (token) dot.classList.add("good");
   }
 }
 
-async function api(path, { method = "GET", body = null, auth = true } = {}) {
+async function api(path, { method = "GET", body = null } = {}) {
   const headers = {};
-  if (auth && token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (body) headers["Content-Type"] = "application/json";
 
   const res = await fetch(path, {
@@ -51,100 +49,79 @@ async function api(path, { method = "GET", body = null, auth = true } = {}) {
   return data;
 }
 
-// ---------- Create Admin ----------
+// --------------------
+// 1) Create Admin
+// --------------------
 async function createAdmin() {
-  showOk("seedOk", "");
-  showErr("seedErr", "");
+  ok("seedOk", "");
+  err("seedErr", "");
 
   const orgId = String($("seedOrgId")?.value || "").trim();
   const username = String($("seedUsername")?.value || "").trim();
   const password = String($("seedPassword")?.value || "");
 
   if (!orgId || !username || !password) {
-    showErr("seedErr", "orgId, username, and password are required.");
+    err("seedErr", "Org Id, Admin Username, and Admin Password are required.");
     return;
   }
 
-  // You MUST have a matching server endpoint for this.
-  // If you currently only have /dev/seed-admin, update server to accept username/password.
-  // Here we call a future-proof route first, then fallback to /dev/seed-admin.
-  try {
-    const out = await api("/admin/bootstrap", {
-      method: "POST",
-      auth: false,
-      body: { orgId, username, password }
-    });
-    showOk("seedOk", `Admin created ✅\norgId: ${out.orgId}\nusername: ${out.username || username}`);
-    return;
-  } catch (e) {
-    // fallback to your existing /dev/seed-admin if bootstrap is not implemented
-    try {
-      const out2 = await api("/dev/seed-admin", {
-        method: "POST",
-        auth: false,
-        body: { orgId }
-      });
-      showOk(
-        "seedOk",
-        `Seeded admin ✅ (legacy)\norgId: ${out2.orgId}\nadmin: ${out2.admin}\npassword: ${out2.password}\n\n(Next: implement /admin/bootstrap to allow custom username/password.)`
-      );
-    } catch (e2) {
-      showErr("seedErr", e2?.message || String(e2));
-    }
-  }
+  // You must implement this route on server if not already:
+  // POST /dev/seed-admin { orgId, username, password }
+  // If your server still uses fixed admin/admin123, update server accordingly.
+  const out = await api("/dev/seed-admin", {
+    method: "POST",
+    body: { orgId, username, password }
+  });
+
+  ok("seedOk", `Admin created ✅\nOrg: ${out.orgId}\nUsername: ${username}`);
 }
 
-// ---------- Login / Logout ----------
+// --------------------
+// 2) Login / Logout
+// --------------------
 async function login() {
-  showOk("authOk", "");
-  showErr("authErr", "");
+  ok("authOk", "");
+  err("authErr", "");
 
   const orgId = String($("orgId")?.value || "").trim();
   const username = String($("username")?.value || "").trim();
   const password = String($("password")?.value || "");
 
   if (!orgId || !username || !password) {
-    showErr("authErr", "orgId, username, and password are required.");
+    err("authErr", "Org Id, Username, and Password are required.");
     return;
   }
 
-  try {
-    const out = await api("/auth/login", {
-      method: "POST",
-      auth: false,
-      body: { orgId, username, password }
-    });
+  const out = await api("/auth/login", {
+    method: "POST",
+    body: { orgId, username, password }
+  });
 
-    token = out.token;
-    session = { orgId, username };
+  token = out.token;
+  sessionUser = out.user;
 
-    setSessionBadge();
-    showOk("authOk", `Logged in ✅\nrole: ${out?.user?.role || "?"}\npublicKey: ${out?.user?.hasPublicKey ? "yes" : "no"}`);
+  ok("authOk", "Logged in ✅");
+  setSessionPill();
 
-    await loadUsers(); // auto-load
-  } catch (e) {
-    token = "";
-    session = { orgId: "", username: "" };
-    setSessionBadge();
-    showErr("authErr", e?.message || String(e));
-  }
+  await refreshUsers();
 }
 
 function logout() {
   token = "";
-  session = { orgId: "", username: "" };
-  setSessionBadge();
+  sessionUser = null;
 
-  showOk("authOk", "Logged out.");
-  showErr("authErr", "");
-  showOk("usersOk", "");
-  showErr("usersErr", "");
+  ok("authOk", "Logged out.");
+  err("authErr", "");
+  setSessionPill();
 
+  // reset users table
   const tbody = $("usersTbody");
   if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="muted">Login to load users…</td></tr>`;
 }
 
-// ---------- Users ----------
+// --------------------
+// 3) Users
+// --------------------
 function renderUsers(users) {
   const tbody = $("usersTbody");
   if (!tbody) return;
@@ -154,74 +131,79 @@ function renderUsers(users) {
     return;
   }
 
-  tbody.innerHTML = users
-    .map((u) => {
-      const keyText = u.hasPublicKey ? "✅" : "—";
-      const status = u.status || "Active";
-      const role = u.role || "Member";
+  tbody.innerHTML = users.map((u) => {
+    const keyText = u.hasPublicKey ? "Registered" : "None";
+    const status = u.status || "Active";
+    const role = u.role || "Member";
 
-      // NOTE:
-      // Your backend currently has: GET/POST /admin/users
-      // To support remove user / clear key you will need server endpoints (we can add next):
-      // DELETE /admin/users/:id
-      // POST /admin/users/:id/clear-key
+    return `
+      <tr>
+        <td><b>${escapeHtml(u.username || "")}</b><br/><span class="muted">${escapeHtml(u.userId || "")}</span></td>
+        <td>${escapeHtml(role)}</td>
+        <td>${escapeHtml(status)}</td>
+        <td>${u.hasPublicKey ? `<span class="kbadge">✅ ${keyText}</span>` : `<span class="kbadge">— ${keyText}</span>`}</td>
+        <td>
+          <button data-action="clearKey" data-userid="${escapeAttr(u.userId)}" class="secondary">Clear Key</button>
+          <button data-action="removeUser" data-userid="${escapeAttr(u.userId)}" class="danger">Remove</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
 
-      return `
-        <tr>
-          <td><b>${escapeHtml(u.username || "")}</b><br/><span class="muted">${escapeHtml(u.userId || "")}</span></td>
-          <td>${escapeHtml(role)}</td>
-          <td>${escapeHtml(status)}</td>
-          <td>${keyText}</td>
-          <td>
-            <button class="secondary" data-action="clearKey" data-id="${escapeAttr(u.userId)}" ${u.hasPublicKey ? "" : "disabled"}>
-              Clear Public Key
-            </button>
-            <button class="danger" data-action="removeUser" data-id="${escapeAttr(u.userId)}">
-              Remove User
-            </button>
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  // row button handlers
+  // attach handlers
   tbody.querySelectorAll("button[data-action]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.getAttribute("data-action");
-      const userId = btn.getAttribute("data-id");
-      if (!userId) return;
+      const userId = btn.getAttribute("data-userid");
+      if (!action || !userId) return;
 
-      if (action === "removeUser") await removeUser(userId);
-      if (action === "clearKey") await clearUserKey(userId);
+      try {
+        ok("usersOk", "");
+        err("usersErr", "");
+
+        if (!token) throw new Error("Login required.");
+
+        if (action === "removeUser") {
+          // You need server endpoint:
+          // DELETE /admin/users/:id
+          await api(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+          ok("usersOk", "User removed ✅");
+        }
+
+        if (action === "clearKey") {
+          // You need server endpoint:
+          // POST /admin/users/:id/clear-key
+          await api(`/admin/users/${encodeURIComponent(userId)}/clear-key`, { method: "POST" });
+          ok("usersOk", "Public key cleared ✅");
+        }
+
+        await refreshUsers();
+      } catch (e) {
+        err("usersErr", e?.message || String(e));
+      }
     });
   });
 }
 
-async function loadUsers() {
-  showOk("usersOk", "");
-  showErr("usersErr", "");
+async function refreshUsers() {
+  ok("usersOk", "");
+  err("usersErr", "");
 
   if (!token) {
-    showErr("usersErr", "Login required.");
+    err("usersErr", "Login required to load users.");
     return;
   }
 
-  try {
-    const out = await api("/admin/users");
-    renderUsers(out.users || []);
-    showOk("usersOk", `Loaded ${out?.users?.length || 0} user(s).`);
-  } catch (e) {
-    showErr("usersErr", e?.message || String(e));
-  }
+  const out = await api("/admin/users");
+  renderUsers(out.users || []);
 }
 
 async function createUser() {
-  showOk("usersOk", "");
-  showErr("usersErr", "");
+  ok("usersOk", "");
+  err("usersErr", "");
 
   if (!token) {
-    showErr("usersErr", "Login required.");
+    err("usersErr", "Login required.");
     return;
   }
 
@@ -230,170 +212,62 @@ async function createUser() {
   const role = String($("newRole")?.value || "Member").trim() || "Member";
 
   if (!username || !password) {
-    showErr("usersErr", "New username and password are required.");
+    err("usersErr", "New Username and New Password are required.");
     return;
   }
 
-  try {
-    await api("/admin/users", {
-      method: "POST",
-      body: { username, password, role }
-    });
+  await api("/admin/users", {
+    method: "POST",
+    body: { username, password, role }
+  });
 
-    showOk("usersOk", `User created ✅ (${username})`);
-    $("newUsername").value = "";
-    $("newPassword").value = "";
-    await loadUsers();
-  } catch (e) {
-    showErr("usersErr", e?.message || String(e));
-  }
+  ok("usersOk", `User created ✅ (${username})`);
+  $("newUsername").value = "";
+  $("newPassword").value = "";
+
+  await refreshUsers();
 }
 
-// These require backend endpoints (next step on server).
-async function removeUser(userId) {
-  showOk("usersOk", "");
-  showErr("usersErr", "");
-
-  if (!token) return showErr("usersErr", "Login required.");
-
-  const yes = confirm("Remove this user? This cannot be undone.");
-  if (!yes) return;
-
-  try {
-    await api(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
-    showOk("usersOk", "User removed ✅");
-    await loadUsers();
-  } catch (e) {
-    showErr("usersErr", e?.message || String(e));
-  }
+// --------------------
+// Nav buttons
+// --------------------
+function openAudit() {
+  const orgId = String($("orgId")?.value || $("seedOrgId")?.value || "org_demo").trim();
+  // Pass orgId in URL hash so the audit page can prefill.
+  location.href = `./audit.html#orgId=${encodeURIComponent(orgId)}`;
 }
 
-async function clearUserKey(userId) {
-  showOk("usersOk", "");
-  showErr("usersErr", "");
-
-  if (!token) return showErr("usersErr", "Login required.");
-
-  const yes = confirm("Clear this user's public key? They will need to login again to re-register.");
-  if (!yes) return;
-
-  try {
-    await api(`/admin/users/${encodeURIComponent(userId)}/clear-key`, { method: "POST" });
-    showOk("usersOk", "Public key cleared ✅");
-    await loadUsers();
-  } catch (e) {
-    showErr("usersErr", e?.message || String(e));
-  }
+function openAnalytics() {
+  const orgId = String($("orgId")?.value || $("seedOrgId")?.value || "org_demo").trim();
+  location.href = `./analytics.html#orgId=${encodeURIComponent(orgId)}`;
 }
 
-// ---------- Audit modal ----------
-function openAuditModal() {
-  const back = $("auditModalBackdrop");
-  if (back) back.style.display = "flex";
-}
-
-function closeAuditModal() {
-  const back = $("auditModalBackdrop");
-  if (back) back.style.display = "none";
-}
-
-function renderAudit(items) {
-  const tbody = $("auditTbody");
-  if (!tbody) return;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted">No audit records.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = items.map((it) => {
-    const at = escapeHtml(it.at || "");
-    const userId = escapeHtml(it.userId || "—");
-    const action = escapeHtml(it.action || "");
-    const details = escapeHtml(JSON.stringify(stripBaseFields(it), null, 0));
-    return `
-      <tr>
-        <td>${at}</td>
-        <td><code>${userId}</code></td>
-        <td><b>${action}</b></td>
-        <td style="max-width:520px;"><span class="muted">${details}</span></td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function stripBaseFields(it) {
-  // keep details but remove duplicate base fields to reduce noise
-  const clone = { ...it };
-  delete clone.at;
-  delete clone.userId;
-  delete clone.orgId;
-  delete clone.action;
-  delete clone.id;
-  delete clone.ip;
-  delete clone.ua;
-  return clone;
-}
-
-async function loadAudit() {
-  showErr("auditErr", "");
-  showOk("auditOk", "");
-
-  if (!token) {
-    showErr("auditErr", "Login required.");
-    return;
-  }
-
-  try {
-    const out = await api("/admin/audit?limit=250");
-    renderAudit(out.items || []);
-    showOk("auditOk", `Loaded ${out?.items?.length || 0} audit item(s).`);
-  } catch (e) {
-    showErr("auditErr", e?.message || String(e));
-  }
-}
-
-// ---------- Analytics nav ----------
-function goAnalytics() {
-  // Same origin: /portal/analytics.html
-  window.location.href = "/portal/analytics.html";
-}
-
-// ---------- utilities ----------
+// --------------------
+// Utils
+// --------------------
 function escapeHtml(s) {
   return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
-
 function escapeAttr(s) {
-  return escapeHtml(s).replace(/"/g, "&quot;");
+  return escapeHtml(s).replaceAll("`", "&#096;");
 }
 
-// ---------- wire up ----------
-$("btnCreateAdmin")?.addEventListener("click", createAdmin);
-$("btnLogin")?.addEventListener("click", login);
+// --------------------
+// Wire up
+// --------------------
+$("btnCreateAdmin")?.addEventListener("click", () => createAdmin().catch(e => err("seedErr", e.message)));
+$("btnLogin")?.addEventListener("click", () => login().catch(e => err("authErr", e.message)));
 $("btnLogout")?.addEventListener("click", logout);
+$("btnCreateUser")?.addEventListener("click", () => createUser().catch(e => err("usersErr", e.message)));
+$("btnRefreshUsers")?.addEventListener("click", () => refreshUsers().catch(e => err("usersErr", e.message)));
 
-$("btnCreateUser")?.addEventListener("click", createUser);
-$("btnRefreshUsers")?.addEventListener("click", loadUsers);
+$("btnOpenAudit")?.addEventListener("click", openAudit);
+$("btnOpenAnalytics")?.addEventListener("click", openAnalytics);
 
-$("btnAudit")?.addEventListener("click", async () => {
-  openAuditModal();
-  await loadAudit();
-});
-$("btnAuditClose")?.addEventListener("click", closeAuditModal);
-$("btnAuditRefresh")?.addEventListener("click", loadAudit);
-
-// click outside modal to close
-$("auditModalBackdrop")?.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "auditModalBackdrop") closeAuditModal();
-});
-
-$("btnAnalytics")?.addEventListener("click", goAnalytics);
-
-// init
-setSessionBadge();
+// initial
+setSessionPill();
