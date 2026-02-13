@@ -288,8 +288,8 @@ app.use((req, res, next) => {
 });
 
 // DEV/ADMIN: create admin with custom username/password (first-time setup)
-// POST /dev/create-admin  { orgId, username, password }
-app.post("/dev/create-admin", (req, res) => {
+// POST /dev/seed-admin  { orgId, username, password }
+app.post("/dev/seed-admin", (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const username = String(req.body?.username || "").trim();
   const password = String(req.body?.password || "");
