@@ -9,16 +9,16 @@
     .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 16px; margin: 12px 0; }
     .row { margin: 12px 0; }
     label { display:block; font-weight: 600; margin-bottom: 6px; }
-    textarea, input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 10px; }
+    textarea, input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 10px; }
     textarea { min-height: 160px; }
     .btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
     .muted { color: #666; font-size: 13px; }
     #attachments a { display:inline-block; margin-top: 6px; }
-    #ok { color: #0b7a0b; white-space: pre-wrap; margin-top: 8px; }
-    #err { color: #b00020; white-space: pre-wrap; margin-top: 8px; }
+    #ok { color: #0b7a0b; white-space: pre-wrap; }
+    #err { color: #b00020; white-space: pre-wrap; }
     code { background:#f6f6f6; padding:2px 6px; border-radius:8px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    @media (max-width: 780px){ .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -26,34 +26,25 @@
   <p class="muted">Message ID: <code id="msgId">-</code></p>
 
   <div class="card">
-    <!-- ✅ Org login (extension-based decrypt) -->
     <div class="row">
-      <div class="muted">
-        This message can only be decrypted if the <b>QuantumMail extension</b> is installed in this browser.
-        Login is used to fetch and audit access.
-      </div>
-    </div>
-
-    <div class="row">
-      <label for="serverBase">Server</label>
-      <input id="serverBase" type="text" readonly />
-      <div class="muted">Auto-detected from this page.</div>
+      <label for="serverBase">Server Base</label>
+      <input id="serverBase" />
+      <div class="muted">Auto-filled to current site.</div>
     </div>
 
     <div class="row grid">
       <div>
         <label for="orgId">Org ID</label>
-        <input id="orgId" type="text" placeholder="org_demo" autocomplete="organization" />
+        <input id="orgId" placeholder="org_demo" value="org_demo" />
       </div>
       <div>
         <label for="username">Username</label>
-        <input id="username" type="text" placeholder="admin" autocomplete="username" />
+        <input id="username" placeholder="admin" />
       </div>
-    </div>
-
-    <div class="row">
-      <label for="password">Password</label>
-      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" />
+      </div>
     </div>
 
     <div class="row">
@@ -72,6 +63,7 @@
     </div>
   </div>
 
+  <!-- IMPORTANT: absolute path so it doesn't resolve to /m/decrypt.js -->
   <script type="module" src="/portal/decrypt.js"></script>
 </body>
 </html>
