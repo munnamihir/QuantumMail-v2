@@ -28,70 +28,39 @@
         radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
         var(--bg);
     }
-    .container{
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 22px 16px 42px;
-    }
-    .topbar{
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:14px;
-      margin-bottom: 14px;
-    }
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-    }
+    .container{ max-width: 1100px; margin: 0 auto; padding: 22px 16px 42px; }
+    .topbar{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom: 14px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
     .logo{
-      width:42px; height:42px;
-      border-radius: 14px;
+      width:42px; height:42px; border-radius: 14px;
       background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.95));
       box-shadow: 0 14px 40px rgba(110,168,254,.20);
       flex: 0 0 auto;
     }
-    .brand h1{
-      margin:0;
-      font-size: 18px;
-      letter-spacing:.2px;
-      line-height: 1.1;
-    }
-    .brand p{
-      margin:3px 0 0;
-      font-size: 12px;
-      color: var(--muted);
-    }
+    .brand h1{ margin:0; font-size: 18px; letter-spacing:.2px; line-height: 1.1; }
+    .brand p{ margin:3px 0 0; font-size: 12px; color: var(--muted); }
+
+    .rightHeader{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
     .pill{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding: 8px 10px;
-      border-radius: 999px;
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px; border-radius: 999px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,.06);
       color: var(--muted);
       font-size: 12px;
       white-space: nowrap;
       max-width: 420px;
-      overflow:hidden;
-      text-overflow: ellipsis;
+      overflow:hidden; text-overflow: ellipsis;
     }
     .dot{
-      width:8px; height:8px;
-      border-radius:999px;
+      width:8px; height:8px; border-radius:999px;
       background: rgba(255,255,255,.25);
       box-shadow: 0 0 0 3px rgba(255,255,255,.06);
     }
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
 
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
+    .grid{ display:grid; grid-template-columns: 1fr; gap: 12px; }
     @media (min-width: 980px){
       .grid{ grid-template-columns: 1fr 1fr; align-items: start; }
       .span2{ grid-column: 1 / -1; }
@@ -104,33 +73,14 @@
       padding: 14px;
       box-shadow: var(--shadow);
     }
-    .card h3{
-      margin: 0 0 6px;
-      font-size: 14px;
-      letter-spacing:.2px;
-    }
-    .muted{
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-    .row{
-      display:flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-    }
-    .row > div{
-      flex: 1;
-      min-width: 220px;
-    }
+    .card h3{ margin: 0 0 6px; font-size: 14px; letter-spacing:.2px; }
+    .muted{ color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .row{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .row > div{ flex: 1; min-width: 220px; }
     label{
-      display:block;
-      font-size: 11px;
-      color: var(--muted);
-      margin: 6px 0 6px;
-      font-weight: 600;
-      letter-spacing: .15px;
+      display:block; font-size: 11px; color: var(--muted);
+      margin: 6px 0 6px; font-weight: 600; letter-spacing: .15px;
     }
     input{
       width:100%;
@@ -147,16 +97,9 @@
       box-shadow: 0 0 0 4px rgba(110,168,254,.12);
     }
 
-    .actions{
-      display:flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-      align-items:center;
-    }
+    .actions{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; align-items:center; }
     button{
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 10px 12px; border-radius: 12px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,.06);
       color: var(--text);
@@ -170,29 +113,15 @@
       color: #07101f;
       background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
     }
-    button.secondary{
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
+    button.secondary{ background: transparent; color: var(--text); border: 1px solid var(--border); }
     button.danger{
       border: none;
       background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
       color: #0b0f1a;
     }
 
-    .ok{
-      margin-top: 10px;
-      color: var(--good);
-      font-size: 12px;
-      white-space: pre-wrap;
-    }
-    .err{
-      margin-top: 10px;
-      color: var(--bad);
-      font-size: 12px;
-      white-space: pre-wrap;
-    }
+    .ok{ margin-top: 10px; color: var(--good); font-size: 12px; white-space: pre-wrap; }
+    .err{ margin-top: 10px; color: var(--bad); font-size: 12px; white-space: pre-wrap; }
 
     .tableWrap{
       margin-top: 12px;
@@ -218,7 +147,6 @@
       font-size: 13px;
     }
     tbody tr:hover{ background: rgba(255,255,255,.03); }
-
     code{
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.08);
@@ -226,11 +154,8 @@
       border-radius: 8px;
       color: rgba(233,238,252,.95);
     }
-
     .kbadge{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
+      display:inline-flex; align-items:center; gap:8px;
       padding: 4px 10px;
       border-radius: 999px;
       border: 1px solid rgba(255,255,255,.10);
@@ -238,54 +163,8 @@
       color: var(--muted);
       font-size: 12px;
     }
-
-    /* Modal */
-    .modalBackdrop{
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,.55);
-      display:none;
-      align-items:center;
-      justify-content:center;
-      padding: 14px;
-      z-index: 9999;
-    }
-    .modal{
-      width: min(1040px, 100%);
-      max-height: 86vh;
-      overflow:auto;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, rgba(18,24,42,.98), rgba(15,21,38,.98));
-      box-shadow: 0 24px 90px rgba(0,0,0,.55);
-      padding: 14px;
-    }
-    .modalHeader{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      margin-bottom: 8px;
-    }
-    .modalHeader h3{ margin:0; font-size: 14px; }
-    .modalHeader .muted{ margin:0; }
-    .modalActions{
-      display:flex;
-      gap: 8px;
-      align-items:center;
-      flex-wrap: wrap;
-    }
-    .json{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 12px;
-      line-height: 1.4;
-      white-space: pre;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 12px;
-      padding: 12px;
-      overflow:auto;
-    }
+    .subtleLine{ margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
+    .footerNote{ margin-top: 14px; font-size: 11px; color: rgba(170,180,214,.85); }
   </style>
 </head>
 
@@ -296,12 +175,20 @@
         <div class="logo"></div>
         <div>
           <h1>QuantumMail • Admin</h1>
-          <p>Manage org users, keys, and access — clean, fast, auditable.</p>
+          <p>Manage org users, keys, access — clean, fast, auditable.</p>
         </div>
       </div>
 
-      <div class="pill" title="Session">
-        <span id="who">Not logged in</span>
+      <div class="rightHeader">
+        <div class="pill" title="Session">
+          <span id="sessionDot" class="dot"></span>
+          <span id="who">Not logged in</span>
+        </div>
+
+        <div class="actions" style="margin-top:0;">
+          <button id="btnOpenAudit" class="secondary">Audit Logs</button>
+          <button id="btnOpenAnalytics" class="secondary">Analytics</button>
+        </div>
       </div>
     </div>
 
@@ -309,7 +196,9 @@
       <!-- Create Admin -->
       <div class="card">
         <h3>1) Create Admin</h3>
-        <div class="muted">First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.</div>
+        <div class="muted">
+          First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.
+        </div>
 
         <div class="row">
           <div>
@@ -332,12 +221,18 @@
 
         <div id="seedOk" class="ok"></div>
         <div id="seedErr" class="err"></div>
+
+        <div class="footerNote subtleLine">
+          Tip: After creating admin, login below to manage users + keys.
+        </div>
       </div>
 
       <!-- Login -->
       <div class="card">
         <h3>2) Login</h3>
-        <div class="muted">Logs in via <code>/auth/login</code> and keeps token in memory.</div>
+        <div class="muted">
+          Logs in via <code>/auth/login</code> and keeps token in memory (not saved to disk).
+        </div>
 
         <div class="row">
           <div>
@@ -357,22 +252,23 @@
         <div class="actions">
           <button id="btnLogin" class="primary">Login</button>
           <button id="btnLogout" class="secondary">Logout</button>
-
-          <!-- NEW: Audit + Analytics buttons -->
-          <button id="btnAudit" class="secondary">Audit Logs</button>
-          <button id="btnAnalytics" class="secondary">Analytics</button>
-
-          <span class="kbadge"><span id="sessionDot" class="dot"></span><span id="sessionText">Session: none</span></span>
+          <span class="kbadge"><span class="dot"></span> Token held in memory</span>
         </div>
 
         <div id="authOk" class="ok"></div>
         <div id="authErr" class="err"></div>
+
+        <div class="footerNote subtleLine">
+          Make sure this page is served from the same base as your API.
+        </div>
       </div>
 
       <!-- Users -->
       <div class="card span2">
         <h3>3) Users</h3>
-        <div class="muted">Create users, remove users, clear public keys, and refresh list.</div>
+        <div class="muted">
+          Create users, refresh list, remove users, and clear public keys (forces re-register on next login).
+        </div>
 
         <div class="row">
           <div>
@@ -391,10 +287,7 @@
 
         <div class="actions">
           <button id="btnCreateUser" class="primary">Create User</button>
-
-          <!-- NEW: refresh users -->
-          <button id="btnRefreshUsers" class="secondary">Refresh Users</button>
-
+          <button id="btnRefreshUsers" class="secondary">Refresh</button>
           <span class="kbadge">Actions are audited server-side</span>
         </div>
 
@@ -417,44 +310,9 @@
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
 
-    <!-- NEW: Audit modal -->
-    <div id="auditModalBackdrop" class="modalBackdrop" role="dialog" aria-modal="true" aria-label="Audit logs">
-      <div class="modal">
-        <div class="modalHeader">
-          <div>
-            <h3>Audit Logs</h3>
-            <p class="muted">Loaded from <code>/admin/audit</code>. Most recent entries first.</p>
-          </div>
-          <div class="modalActions">
-            <button id="btnAuditRefresh" class="secondary">Refresh</button>
-            <button id="btnAuditClose" class="danger">Close</button>
-          </div>
-        </div>
-
-        <div id="auditErr" class="err"></div>
-        <div id="auditOk" class="ok"></div>
-
-        <div class="tableWrap" style="margin-top:10px;">
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 16%;">Time</th>
-                <th style="width: 14%;">User</th>
-                <th style="width: 16%;">Action</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody id="auditTbody">
-              <tr><td colspan="4" class="muted">No audit loaded.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="muted" style="margin-top:10px;">
-          Tip: Use Analytics page for counts and trends.
+        <div class="footerNote">
+          Recommended policy: don’t delete your own admin account; rotate KEKs periodically.
         </div>
       </div>
     </div>
