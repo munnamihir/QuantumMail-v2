@@ -33,18 +33,13 @@
       display:flex; align-items:center; justify-content:space-between; gap:10px;
       margin-bottom: 10px;
     }
-    .brand{
-      display:flex; align-items:center; gap:10px;
-    }
+    .brand{ display:flex; align-items:center; gap:10px; }
     .logo{
       width:34px; height:34px; border-radius:12px;
       background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.95));
       box-shadow: 0 12px 30px rgba(110,168,254,.18);
     }
-    .title{
-      display:flex; flex-direction:column;
-      line-height: 1.15;
-    }
+    .title{ display:flex; flex-direction:column; line-height: 1.15; }
     .title b{ font-size: 14px; letter-spacing:.2px;}
     .title span{ font-size: 12px; color:var(--muted); }
 
@@ -89,10 +84,7 @@
     }
     input::placeholder{ color: rgba(170,180,214,.7); }
 
-    .actions{
-      display:flex; gap:8px;
-      margin-top: 10px;
-    }
+    .actions{ display:flex; gap:8px; margin-top: 10px; }
     button{
       border-radius: 12px;
       border: 1px solid var(--border);
@@ -126,10 +118,7 @@
       padding-top: 8px;
       border-top:1px solid rgba(255,255,255,.08);
     }
-    .statusText{
-      font-size: 12px;
-      color: var(--muted);
-    }
+    .statusText{ font-size: 12px; color: var(--muted); }
     .dot{
       width:8px; height:8px; border-radius: 999px;
       background: rgba(255,255,255,.25);
@@ -153,11 +142,7 @@
       align-items:center;
       gap:10px;
     }
-    .link{
-      color: rgba(110,168,254,.95);
-      text-decoration:none;
-      cursor:pointer;
-    }
+    .link{ color: rgba(110,168,254,.95); text-decoration:none; cursor:pointer; }
   </style>
 </head>
 
@@ -224,17 +209,16 @@
 
     <div class="card">
       <label style="margin-top:6px;">Attachments (optional)</label>
-        <input id="attachments" type="file" multiple />
+      <input id="attachments" type="file" multiple />
 
-        <button id="btnEncrypt" class="primary" style="margin-top:8px;">
-          Encrypt Selected Text
-        </button>
+      <button id="btnEncrypt" class="primary" style="margin-top:8px;">
+        Encrypt Selected Text
+      </button>
 
-        <div class="mini">
-          Select text in Gmail → optionally attach files → click encrypt.
-          Attachments are encrypted with the same message key.
-        </div>
-
+      <div class="mini">
+        Select text in Gmail → optionally attach files → click encrypt.
+        Attachments are encrypted with the same message key.
+      </div>
     </div>
 
     <div class="foot">
