@@ -288,8 +288,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!s?.token) throw new Error("Not logged in");
 
         //const out = await encryptSelectionOrgWide(s);
-        const out = await encryptSelectionOrgWide(s, attachments);
-        sendResponse({ ok: true, url: out.url, wrappedCount: out.wrappedCount, skippedNoKey: out.skippedNoKey });
+        // const out = await encryptSelectionOrgWide(s, attachments);
+        // sendResponse({ ok: true, url: out.url, wrappedCount: out.wrappedCount, skippedNoKey: out.skippedNoKey });
+        const out = await loginAndDecrypt({ serverBase, orgId, username, password, msgId });
+        sendResponse({ ok: true, plaintext: out.plaintext, attachments: out.attachments || [] });
         return;
       }
 
