@@ -14,9 +14,11 @@
     .btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
     .muted { color: #666; font-size: 13px; }
     #attachments a { display:inline-block; margin-top: 6px; }
-    #ok { color: #0b7a0b; white-space: pre-wrap; }
-    #err { color: #b00020; white-space: pre-wrap; }
+    #ok { color: #0b7a0b; white-space: pre-wrap; margin-top: 8px; }
+    #err { color: #b00020; white-space: pre-wrap; margin-top: 8px; }
     code { background:#f6f6f6; padding:2px 6px; border-radius:8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -24,24 +26,34 @@
   <p class="muted">Message ID: <code id="msgId">-</code></p>
 
   <div class="card">
+    <!-- ✅ Org login (extension-based decrypt) -->
     <div class="row">
-      <label for="mode">Mode</label>
-      <select id="mode">
-        <option value="pqc">PQC (ML-KEM-768)</option>
-        <option value="passphrase">Passphrase</option>
-      </select>
-      <div class="muted">Select the mode used at encryption time.</div>
+      <div class="muted">
+        This message can only be decrypted if the <b>QuantumMail extension</b> is installed in this browser.
+        Login is used to fetch and audit access.
+      </div>
     </div>
 
-    <div id="pqcFields" class="row">
-      <label for="recipientSk">Recipient Private Key (base64)</label>
-      <input id="recipientSk" type="password" placeholder="Paste recipient ML-KEM-768 private key (base64)" />
-      <div class="muted">Generate via <code>/portal/keygen.html</code>.</div>
+    <div class="row">
+      <label for="serverBase">Server</label>
+      <input id="serverBase" type="text" readonly />
+      <div class="muted">Auto-detected from this page.</div>
     </div>
 
-    <div id="pwFields" class="row" style="display:none;">
-      <label for="passphrase">Passphrase</label>
-      <input id="passphrase" type="password" placeholder="Enter passphrase" />
+    <div class="row grid">
+      <div>
+        <label for="orgId">Org ID</label>
+        <input id="orgId" type="text" placeholder="org_demo" autocomplete="organization" />
+      </div>
+      <div>
+        <label for="username">Username</label>
+        <input id="username" type="text" placeholder="admin" autocomplete="username" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
     </div>
 
     <div class="row">
