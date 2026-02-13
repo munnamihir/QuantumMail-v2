@@ -1,3 +1,5 @@
+// portal/decrypt.js
+
 const $ = (id) => document.getElementById(id);
 
 function getMsgIdFromPath() {
@@ -23,9 +25,8 @@ function bytesToBlobUrl(bytesArr, mimeType) {
 
 function renderAttachments(list) {
   const host = $("attachments");
-  if (!host) return;
-
   host.innerHTML = "";
+
   if (!Array.isArray(list) || list.length === 0) return;
 
   const title = document.createElement("div");
@@ -54,8 +55,9 @@ function renderAttachments(list) {
 const msgId = getMsgIdFromPath();
 $("msgId").textContent = msgId || "-";
 
-// ✅ Auto-fill server base
+// Autofill serverBase
 $("serverBase").value = window.location.origin;
+$("serverBase").readOnly = true;
 
 function requestDecrypt() {
   ok(""); err("");
