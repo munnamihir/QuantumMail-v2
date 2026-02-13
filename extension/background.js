@@ -249,7 +249,7 @@ for (const a of attachments) {
 
   decryptedAttachments.push({
     name: a.name,
-    mimeType: a.mimeType,
+    mimeType: a.mimeType || "application/octet-stream",
     bytes: Array.from(new Uint8Array(filePlain))
   });
 }
