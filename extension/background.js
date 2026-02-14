@@ -53,6 +53,15 @@ async function sendToTab(tabId, msg) {
   });
 }
 
+function aadFromTabUrl(tabUrl) {
+  const u = String(tabUrl || "").toLowerCase();
+  if (u.includes("mail.google.com")) return "gmail";
+  if (u.includes("outlook.office.com")) return "outlook";
+  if (u.includes("outlook.live.com")) return "outlook";
+  return "web";
+}
+
+
 // ---------- Base64URL helpers (safe for large arrays) ----------
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
