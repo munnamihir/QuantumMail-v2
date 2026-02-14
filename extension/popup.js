@@ -3,53 +3,9 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 
-async function readFileToArrayBuffer(file) {
-  // try native first
-  try {
-    return await file.arrayBuffer();
-  } catch (e) {
-    // fallback FileReader (often succeeds where arrayBuffer fails)
-    return await new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onerror = () => reject(r.error || e);
-      r.onload = () => resolve(r.result);
-      r.readAsArrayBuffer(file);
-    });
-  }
-}
-
-async function collectAttachmentsImmediate() {
-  const input = $("attachments");
-  if (!input || !input.files || input.files.length === 0) return [];
-
-  const files = Array.from(input.files);
-
-  const out = [];
-  for (const f of files) {
-    if (!f.size) {
-      throw new Error(`"${f.name}" is empty or not fully downloaded. Try "Download Now" (iCloud) then re-select.`);
-    }
-
-    try {
-      const buf = await readFileToArrayBuffer(f);
-      out.push({
-        name: f.name,
-        mimeType: f.type || "application/octet-stream",
-        size: f.size,
-        bytes: Array.from(new Uint8Array(buf))
-      });
-    } catch (e) {
-      throw new Error(
-        `Could not read "${f.name}". Move it to a local folder (Documents/Desktop), ensure it's downloaded (no iCloud cloud icon), then re-select. (${e?.name || "ReadError"})`
-      );
-    }
-  }
-
-  return out;
-}
-
 function setDot(state) {
   const dot = $("dot");
+  if (!dot) return;
   dot.classList.remove("good", "bad");
   if (state === "good") dot.classList.add("good");
   if (state === "bad") dot.classList.add("bad");
@@ -77,6 +33,37 @@ async function sendBg(type, payload = {}) {
   });
 }
 
+/**
+ * IMPORTANT:
+ * Read attachments immediately (before any other awaits),
+ * otherwise MV3 popup can lose file handle and throw NotReadableError.
+ */
+async function collectAttachmentsImmediate() {
+  const input = $("attachments");
+  if (!input || !input.files || input.files.length === 0) return [];
+
+  const files = Array.from(input.files);
+  const out = [];
+
+  for (const f of files) {
+    try {
+      const buf = await f.arrayBuffer();
+      out.push({
+        name: f.name,
+        mimeType: f.type || "application/octet-stream",
+        size: f.size,
+        bytes: Array.from(new Uint8Array(buf))
+      });
+    } catch (e) {
+      throw new Error(
+        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid restricted folders (Desktop/Screenshots). (${e?.name || "ReadError"})`
+      );
+    }
+  }
+
+  return out;
+}
+
 function fillDefaults() {
   if (!$("orgId").value) $("orgId").value = "org_demo";
 }
@@ -90,7 +77,7 @@ async function refreshSessionUI() {
     setStatus("Signed in", "good");
     if (!$("serverBase").value && s.serverBase) $("serverBase").value = s.serverBase;
     if (!$("orgId").value && s.user.orgId) $("orgId").value = s.user.orgId;
-    $("username").value = s.user.username || $("username").value;
+    if (!$("username").value) $("username").value = s.user.username || "";
   } else {
     who.textContent = "Signed out";
     setStatus("Not signed in");
@@ -131,11 +118,13 @@ async function logout() {
 
 async function encryptSelected() {
   ok(""); $("err").textContent = "";
-  setStatus("Encrypting…");
+  setStatus("Reading attachments…");
 
   try {
-    // ✅ read attachments first (prevents NotReadableError from popup losing handle)
+    // ✅ MUST be first to avoid NotReadableError
     const attachments = await collectAttachmentsImmediate();
+
+    setStatus("Encrypting…");
 
     const s = await getSession();
     if (!s?.token) {
@@ -145,6 +134,7 @@ async function encryptSelected() {
     }
 
     const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments });
+
     if (!resp?.ok) {
       err(resp?.error || "Encrypt failed");
       setStatus("Error", "bad");
@@ -156,8 +146,12 @@ async function encryptSelected() {
         ? `\nSkipped ${resp.skippedNoKey} users (no public key yet).`
         : "";
 
-    ok(`Link inserted ✅\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
+    const attNote = attachments.length ? `\nAttachments: ${attachments.length}` : "";
+    ok(`Link inserted ✅${attNote}\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
     setStatus("Ready", "good");
+
+    // optional: clear attachments input after encrypt
+    $("attachments").value = "";
   } catch (e) {
     console.error(e);
     err(e?.message || String(e));
@@ -169,7 +163,7 @@ async function openAdmin() {
   const s = await getSession();
   const base = s?.serverBase || normalizeBase($("serverBase").value.trim());
   if (!base) {
-    err("Set Server Base first (your server URL).");
+    err("Set Server Base first.");
     return;
   }
   chrome.tabs.create({ url: `${base}/portal/admin.html` });
