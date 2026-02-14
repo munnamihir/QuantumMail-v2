@@ -4,6 +4,8 @@ import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
+import cors from "cors";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
