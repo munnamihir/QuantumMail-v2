@@ -177,7 +177,8 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   if (!plaintext) throw new Error("Select text in the email body first (compose body).");
 
   // encrypt body (generates rawDek)
-  const { ciphertextB64, ivB64, rawDek } = await aesEncrypt(plaintext);
+  const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, aad);
+
 
   // encrypt attachments with SAME rawDek
   const encAttachments = [];
