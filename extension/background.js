@@ -264,7 +264,13 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
   // decrypt body
   // IMPORTANT: this assumes qm.js aesDecrypt supports rawDek override as 3rd param
   // If your aesDecrypt signature differs, tell me and I’ll adjust.
-  const plaintext = await aesDecrypt(payload.ciphertext, payload.iv, rawDek);
+  const plaintext = await aesDecrypt(
+  payload.iv,
+  payload.ciphertext,
+  payload.aad || "web",
+  rawDek
+);
+
 
   // decrypt attachments
   const outAttachments = [];
