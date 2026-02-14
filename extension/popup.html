@@ -8,31 +8,26 @@
     :root{
       --bg:#0b0f1a;
       --card:#12182a;
-      --card2:#0f1526;
       --text:#e9eefc;
       --muted:#aab4d6;
       --border:rgba(255,255,255,.10);
       --accent:#6ea8fe;
       --good:#2bd576;
       --bad:#ff5c77;
-      --btn:#ffffff;
-      --btnText:#0b0f1a;
     }
     *{box-sizing:border-box}
     body{
       margin:0;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
       width: 360px;
-      background: radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
-                  radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
-                  var(--bg);
+      background:
+        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        var(--bg);
       color:var(--text);
     }
     .wrap{ padding: 14px; }
-    .top{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      margin-bottom: 10px;
-    }
+    .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 10px; }
     .brand{ display:flex; align-items:center; gap:10px; }
     .logo{
       width:34px; height:34px; border-radius:12px;
@@ -42,7 +37,6 @@
     .title{ display:flex; flex-direction:column; line-height: 1.15; }
     .title b{ font-size: 14px; letter-spacing:.2px;}
     .title span{ font-size: 12px; color:var(--muted); }
-
     .pill{
       font-size: 11px;
       padding: 4px 8px;
@@ -50,12 +44,11 @@
       border: 1px solid var(--border);
       background: rgba(255,255,255,.06);
       color: var(--muted);
-      max-width: 120px;
+      max-width: 160px;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
     }
-
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
       border:1px solid var(--border);
@@ -66,13 +59,7 @@
     }
     .row{ display:flex; gap:8px; }
     .row > div{ flex:1; }
-
-    label{
-      display:block;
-      font-size: 11px;
-      color: var(--muted);
-      margin: 8px 0 6px;
-    }
+    label{ display:block; font-size: 11px; color: var(--muted); margin: 8px 0 6px; font-weight: 700; }
     input{
       width:100%;
       padding: 10px 11px;
@@ -83,7 +70,6 @@
       outline:none;
     }
     input::placeholder{ color: rgba(170,180,214,.7); }
-
     .actions{ display:flex; gap:8px; margin-top: 10px; }
     button{
       border-radius: 12px;
@@ -92,7 +78,7 @@
       color: var(--text);
       padding: 10px 12px;
       cursor:pointer;
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: .2px;
     }
     button.primary{
@@ -100,25 +86,11 @@
       border: none;
       color: #07101f;
     }
-    button:hover{ filter: brightness(1.06); }
-
-    .mini{
-      font-size: 11px;
-      color: var(--muted);
-      line-height: 1.4;
-      margin-top: 8px;
-    }
-
+    .mini{ font-size: 11px; color: var(--muted); line-height: 1.4; margin-top: 8px; }
     .statusRow{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top:1px solid rgba(255,255,255,.08);
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      margin-top: 8px; padding-top: 8px; border-top:1px solid rgba(255,255,255,.08);
     }
-    .statusText{ font-size: 12px; color: var(--muted); }
     .dot{
       width:8px; height:8px; border-radius: 999px;
       background: rgba(255,255,255,.25);
@@ -129,10 +101,8 @@
     }
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
-
     .msgOk{ color: var(--good); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
     .msgErr{ color: var(--bad); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
-
     .foot{
       margin-top: 6px;
       font-size: 11px;
@@ -159,7 +129,7 @@
       <div id="who" class="pill">Signed out</div>
     </div>
 
-    <div class="card" id="loginCard">
+    <div class="card">
       <div class="row">
         <div>
           <label>Server Base</label>
@@ -191,11 +161,11 @@
       </div>
 
       <div class="statusRow">
-        <div class="statusText">
+        <div>
           <span id="dot" class="dot"></span>
-          <span id="status">Not signed in</span>
+          <span id="status" style="font-size:12px;color:var(--muted)">Not signed in</span>
         </div>
-        <div class="pill" id="mode">ORG-WIDE</div>
+        <div class="pill">ORG-WIDE</div>
       </div>
 
       <div id="ok" class="msgOk"></div>
@@ -203,7 +173,7 @@
 
       <div class="mini">
         • First login registers your public key for decryption.<br/>
-        • Encrypt does not require recipients. Anyone in your org can decrypt (audited).
+        • Encrypt wraps the same DEK for all org users (audited decrypt).
       </div>
     </div>
 
@@ -211,12 +181,12 @@
       <label style="margin-top:6px;">Attachments (optional)</label>
       <input id="attachments" type="file" multiple />
 
-      <button id="btnEncrypt" class="primary" style="margin-top:8px;">
+      <button id="btnEncrypt" class="primary" style="margin-top:8px; width:100%;">
         Encrypt Selected Text
       </button>
 
       <div class="mini">
-        Select text in Gmail → optionally attach files → click encrypt.
+        Select text in Gmail → optionally attach files → click encrypt.<br/>
         Attachments are encrypted with the same message key.
       </div>
     </div>
