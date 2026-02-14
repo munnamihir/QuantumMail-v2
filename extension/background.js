@@ -159,7 +159,9 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const s = await getSession();
   if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
-  const tabId = await getActiveTabId();
+  const tab = await getActiveTab();
+  const tabId = tab.id;
+  const aad = aadFromTabUrl(tab.url);
 
   // get selection from content script (gmail)
   let sel;
