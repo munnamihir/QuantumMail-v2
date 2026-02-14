@@ -192,6 +192,7 @@ if (location.pathname.startsWith("/m/")) {
 
     const msgId = data.msgId || getMsgIdFromPath();
 
+    // inside your existing "/m/" bridge callback:
     chrome.runtime.sendMessage(
       {
         type: "QM_LOGIN_AND_DECRYPT",
@@ -203,9 +204,21 @@ if (location.pathname.startsWith("/m/")) {
       },
       (resp) => {
         const out = resp?.ok
-          ? { source: "quantummail-extension", type: "QM_DECRYPT_RESULT", ok: true, plaintext: resp.plaintext, attachments: resp.attachments || [] }
-          : { source: "quantummail-extension", type: "QM_DECRYPT_RESULT", ok: false, error: resp?.error || "Decrypt failed" };
-
+          ? {
+              source: "quantummail-extension",
+              type: "QM_DECRYPT_RESULT",
+              ok: true,
+              plaintext: resp.plaintext,
+              attachments: resp.attachments || [],
+              message: "Decrypted ✅ (access audited)"
+            }
+          : {
+              source: "quantummail-extension",
+              type: "QM_DECRYPT_RESULT",
+              ok: false,
+              error: resp?.error || "Decrypt failed"
+            };
+    
         window.postMessage(out, "*");
       }
     );
