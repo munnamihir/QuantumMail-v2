@@ -227,12 +227,12 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
     method: "POST",
     token: s.token,
     body: {
-      iv: ivB64,
-      ciphertext: ciphertextB64,
-      aad: "gmail",
-      wrappedKeys,
-      attachments: encAttachments
-    }
+            iv: ivB64Url,
+            ciphertext: ctB64Url,
+            aad,
+            wrappedKeys,
+            attachments: encAttachments
+          }
   });
 
   const url = msgOut.url;
