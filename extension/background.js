@@ -37,11 +37,12 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
   return data;
 }
 
-async function getActiveTabId() {
+async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab");
-  return tab.id;
+  return tab; 
 }
+
 
 async function sendToTab(tabId, msg) {
   return new Promise((resolve, reject) => {
