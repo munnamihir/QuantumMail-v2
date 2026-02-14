@@ -74,6 +74,7 @@ async function login() {
 
   const out = await api("/auth/login", { method: "POST", body: { orgId, username, password } });
   token = out.token;
+  sessionStorage.setItem("qm_admin_token", token);
   sessionUser = out.user;
   ok("authOk", "Logged in ✅");
   setSessionPill();
@@ -85,6 +86,7 @@ async function login() {
 function logout() {
   token = "";
   sessionUser = null;
+  sessionStorage.removeItem("qm_admin_token");
   ok("authOk", "Logged out."); err("authErr", "");
   setSessionPill();
   const tbody = $("usersTbody");
