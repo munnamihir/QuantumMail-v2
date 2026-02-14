@@ -1,15 +1,7 @@
-// portal/analytics.js
 const $ = (id) => document.getElementById(id);
-let token = "";
-
-function ok(msg){ $("ok").textContent = msg || ""; if (msg) $("err").textContent = ""; }
-function err(msg){ $("err").textContent = msg || ""; if (msg) $("ok").textContent = ""; }
-
-function applyHashDefaults() {
-  const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
-  const orgId = h.get("orgId");
-  if (orgId && $("orgId")) $("orgId").value = orgId;
-}
+let token = sessionStorage.getItem("qm_admin_token") || "";
+let coreChart = null;
+let attChart = null;
 
 async function api(path) {
   const headers = {};
@@ -20,55 +12,81 @@ async function api(path) {
   return data;
 }
 
-async function login() {
-  ok(""); err("");
-  const orgId = String($("orgId").value || "").trim();
-  const username = String($("username").value || "").trim();
-  const password = String($("password").value || "");
-  if (!orgId || !username || !password) throw new Error("Org Id, Username, Password required.");
+function setErr(msg) { $("err").textContent = msg || ""; }
+function escapeHtml(s) {
+  return String(s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
 
-  const res = await fetch("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({ orgId, username, password })
-  });
+function setKpis(c) {
+  $("kEncrypted").textContent = String(c.encryptedMessages ?? "—");
+  $("kDecrypts").textContent = String(c.decrypts ?? "—");
+  $("kDenied").textContent = String(c.deniedDecrypts ?? "—");
+  $("kFailed").textContent = String(c.failedLogins ?? "—");
+}
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Login failed (${res.status})`);
+function renderTopUsers(list) {
+  const tbody = $("tbodyUsers");
+  if (!Array.isArray(list) || !list.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="muted">No data.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map(u => `
+    <tr>
+      <td>${escapeHtml(u.userId)}</td>
+      <td>${escapeHtml(u.encrypts)}</td>
+      <td>${escapeHtml(u.decrypts)}</td>
+      <td>${escapeHtml(u.denied)}</td>
+      <td>${escapeHtml(u.logins)}</td>
+    </tr>
+  `).join("");
+}
 
-  token = data.token;
-  ok(`Logged in ✅ as ${data.user?.username}@${data.user?.orgId}`);
+function drawCore(counts) {
+  const ctx = $("chartCore");
+  const data = {
+    labels: ["Encrypt", "Decrypt", "Denied", "Login Fail"],
+    datasets: [{
+      label: "Count",
+      data: [
+        counts.encryptedMessages || 0,
+        counts.decrypts || 0,
+        counts.deniedDecrypts || 0,
+        counts.failedLogins || 0
+      ]
+    }]
+  };
+
+  if (coreChart) coreChart.destroy();
+  coreChart = new Chart(ctx, { type: "bar", data });
+}
+
+function drawAttachment(series) {
+  const ctx = $("chartAtt");
+  const labels = series.map(x => x.day);
+  const vals = series.map(x => x.attachmentBytes || 0);
+
+  const data = {
+    labels,
+    datasets: [{ label: "Attachment Bytes", data: vals }]
+  };
+
+  if (attChart) attChart.destroy();
+  attChart = new Chart(ctx, { type: "line", data });
 }
 
 async function refresh() {
-  ok(""); err("");
-  if (!token) throw new Error("Login first.");
+  setErr("");
+  if (!token) throw new Error("No admin token. Login on Admin page first.");
 
-  const [usersOut, auditOut, keysOut] = await Promise.all([
-    api("/admin/users"),
-    api("/admin/audit?limit=500"),
-    api("/admin/keys")
-  ]);
+  const days = Math.min(365, Math.max(1, parseInt($("days").value || "30", 10) || 30));
+  const out = await api(`/admin/analytics?days=${encodeURIComponent(days)}`);
 
-  const users = usersOut.users || [];
-  const auditItems = auditOut.items || [];
-  const keys = keysOut || {};
-
-  const totalUsers = users.length;
-  const withKey = users.filter(u => !!u.hasPublicKey).length;
-  const admins = users.filter(u => String(u.role || "").toLowerCase() === "admin").length;
-
-  $("tUsers").textContent = String(totalUsers);
-  $("tKeys").textContent = String(withKey);
-  $("tAdmins").textContent = String(admins);
-  $("tAudit").textContent = String(auditItems.length);
-
-  $("keysDump").textContent = JSON.stringify(keys, null, 2);
-
-  ok("Analytics refreshed ✅");
+  setKpis(out.counts || {});
+  renderTopUsers(out.topUsers || []);
+  drawCore(out.counts || {});
+  drawAttachment(out.attachmentSeries || []);
 }
 
-$("btnLogin")?.addEventListener("click", () => login().catch(e => err(e.message)));
-$("btnRefresh")?.addEventListener("click", () => refresh().catch(e => err(e.message)));
-
-applyHashDefaults();
+$("btnRefresh").addEventListener("click", () => refresh().catch(e => setErr(e.message)));
+refresh().catch(e => setErr(e.message));
