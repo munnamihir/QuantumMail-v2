@@ -11,6 +11,44 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// ---- CORS (Chrome extension + portal) ----
+// Put your extension ID here:
+const EXTENSION_ID = process.env.QM_EXTENSION_ID || "cfofgajelokgkofefofgpllaockghgjg";
+
+// Optional: add any web origins you use (portal, codespaces, etc.)
+const ALLOWED_WEB_ORIGINS = [
+  "https://quantummail-v2.onrender.com",
+  "http://localhost:5173"
+];
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // allow server-to-server, curl, etc.
+
+  // Allow the Chrome extension origin:
+  if (origin === `chrome-extension://${EXTENSION_ID}`) return true;
+
+  // Allow your portal / dev origins:
+  if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
+
+
+  return false;
+}
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (isAllowedOrigin(origin)) return cb(null, true);
+    return cb(new Error(`CORS blocked origin: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
+}));
+
+// IMPORTANT: handle preflight requests
+app.options("*", cors());
+
+
 app.use(express.json({ limit: "25mb" }));
 
 // ----------------------------
