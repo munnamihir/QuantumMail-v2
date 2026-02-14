@@ -4,25 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QuantumMail • Admin</title>
-
   <style>
     :root{
-      --bg:#0b0f1a;
-      --card:#12182a;
-      --text:#e9eefc;
-      --muted:#aab4d6;
-      --border:rgba(255,255,255,.10);
-      --accent:#6ea8fe;
-      --accent2:#2bd576;
-      --good:#2bd576;
-      --bad:#ff5c77;
-      --shadow: 0 18px 60px rgba(0,0,0,.35);
+      --bg:#0b0f1a; --card:#12182a; --text:#e9eefc; --muted:#aab4d6;
+      --border:rgba(255,255,255,.10); --accent:#6ea8fe; --accent2:#2bd576;
+      --good:#2bd576; --bad:#ff5c77; --shadow: 0 18px 60px rgba(0,0,0,.35);
     }
     *{ box-sizing:border-box; }
     body{
-      margin:0;
-      font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      color:var(--text);
+      margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; color:var(--text);
       background:
         radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
         radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
@@ -49,7 +39,7 @@
       color: var(--muted);
       font-size: 12px;
       white-space: nowrap;
-      max-width: 420px;
+      max-width: 520px;
       overflow:hidden; text-overflow: ellipsis;
     }
     .dot{
@@ -59,6 +49,33 @@
     }
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
+
+    .nav{ display:flex; gap:10px; flex-wrap:wrap; }
+    button, a.btn{
+      padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: .2px;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    button.primary{
+      border: none;
+      color: #07101f;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
+    }
+    button.secondary{ background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button.danger{
+      border: none;
+      background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
+      color: #0b0f1a;
+    }
+    button:hover, a.btn:hover{ filter: brightness(1.06); }
 
     .grid{ display:grid; grid-template-columns: 1fr; gap: 12px; }
     @media (min-width: 980px){
@@ -80,7 +97,7 @@
     .row > div{ flex: 1; min-width: 220px; }
     label{
       display:block; font-size: 11px; color: var(--muted);
-      margin: 6px 0 6px; font-weight: 600; letter-spacing: .15px;
+      margin: 6px 0 6px; font-weight: 700; letter-spacing: .15px;
     }
     input{
       width:100%;
@@ -95,29 +112,6 @@
     input:focus{
       border-color: rgba(110,168,254,.60);
       box-shadow: 0 0 0 4px rgba(110,168,254,.12);
-    }
-
-    .actions{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; align-items:center; }
-    button{
-      padding: 10px 12px; border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.06);
-      color: var(--text);
-      cursor: pointer;
-      font-weight: 700;
-      letter-spacing: .2px;
-    }
-    button:hover{ filter: brightness(1.06); }
-    button.primary{
-      border: none;
-      color: #07101f;
-      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
-    }
-    button.secondary{ background: transparent; color: var(--text); border: 1px solid var(--border); }
-    button.danger{
-      border: none;
-      background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
-      color: #0b0f1a;
     }
 
     .ok{ margin-top: 10px; color: var(--good); font-size: 12px; white-space: pre-wrap; }
@@ -147,6 +141,7 @@
       font-size: 13px;
     }
     tbody tr:hover{ background: rgba(255,255,255,.03); }
+
     code{
       background: rgba(255,255,255,.06);
       border: 1px solid rgba(255,255,255,.08);
@@ -163,8 +158,18 @@
       color: var(--muted);
       font-size: 12px;
     }
-    .subtleLine{ margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); }
-    .footerNote{ margin-top: 14px; font-size: 11px; color: rgba(170,180,214,.85); }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 2px 8px;
+      border-radius:999px;
+      font-size: 11px;
+      font-weight: 900;
+      background: rgba(255,92,119,.18);
+      border: 1px solid rgba(255,92,119,.35);
+      color: #ffb3c0;
+    }
   </style>
 </head>
 
@@ -175,7 +180,7 @@
         <div class="logo"></div>
         <div>
           <h1>QuantumMail • Admin</h1>
-          <p>Manage org users, keys, access — clean, fast, auditable.</p>
+          <p>Users, keys, access, audit, analytics — enterprise-ready.</p>
         </div>
       </div>
 
@@ -185,9 +190,11 @@
           <span id="who">Not logged in</span>
         </div>
 
-        <div class="actions" style="margin-top:0;">
-          <button id="btnOpenAudit" class="secondary">Audit Logs</button>
-          <button id="btnOpenAnalytics" class="secondary">Analytics</button>
+        <div class="nav">
+          <a class="btn" href="/portal/audit.html" id="navAudit">Audit Logs</a>
+          <a class="btn" href="/portal/analytics.html" id="navAnalytics">Analytics</a>
+          <a class="btn" href="/portal/policies.html" id="navPolicies">Policies</a>
+          <a class="btn" href="/portal/alerts.html" id="navAlerts">Alerts <span id="alertBadge" class="badge" style="display:none;">0</span></a>
         </div>
       </div>
     </div>
@@ -196,9 +203,7 @@
       <!-- Create Admin -->
       <div class="card">
         <h3>1) Create Admin</h3>
-        <div class="muted">
-          First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.
-        </div>
+        <div class="muted">First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.</div>
 
         <div class="row">
           <div>
@@ -215,24 +220,20 @@
           </div>
         </div>
 
-        <div class="actions">
-          <button id="btnCreateAdmin" class="primary">Create Admin</button>
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;">
+            <button id="btnCreateAdmin" class="primary">Create Admin</button>
+          </div>
         </div>
 
         <div id="seedOk" class="ok"></div>
         <div id="seedErr" class="err"></div>
-
-        <div class="footerNote subtleLine">
-          Tip: After creating admin, login below to manage users + keys.
-        </div>
       </div>
 
       <!-- Login -->
       <div class="card">
         <h3>2) Login</h3>
-        <div class="muted">
-          Logs in via <code>/auth/login</code> and keeps token in memory (not saved to disk).
-        </div>
+        <div class="muted">Logs in via <code>/auth/login</code>. Token is kept in memory (not stored in localStorage).</div>
 
         <div class="row">
           <div>
@@ -249,26 +250,24 @@
           </div>
         </div>
 
-        <div class="actions">
-          <button id="btnLogin" class="primary">Login</button>
-          <button id="btnLogout" class="secondary">Logout</button>
-          <span class="kbadge"><span class="dot"></span> Token held in memory</span>
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;">
+            <button id="btnLogin" class="primary">Login</button>
+          </div>
+          <div style="flex:0 0 auto;">
+            <button id="btnLogout" class="secondary">Logout</button>
+          </div>
+          <div class="kbadge"><span class="dot"></span> Token in memory</div>
         </div>
 
         <div id="authOk" class="ok"></div>
         <div id="authErr" class="err"></div>
-
-        <div class="footerNote subtleLine">
-          Make sure this page is served from the same base as your API.
-        </div>
       </div>
 
       <!-- Users -->
       <div class="card span2">
-        <h3>3) Users</h3>
-        <div class="muted">
-          Create users, refresh list, remove users, and clear public keys (forces re-register on next login).
-        </div>
+        <h3>3) Users & Key Health</h3>
+        <div class="muted">Create users, refresh list, remove users, and clear public keys (forces re-register on next login).</div>
 
         <div class="row">
           <div>
@@ -285,10 +284,10 @@
           </div>
         </div>
 
-        <div class="actions">
-          <button id="btnCreateUser" class="primary">Create User</button>
-          <button id="btnRefreshUsers" class="secondary">Refresh</button>
-          <span class="kbadge">Actions are audited server-side</span>
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;"><button id="btnCreateUser" class="primary">Create User</button></div>
+          <div style="flex:0 0 auto;"><button id="btnRefreshUsers" class="secondary">Refresh</button></div>
+          <div class="kbadge">All actions are audited</div>
         </div>
 
         <div id="usersOk" class="ok"></div>
@@ -298,26 +297,23 @@
           <table>
             <thead>
               <tr>
-                <th style="width:34%;">User</th>
-                <th style="width:12%;">Role</th>
-                <th style="width:14%;">Status</th>
-                <th style="width:12%;">Key</th>
+                <th style="width:28%;">User</th>
+                <th style="width:10%;">Role</th>
+                <th style="width:12%;">Status</th>
+                <th style="width:16%;">Key Health</th>
+                <th style="width:16%;">Last Login</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTbody">
-              <tr><td colspan="5" class="muted">Login to load users…</td></tr>
+              <tr><td colspan="6" class="muted">Login to load users…</td></tr>
             </tbody>
           </table>
-        </div>
-
-        <div class="footerNote">
-          Recommended policy: don’t delete your own admin account; rotate KEKs periodically.
         </div>
       </div>
     </div>
 
-    <script type="module" src="./admin.js"></script>
+    <script type="module" src="/portal/admin.js"></script>
   </div>
 </body>
 </html>
