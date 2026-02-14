@@ -10,7 +10,7 @@ import {
   rsaWrapDek,
   b64UrlToBytes,
   getOrCreateRsaKeypair
-} from "./qm.js";
+} from "qm.js";
 
 /**
  * NOTE:
