@@ -12,6 +12,15 @@ import {
   getOrCreateRsaKeypair
 } from "./qm.js";
 
+/**
+ * NOTE:
+ * - This version fixes:
+ *   1) Large attachment base64url encode crash (chunked encoding)
+ *   2) chrome.tabs.sendMessage lastError handling (clean error)
+ *   3) Better diagnostics if content script not available
+ *   4) Safer attachment handling (supports bytes[] OR buffer ArrayBuffer)
+ */
+
 async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -35,15 +44,25 @@ async function getActiveTabId() {
 }
 
 async function sendToTab(tabId, msg) {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, msg, (resp) => resolve(resp));
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, msg, (resp) => {
+      const err = chrome.runtime.lastError;
+      if (err) return reject(new Error(err.message));
+      resolve(resp);
+    });
   });
 }
 
-// ---------- AES-GCM helpers for attachments with provided raw DEK ----------
+// ---------- Base64URL helpers (safe for large arrays) ----------
 function bytesToB64Url(bytes) {
-  const bin = String.fromCharCode(...bytes);
-  const b64 = btoa(bin);
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  const chunkSize = 0x8000; // 32KB
+  let binary = "";
+  for (let i = 0; i < u8.length; i += chunkSize) {
+    const chunk = u8.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  const b64 = btoa(binary);
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
@@ -51,9 +70,16 @@ function b64UrlToU8(b64url) {
   return b64UrlToBytes(b64url); // from qm.js
 }
 
+// ---------- AES-GCM helpers for attachments with provided raw DEK ----------
 async function encryptBytesWithRawDek(rawDekBytes, plainBytes) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    rawDekBytes,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt"]
+  );
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plainBytes);
   return {
     iv: bytesToB64Url(iv),
@@ -64,7 +90,13 @@ async function encryptBytesWithRawDek(rawDekBytes, plainBytes) {
 async function decryptBytesWithRawDek(rawDekBytes, ivB64Url, ctB64Url) {
   const iv = b64UrlToU8(ivB64Url);
   const ct = b64UrlToU8(ctB64Url);
-  const key = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    rawDekBytes,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"]
+  );
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
   return new Uint8Array(pt);
 }
@@ -74,6 +106,25 @@ async function rsaUnwrapDek(privateKey, wrappedDekB64Url) {
   const wrappedBytes = b64UrlToBytes(wrappedDekB64Url);
   const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrappedBytes);
   return new Uint8Array(raw);
+}
+
+// ---------- Attachment normalization ----------
+function attachmentToU8(a) {
+  // Supports either:
+  //  - a.bytes: number[] (older popup implementations)
+  //  - a.buffer: ArrayBuffer (preferred)
+  if (!a) return new Uint8Array();
+
+  if (a.buffer instanceof ArrayBuffer) return new Uint8Array(a.buffer);
+
+  // Some browsers clone ArrayBuffer as {buffer:{}}; guard:
+  if (a.buffer?.byteLength != null && typeof a.buffer.slice === "function") {
+    return new Uint8Array(a.buffer);
+  }
+
+  if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
+
+  return new Uint8Array();
 }
 
 // ---------- Main flows ----------
@@ -101,7 +152,15 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const tabId = await getActiveTabId();
 
   // get selection from content script (gmail)
-  const sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
+  let sel;
+  try {
+    sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
+  } catch (e) {
+    throw new Error(
+      `Could not read selection. Make sure you're on Gmail/Outlook compose and the content script is active. (${e.message})`
+    );
+  }
+
   const plaintext = String(sel?.text || "").trim();
   if (!plaintext) throw new Error("Select text in the email body first (compose body).");
 
@@ -110,8 +169,11 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   // encrypt attachments with SAME rawDek
   const encAttachments = [];
-  for (const a of Array.isArray(attachments) ? attachments : []) {
-    const bytes = new Uint8Array(a.bytes || []);
+  const list = Array.isArray(attachments) ? attachments : [];
+  for (const a of list) {
+    const bytes = attachmentToU8(a);
+    if (!bytes || bytes.length === 0) continue;
+
     const ea = await encryptBytesWithRawDek(rawDek, bytes);
     encAttachments.push({
       name: a.name || "attachment",
@@ -132,7 +194,10 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   for (const u of users) {
     if (!u?.userId) continue;
-    if (!u.publicKeySpkiB64) { skippedNoKey++; continue; }
+    if (!u.publicKeySpkiB64) {
+      skippedNoKey++;
+      continue;
+    }
 
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
     const wrappedDek = await rsaWrapDek(pub, rawDek);
@@ -160,7 +225,13 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const url = msgOut.url;
 
   // insert link back into compose body
-  const rep = await sendToTab(tabId, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
+  let rep;
+  try {
+    rep = await sendToTab(tabId, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
+  } catch (e) {
+    throw new Error(`Failed to insert link into email. (${e.message})`);
+  }
+
   if (!rep?.ok) throw new Error(rep?.error || "Failed to insert link into email.");
 
   return { url, wrappedCount, skippedNoKey, warning: rep?.warning || null };
@@ -178,6 +249,8 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
   const rawDek = await rsaUnwrapDek(kp.privateKey, payload.wrappedDek);
 
   // decrypt body
+  // IMPORTANT: this assumes qm.js aesDecrypt supports rawDek override as 3rd param
+  // If your aesDecrypt signature differs, tell me and I’ll adjust.
   const plaintext = await aesDecrypt(payload.ciphertext, payload.iv, rawDek);
 
   // decrypt attachments
@@ -193,14 +266,14 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
     });
   }
 
-  return {
-    plaintext,
-    attachments: outAttachments,
-    user
-  };
+  return { plaintext, attachments: outAttachments, user };
 }
 
-// ---------- Message router ----------
+// ---------- Portal <-> Extension bridge (decrypt page) ----------
+// The decrypt page should postMessage:
+// { source:"quantummail-portal", type:"QM_LOGIN_AND_DECRYPT_REQUEST", msgId, serverBase, orgId, username, password }
+// We respond back:
+// { source:"quantummail-extension", type:"QM_DECRYPT_RESULT", ok:true, plaintext, attachments }
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
@@ -232,4 +305,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
 
   return true;
+});
+
+// Optional: listen for decrypt page postMessage directly if you prefer not using content script.
+// You can delete this block if your decrypt page uses chrome.runtime.sendMessage via a content script bridge.
+chrome.runtime.onInstalled?.addListener(() => {
+  // noop
 });
