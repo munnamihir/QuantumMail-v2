@@ -404,6 +404,26 @@ app.post("/dev/seed-admin", (req, res) => {
 });
 
 // ----------------------------
+// AUTH: current user info
+// GET /auth/me
+// ----------------------------
+app.get("/auth/me", requireAuth, (req, res) => {
+  const { user } = req.qm;
+  res.json({
+    ok: true,
+    user: {
+      userId: user.userId,
+      orgId: req.qm.tokenPayload.orgId,
+      username: user.username,
+      role: user.role,
+      status: user.status || "Active"
+    }
+  });
+});
+
+
+
+// ----------------------------
 // AUTH: signup (Individual vs OrgType)
 // POST /auth/signup
 // body:
