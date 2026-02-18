@@ -47,19 +47,6 @@ async function initRoleUI() {
 initRoleUI();
 
 
-async function api(path, { method="GET", body=null } = {}) {
-  const token = getToken();
-  if (!token) throw new Error("Not logged in.");
-
-  const headers = { Authorization: `Bearer ${token}` };
-  if (body) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-  return data;
-}
-
 function fmt(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
