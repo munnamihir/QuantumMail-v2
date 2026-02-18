@@ -9,8 +9,6 @@ function getUser() {
   catch { return null; }
 }
 
-const $ = (id) => document.getElementById(id);
-
 async function api(path, { method="GET", body=null } = {}) {
   const token = sessionStorage.getItem("qm_token") || "";
   if (!token) throw new Error("Not logged in.");
