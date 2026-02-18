@@ -47,7 +47,19 @@
             <div class="help">Minimum 8 characters.</div>
             <input id="suPassword" type="password"/>
           </div>
+        
+          <div>
+            <label for="suRole">Role</label>
+            <div class="help">
+              Admin can manage users and policies. Only allowed if this is the first account in the organization.
+            </div>
+            <select id="suRole">
+              <option value="Member">Member</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
         </div>
+
 
         <div class="actions">
           <button id="btnSignup" class="primary" type="button">Create account</button>
