@@ -14,7 +14,6 @@ function debounce(fn, ms = 350) {
 function setFieldState(inputEl, msgEl, state, msg) {
   if (!inputEl || !msgEl) return;
   msgEl.textContent = msg || "";
-
   inputEl.classList.remove("goodField", "badField");
   if (state === "good") inputEl.classList.add("goodField");
   if (state === "bad") inputEl.classList.add("badField");
@@ -27,16 +26,6 @@ async function apiPublic(path) {
   return data;
 }
 
-
-function setTab(which) {
-  const isSignup = which === "signup";
-  $("tabSignup").classList.toggle("active", isSignup);
-  $("tabLogin").classList.toggle("active", !isSignup);
-  $("signupPanel").style.display = isSignup ? "" : "none";
-  $("loginPanel").style.display = isSignup ? "none" : "";
-  ok("suOk",""); err("suErr",""); ok("liOk",""); err("liErr","");
-}
-
 async function api(path, { method="GET", body=null, token="" } = {}) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
@@ -47,7 +36,34 @@ async function api(path, { method="GET", body=null, token="" } = {}) {
   return data;
 }
 
-// -------- Signup UI logic --------
+// ---------------- Tabs ----------------
+function setTab(which) {
+  const isSignup = which === "signup";
+  $("tabSignup").classList.toggle("active", isSignup);
+  $("tabLogin").classList.toggle("active", !isSignup);
+  $("signupPanel").style.display = isSignup ? "" : "none";
+  $("loginPanel").style.display = isSignup ? "none" : "";
+  ok("suOk",""); err("suErr",""); ok("liOk",""); err("liErr","");
+}
+
+// ---------------- Signup UI logic ----------------
+function updateSummary() {
+  const signupType = $("suSignupType")?.value;
+  const indivMode = $("suIndividualMode")?.value;
+  const wantAdmin = String($("suWantAdmin")?.value || "true") === "true";
+
+  let text = "—";
+  if (signupType === "Individual") {
+    if (indivMode === "create") text = wantAdmin ? "Creates a new org + you become Admin (also Inbox)." : "Creates a new org + you become Member.";
+    else text = "Joins an existing org by Org ID.";
+  } else {
+    text = "Joins an existing org using Org ID + one-time join code.";
+  }
+
+  const el = $("suSummary");
+  if (el) el.textContent = text;
+}
+
 function computeSignupUI() {
   const signupType = $("suSignupType")?.value;
   const indivMode = $("suIndividualMode")?.value;
@@ -61,35 +77,113 @@ function computeSignupUI() {
   if (setupRedirect) setupRedirect.style.display = "none";
 
   if (signupType === "Individual") {
-    indivModeWrap.style.display = "";
-    wantAdminRow.style.display = "";
-    inviteWrap.style.display = "none";
+    if (indivModeWrap) indivModeWrap.style.display = "";
+    if (wantAdminRow) wantAdminRow.style.display = "";
+    if (inviteWrap) inviteWrap.style.display = "none";
 
-    if (indivMode === "create") {
-      orgRow.style.display = "none";
-    } else {
-      orgRow.style.display = "";
-    }
-    return;
+    if (orgRow) orgRow.style.display = (indivMode === "join") ? "" : "none";
+  } else {
+    // OrgType
+    if (indivModeWrap) indivModeWrap.style.display = "none";
+    if (wantAdminRow) wantAdminRow.style.display = "none";
+    if (orgRow) orgRow.style.display = "";
+    if (inviteWrap) inviteWrap.style.display = "";
+
+    if (setupRedirect) setupRedirect.style.display = "";
   }
 
-  // OrgType
-  indivModeWrap.style.display = "none";
-  wantAdminRow.style.display = "none";
-  orgRow.style.display = "";
-  inviteWrap.style.display = "";
-
-  // show redirect option
-  if (setupRedirect) setupRedirect.style.display = "";
+  updateSummary();
 }
 
 function wireSignupUI() {
-  $("suSignupType")?.addEventListener("change", computeSignupUI);
-  $("suIndividualMode")?.addEventListener("change", computeSignupUI);
+  $("suSignupType")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
+  $("suIndividualMode")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
+  $("suWantAdmin")?.addEventListener("change", updateSummary);
   computeSignupUI();
 }
 
-// -------- Signup submit --------
+// ---------------- Live checks (signup) ----------------
+const checkOrgIdLive = debounce(async () => {
+  const orgRowVisible = $("suOrgRow")?.style.display !== "none";
+  if (!orgRowVisible) {
+    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
+    return;
+  }
+
+  const orgId = String($("suOrgId")?.value || "").trim();
+  const signupType = String($("suSignupType")?.value || "Individual");
+  const indivMode = String($("suIndividualMode")?.value || "create");
+
+  if (!orgId) {
+    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
+    return;
+  }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+
+    if (signupType === "OrgType") {
+      if (!out.exists) {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found. Click “Initialize Organization as Admin”.");
+      } else if (!out.initialized) {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org exists but not initialized. Initialize as Admin first.");
+      } else {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
+      }
+      return;
+    }
+
+    // Individual join
+    if (indivMode === "join") {
+      if (!out.exists) setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found.");
+      else if (!out.initialized) setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not initialized yet.");
+      else setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
+      return;
+    }
+
+    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
+  } catch (e) {
+    setFieldState($("suOrgId"), $("suOrgStatus"), "bad", e.message || "Org check failed");
+  }
+}, 400);
+
+const checkUsernameLive = debounce(async () => {
+  const signupType = String($("suSignupType")?.value || "Individual");
+  const indivMode = String($("suIndividualMode")?.value || "create");
+
+  const username = String($("suUsername")?.value || "").trim();
+  const orgId = String($("suOrgId")?.value || "").trim();
+
+  if (!username) {
+    setFieldState($("suUsername"), $("suUserStatus"), null, "");
+    return;
+  }
+
+  // Individual create => orgId generated server-side, can’t pre-check
+  if (signupType === "Individual" && indivMode === "create") {
+    setFieldState($("suUsername"), $("suUserStatus"), null, "Username will be validated when org is created.");
+    return;
+  }
+
+  if (!orgId) {
+    setFieldState($("suUsername"), $("suUserStatus"), null, "");
+    return;
+  }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) {
+      setFieldState($("suUsername"), $("suUserStatus"), "bad", "Org not found.");
+      return;
+    }
+    if (out.available) setFieldState($("suUsername"), $("suUserStatus"), "good", "Username is available ✅");
+    else setFieldState($("suUsername"), $("suUserStatus"), "bad", "Username already taken.");
+  } catch (e) {
+    setFieldState($("suUsername"), $("suUserStatus"), "bad", e.message || "Username check failed");
+  }
+}, 400);
+
+// ---------------- Signup submit ----------------
 async function signup() {
   ok("suOk",""); err("suErr","");
 
@@ -102,15 +196,9 @@ async function signup() {
   const inviteCode = String($("suInviteCode")?.value || "").trim();
   const wantAdmin = String($("suWantAdmin")?.value || "true") === "true";
 
-  if (!username || !password) {
-    err("suErr","Username and Password are required.");
-    return;
-  }
+  if (!username || !password) { err("suErr","Username and Password are required."); return; }
+  if (password.length < 8) { err("suErr","Password must be at least 8 characters."); return; }
 
-  // Build body according to your new backend contract:
-  // POST /auth/signup
-  // Individual: orgId optional (create generates), wantAdmin for create; join uses orgId
-  // OrgType: orgId + inviteCode required
   const body = { signupType, username, password };
 
   if (signupType === "Individual") {
@@ -119,12 +207,9 @@ async function signup() {
       body.orgId = orgId;
       body.wantAdmin = false;
     } else {
-      // create new
-      body.wantAdmin = wantAdmin; // usually true
-      // do not send orgId (server generates). If you want allow custom orgId, you can send it optionally.
+      body.wantAdmin = wantAdmin; // server generates orgId
     }
   } else {
-    // OrgType
     if (!orgId) { err("suErr","Org ID is required for OrgType signup."); return; }
     if (!inviteCode) { err("suErr","One-time join code is required for OrgType signup."); return; }
     body.orgId = orgId;
@@ -133,160 +218,90 @@ async function signup() {
 
   const out = await api("/auth/signup", { method:"POST", body });
 
-  // If server generated orgId, show it beautifully
-  const createdOrg = out.orgId ? `\nYour Org ID: ${out.orgId}\n(Share this to let others join.)` : "";
+  const createdOrg = out.orgId ? `\nYour Org ID: ${out.orgId}` : "";
   ok("suOk", `Account created ✅ Role: ${out.role || "Member"}${createdOrg}\nNow login.`);
 
   setTab("login");
-
-  // pre-fill login
-  if (out.orgId) $("liOrgId").value = out.orgId;
-  else if (orgId) $("liOrgId").value = orgId;
-
+  $("liOrgId").value = out.orgId || orgId || "";
   $("liUsername").value = username;
   $("liPassword").value = "";
 }
 
-// -------- Login submit --------
+// ---------------- Login live checks ----------------
+const checkLoginOrgLive = debounce(async () => {
+  const orgId = String($("liOrgId")?.value || "").trim();
+  if (!orgId) { setFieldState($("liOrgId"), $("liOrgStatus"), null, ""); return; }
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    if (!out.exists) setFieldState($("liOrgId"), $("liOrgStatus"), "bad", "Org not found.");
+    else if (!out.initialized) setFieldState($("liOrgId"), $("liOrgStatus"), "bad", "Org not initialized.");
+    else setFieldState($("liOrgId"), $("liOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
+  } catch (e) {
+    setFieldState($("liOrgId"), $("liOrgStatus"), "bad", e.message || "Org check failed");
+  }
+}, 400);
+
+const checkLoginUserLive = debounce(async () => {
+  const orgId = String($("liOrgId")?.value || "").trim();
+  const username = String($("liUsername")?.value || "").trim();
+  if (!orgId || !username) { setFieldState($("liUsername"), $("liUserStatus"), null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) { setFieldState($("liUsername"), $("liUserStatus"), "bad", "Org not found."); return; }
+    // login: if available=true => username not used
+    if (out.available) setFieldState($("liUsername"), $("liUserStatus"), "bad", "User not found.");
+    else setFieldState($("liUsername"), $("liUserStatus"), "good", "User exists ✅");
+  } catch (e) {
+    setFieldState($("liUsername"), $("liUserStatus"), "bad", e.message || "User check failed");
+  }
+}, 400);
+
+// ---------------- Login submit ----------------
 async function login() {
   ok("liOk",""); err("liErr","");
 
-  const orgId = String($("liOrgId").value || "").trim();
-  const username = String($("liUsername").value || "").trim();
-  const password = String($("liPassword").value || "");
+  const orgId = String($("liOrgId")?.value || "").trim();
+  const username = String($("liUsername")?.value || "").trim();
+  const password = String($("liPassword")?.value || "");
 
-  if (!orgId || !username || !password) {
-    err("liErr","Org ID, Username, and Password are required.");
-    return;
-  }
+  if (!orgId || !username || !password) { err("liErr","Org ID, Username, and Password are required."); return; }
 
   const out = await api("/auth/login", { method:"POST", body:{ orgId, username, password } });
 
   sessionStorage.setItem("qm_token", out.token);
   sessionStorage.setItem("qm_user", JSON.stringify(out.user));
 
-  // ALSO store admin token for admin pages so you don't have two logins
-  // (Admin pages currently read qm_admin_token)
+  // Let admin pages use same token (no separate login)
   if (out.user?.role === "Admin") {
     sessionStorage.setItem("qm_admin_token", out.token);
+  } else {
+    sessionStorage.removeItem("qm_admin_token");
   }
 
   ok("liOk","Logged in ✅ Redirecting…");
 
-  // ✅ Admin should also see Inbox (no duplicate account)
-  // Admin can still go to /portal/admin.html from Inbox header/nav.
+  // Always go Inbox; admin can open dashboard from inbox nav.
   window.location.href = "/portal/inbox.html";
 }
 
-  const checkOrgIdLive = debounce(async () => {
-  const orgId = String($("suOrgId")?.value || "").trim();
-  const signupType = String($("suSignupType")?.value || "Individual");
-  const indivMode = String($("suIndividualMode")?.value || "create");
+// ---------------- Wiring ----------------
+$("tabSignup")?.addEventListener("click", () => setTab("signup"));
+$("tabLogin")?.addEventListener("click", () => setTab("login"));
 
-  // if orgId field not shown, clear state
-  if ($("suOrgRow")?.style.display === "none") {
-    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
-    return;
-  }
+$("btnSignup")?.addEventListener("click", () => signup().catch(e => err("suErr", e.message)));
+$("btnLogin")?.addEventListener("click", () => login().catch(e => err("liErr", e.message)));
 
-  if (!orgId) {
-    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
-    return;
-  }
-
-  try {
-    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-
-    if (signupType === "OrgType") {
-      // OrgType must join existing org
-      if (!out.exists) {
-        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found. Click “Initialize Organization as Admin”.");
-      } else if (!out.initialized) {
-        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org exists but not initialized. Initialize as Admin first.");
-      } else {
-        setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
-      }
-      return;
-    }
-
-    // Individual join existing org:
-    if (indivMode === "join") {
-      if (!out.exists) {
-        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found.");
-      } else {
-        setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
-      }
-      return;
-    }
-
-    // Individual create mode doesn't require orgId; if they typed one manually we can warn if taken:
-    if (out.exists) {
-      setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "This Org ID already exists. Pick another or switch to Join.");
-    } else {
-      setFieldState($("suOrgId"), $("suOrgStatus"), "good", "Org ID is available ✅");
-    }
-  } catch (e) {
-    setFieldState($("suOrgId"), $("suOrgStatus"), "bad", e.message || "Org check failed");
-  }
-}, 400);
-
-const checkUsernameLive = debounce(async () => {
-  const orgId = String($("suOrgId")?.value || "").trim();
-  const username = String($("suUsername")?.value || "").trim();
-  const signupType = String($("suSignupType")?.value || "Individual");
-  const indivMode = String($("suIndividualMode")?.value || "create");
-
-  // For Individual create mode, orgId is generated server-side → cannot pre-check username uniqueness
-  if (signupType === "Individual" && indivMode === "create") {
-    setFieldState($("suUsername"), $("suUserStatus"), null, "Username will be checked after org is created.");
-    return;
-  }
-
-  if (!orgId || !username) {
-    setFieldState($("suUsername"), $("suUserStatus"), null, "");
-    return;
-  }
-
-  try {
-    const out = await apiPublic(
-      `/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`
-    );
-
-    if (!out.orgExists) {
-      setFieldState($("suUsername"), $("suUserStatus"), "bad", "Org not found yet.");
-      return;
-    }
-
-    if (out.available) {
-      setFieldState($("suUsername"), $("suUserStatus"), "good", "Username is available ✅");
-    } else {
-      setFieldState($("suUsername"), $("suUserStatus"), "bad", "Username is already taken.");
-    }
-  } catch (e) {
-    setFieldState($("suUsername"), $("suUserStatus"), "bad", e.message || "Username check failed");
-  }
-}, 400);
-
-
-$("tabSignup").addEventListener("click", () => setTab("signup"));
-$("tabLogin").addEventListener("click", () => setTab("login"));
-$("btnSignup").addEventListener("click", () => signup().catch(e => err("suErr", e.message)));
-$("btnLogin").addEventListener("click", () => login().catch(e => err("liErr", e.message)));
 $("btnGoAdminSetup")?.addEventListener("click", () => {
   const orgId = $("suOrgId")?.value?.trim();
-  if (orgId) {
-    // Pass orgId in query so admin page can pre-fill
-    window.location.href = `/portal/admin.html?orgId=${encodeURIComponent(orgId)}`;
-  } else {
-    window.location.href = "/portal/admin.html";
-  }
+  window.location.href = orgId ? `/portal/admin.html?orgId=${encodeURIComponent(orgId)}` : "/portal/admin.html";
 });
+
 $("suOrgId")?.addEventListener("input", () => { checkOrgIdLive(); checkUsernameLive(); });
 $("suUsername")?.addEventListener("input", () => checkUsernameLive());
 
-// Also re-run checks when signup type/mode changes (because required fields change)
-$("suSignupType")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
-$("suIndividualMode")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
-
+$("liOrgId")?.addEventListener("input", () => { checkLoginOrgLive(); checkLoginUserLive(); });
+$("liUsername")?.addEventListener("input", () => checkLoginUserLive());
 
 wireSignupUI();
+checkLoginOrgLive();
