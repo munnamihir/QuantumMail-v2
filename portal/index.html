@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>QuantumMail</title>
+  <link rel="stylesheet" href="/portal/ui.css"/>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>QuantumMail</h1>
+          <p class="muted">Envelope encryption for email — store encrypted, decrypt only with your key.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="tabs">
+        <button id="tabSignup" class="tab active" type="button">Create account</button>
+        <button id="tabLogin" class="tab" type="button">Login</button>
+      </div>
+
+      <section id="signupPanel">
+        <h2>Create your account</h2>
+        <p class="muted">You’ll join an organization using an Org ID.</p>
+
+        <div class="row">
+          <div>
+            <label for="suOrgId">Org ID</label>
+            <div class="help">Ask your admin for the Org ID (example: org_demo).</div>
+            <input id="suOrgId"/>
+          </div>
+          <div>
+            <label for="suUsername">Username</label>
+            <div class="help">Pick a unique username in your org.</div>
+            <input id="suUsername"/>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="suPassword">Password</label>
+            <div class="help">Minimum 8 characters.</div>
+            <input id="suPassword" type="password"/>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnSignup" class="primary" type="button">Create account</button>
+        </div>
+
+        <div id="suOk" class="ok"></div>
+        <div id="suErr" class="err"></div>
+      </section>
+
+      <section id="loginPanel" style="display:none;">
+        <h2>Login</h2>
+        <p class="muted">After login, you’ll see encrypted messages available for you.</p>
+
+        <div class="row">
+          <div>
+            <label for="liOrgId">Org ID</label>
+            <div class="help">Your organization identifier.</div>
+            <input id="liOrgId"/>
+          </div>
+          <div>
+            <label for="liUsername">Username</label>
+            <div class="help">The username in your org.</div>
+            <input id="liUsername"/>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="liPassword">Password</label>
+            <div class="help">Your account password.</div>
+            <input id="liPassword" type="password"/>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnLogin" class="primary" type="button">Login</button>
+        </div>
+
+        <div id="liOk" class="ok"></div>
+        <div id="liErr" class="err"></div>
+      </section>
+    </main>
+
+    <footer class="foot muted">© 2026 QuantumMail</footer>
+  </div>
+
+  <script type="module" src="/portal/index.js"></script>
+</body>
+</html>
