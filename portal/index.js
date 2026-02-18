@@ -3,6 +3,31 @@ const $ = (id) => document.getElementById(id);
 function ok(id, msg) { const el=$(id); if (el) el.textContent = msg||""; }
 function err(id, msg) { const el=$(id); if (el) el.textContent = msg||""; }
 
+function debounce(fn, ms = 350) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function setFieldState(inputEl, msgEl, state, msg) {
+  if (!inputEl || !msgEl) return;
+  msgEl.textContent = msg || "";
+
+  inputEl.classList.remove("goodField", "badField");
+  if (state === "good") inputEl.classList.add("goodField");
+  if (state === "bad") inputEl.classList.add("badField");
+}
+
+async function apiPublic(path) {
+  const res = await fetch(path);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+
 function setTab(which) {
   const isSignup = which === "signup";
   $("tabSignup").classList.toggle("active", isSignup);
