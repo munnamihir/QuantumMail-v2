@@ -228,6 +228,16 @@ async function refreshAlertsBadge() {
   }
 }
 
+async function checkOrgInitialization() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const orgIdFromQuery = urlParams.get("orgId");
+  if (orgIdFromQuery) {
+    $("seedOrgId").value = orgIdFromQuery;
+    $("orgId").value = orgIdFromQuery;
+  }
+}
+
+
 async function changeMyPassword() {
   ok("pwOk", ""); err("pwErr", "");
   if (!token) { err("pwErr", "Login required."); return; }
@@ -277,4 +287,5 @@ $("btnLogoutProfile")?.addEventListener("click", () => {
   logout();
 });
 
+checkOrgInitialization();
 setSessionPill();
