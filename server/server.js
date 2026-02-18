@@ -163,7 +163,8 @@ function getOrg(orgId) {
       audit: [],
       messages: {},
       keyring: null,
-      policies: defaultPolicies()
+      policies: defaultPolicies(),
+      invites: {}
     };
   }
 
@@ -177,6 +178,58 @@ function getOrg(orgId) {
   saveData();
   return org;
 }
+
+function genInviteCode() {
+  const n = crypto.randomInt(0, 1000000);
+  const s = String(n).padStart(6, "0");
+  return `${s.slice(0,3)}-${s.slice(3)}`; // e.g., 493-118
+}
+
+// ----------------------------
+// ADMIN: generate one-time invite code
+// POST /admin/invites/generate { role?: "Member"|"Admin", expiresMinutes?: number }
+// ----------------------------
+app.post("/admin/invites/generate", requireAuth, requireAdmin, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { org, user: admin } = req.qm;
+
+  const role = String(req.body?.role || "Member") === "Admin" ? "Admin" : "Member";
+  const expiresMinutes = Math.min(Math.max(parseInt(req.body?.expiresMinutes || "60", 10) || 60, 5), 7 * 24 * 60);
+
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = genInviteCode();
+    if (!org.invites[code]) break;
+  }
+  if (!code || org.invites[code]) return res.status(500).json({ error: "Could not generate code" });
+
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+
+  org.invites[code] = {
+    code,
+    role,
+    createdAt,
+    expiresAt,
+    createdByUserId: admin.userId,
+    usedAt: null,
+    usedByUserId: null
+  };
+
+  audit(req, orgId, admin.userId, "invite_generate", { code, role, expiresAt });
+  saveData();
+
+  res.json({ ok: true, code, role, expiresAt });
+});
+
+app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
+  const { org } = req.qm;
+  const items = Object.values(org.invites || {})
+    .sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 50);
+  res.json({ items });
+});
+
 
 // ----------------------------
 // Audit log
@@ -351,56 +404,107 @@ app.post("/dev/seed-admin", (req, res) => {
 });
 
 // ----------------------------
-// AUTH: signup with role
-// POST /auth/signup { orgId, username, password, role }
+// AUTH: signup (Individual vs OrgType)
+// POST /auth/signup
+// body:
+// {
+//   signupType: "Individual" | "OrgType",
+//   orgId?: string,          // required for OrgType; optional for Individual join
+//   username, password,
+//   wantAdmin?: boolean,     // only for Individual creating new org
+//   inviteCode?: string      // required for OrgType
+// }
 // ----------------------------
 app.post("/auth/signup", (req, res) => {
-  const orgId = String(req.body?.orgId || "").trim();
+  const signupType = String(req.body?.signupType || "Individual");
   const username = String(req.body?.username || "").trim();
   const password = String(req.body?.password || "");
-  const roleInput = String(req.body?.role || "Member").trim();
+  let orgId = String(req.body?.orgId || "").trim();
+  const inviteCode = String(req.body?.inviteCode || "").trim();
+  const wantAdmin = !!req.body?.wantAdmin;
 
-  if (!orgId || !username || !password) {
-    return res.status(400).json({ error: "orgId, username, password required" });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
-  }
+  if (!username || !password) return res.status(400).json({ error: "username and password required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
-  // Only allow Admin if org has no users yet
-  const org = getOrg(orgId);
-  const isFirstUser = org.users.length === 0;
-
-  let role = "Member";
-  if (roleInput === "Admin") {
-    if (!isFirstUser) {
-      return res.status(403).json({ error: "Admin accounts can only be created as the first user of an organization." });
+  // ---- Individual flow ----
+  // If orgId missing => create a new personal org and make user Admin
+  if (signupType === "Individual") {
+    if (!orgId) {
+      // create orgId server-side (shareable)
+      orgId = `org_${nanoid(8)}`; // e.g., org_k3f9a2bx
     }
-    role = "Admin";
+
+    const org = getOrg(orgId);
+
+    const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (exists) return res.status(409).json({ error: "Username already exists" });
+
+    const role = wantAdmin ? "Admin" : "Member"; // if creating, you’ll set wantAdmin true in UI
+
+    const newUser = {
+      userId: nanoid(10),
+      username,
+      passwordHash: sha256(password),
+      role,
+      status: "Active",
+      publicKeySpkiB64: null,
+      publicKeyRegisteredAt: null,
+      createdAt: nowIso(),
+      lastLoginAt: null
+    };
+
+    org.users.push(newUser);
+    audit(req, orgId, newUser.userId, "signup", { username, role, signupType });
+    saveData();
+
+    return res.json({ ok: true, orgId, role });
   }
 
-  const exists = org.users.find((u) =>
-    u.username.toLowerCase() === username.toLowerCase()
-  );
-  if (exists) return res.status(409).json({ error: "Username already exists" });
+  // ---- OrgType flow (invite code required) ----
+  if (signupType === "OrgType") {
+    if (!orgId) return res.status(400).json({ error: "orgId required for OrgType signup" });
+    if (!inviteCode) return res.status(400).json({ error: "inviteCode required for OrgType signup" });
 
-  const newUser = {
-    userId: nanoid(10),
-    username,
-    passwordHash: sha256(password),
-    role,
-    status: "Active",
-    publicKeySpkiB64: null,
-    publicKeyRegisteredAt: null,
-    createdAt: nowIso(),
-    lastLoginAt: null
-  };
+    const org = getOrg(orgId);
 
-  org.users.push(newUser);
-  audit(req, orgId, newUser.userId, "signup", { username, role });
-  saveData();
+    const inv = org.invites?.[inviteCode];
+    if (!inv) return res.status(403).json({ error: "Invalid invite code" });
 
-  res.json({ ok: true, role });
+    if (inv.usedAt) return res.status(403).json({ error: "Invite code already used" });
+
+    const exp = Date.parse(inv.expiresAt || "");
+    if (!Number.isNaN(exp) && Date.now() > exp) return res.status(403).json({ error: "Invite code expired" });
+
+    const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (exists) return res.status(409).json({ error: "Username already exists" });
+
+    const role = inv.role === "Admin" ? "Admin" : "Member";
+
+    const newUser = {
+      userId: nanoid(10),
+      username,
+      passwordHash: sha256(password),
+      role,
+      status: "Active",
+      publicKeySpkiB64: null,
+      publicKeyRegisteredAt: null,
+      createdAt: nowIso(),
+      lastLoginAt: null
+    };
+
+    org.users.push(newUser);
+
+    // mark invite used (one-time)
+    inv.usedAt = nowIso();
+    inv.usedByUserId = newUser.userId;
+
+    audit(req, orgId, newUser.userId, "signup", { username, role, signupType, inviteCode });
+    saveData();
+
+    return res.json({ ok: true, orgId, role });
+  }
+
+  return res.status(400).json({ error: "Invalid signupType" });
 });
 
 
