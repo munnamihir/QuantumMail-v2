@@ -50,7 +50,7 @@
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
 
-    .nav{ display:flex; gap:10px; flex-wrap:wrap; }
+    .nav{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
     button, a.btn{
       padding: 10px 12px; border-radius: 12px;
       border: 1px solid var(--border);
@@ -92,6 +92,7 @@
     }
     .card h3{ margin: 0 0 6px; font-size: 14px; letter-spacing:.2px; }
     .muted{ color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .help{ color: rgba(170,180,214,.85); font-size: 12px; line-height: 1.45; margin-top: 6px; }
 
     .row{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
     .row > div{ flex: 1; min-width: 220px; }
@@ -109,10 +110,6 @@
       outline: none;
     }
     input::placeholder{ color: rgba(170,180,214,.70); }
-    input:focus{
-      border-color: rgba(110,168,254,.60);
-      box-shadow: 0 0 0 4px rgba(110,168,254,.12);
-    }
 
     .ok{ margin-top: 10px; color: var(--good); font-size: 12px; white-space: pre-wrap; }
     .err{ margin-top: 10px; color: var(--bad); font-size: 12px; white-space: pre-wrap; }
@@ -142,22 +139,6 @@
     }
     tbody tr:hover{ background: rgba(255,255,255,.03); }
 
-    code{
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.08);
-      padding: 2px 6px;
-      border-radius: 8px;
-      color: rgba(233,238,252,.95);
-    }
-    .kbadge{
-      display:inline-flex; align-items:center; gap:8px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.04);
-      color: var(--muted);
-      font-size: 12px;
-    }
     .badge{
       display:inline-flex;
       align-items:center;
@@ -170,7 +151,12 @@
       border: 1px solid rgba(255,92,119,.35);
       color: #ffb3c0;
     }
+
     #profileModal{ backdrop-filter: blur(4px); }
+
+    /* live checker classes (you can also keep in ui.css) */
+    .goodField{ border-color: rgba(43,213,118,.65) !important; box-shadow: 0 0 0 4px rgba(43,213,118,.10) !important; }
+    .badField{ border-color: rgba(255,92,119,.65) !important; box-shadow: 0 0 0 4px rgba(255,92,119,.10) !important; }
   </style>
 </head>
 
@@ -186,29 +172,33 @@
       </div>
 
       <div class="rightHeader">
-        <div class="nav" style="justify-content:flex-end;">
+        <div class="pill" title="Session">
+          <span id="sessionDot" class="dot"></span>
+          <span id="who">Not logged in</span>
+        </div>
+
+        <div class="nav">
           <button id="btnProfile" class="secondary" type="button">Profile</button>
         </div>
 
-
         <div class="nav">
-          <!-- add these near the other nav buttons inside .rightHeader -->
           <a class="btn" href="/portal/invites.html" id="navInvites">Generate Invite</a>
           <a class="btn" href="/portal/inbox.html" id="navInbox">Inbox</a>
           <a class="btn" href="/portal/audit.html" id="navAudit">Audit Logs</a>
           <a class="btn" href="/portal/analytics.html" id="navAnalytics">Analytics</a>
           <a class="btn" href="/portal/policies.html" id="navPolicies">Policies</a>
-          <a class="btn" href="/portal/alerts.html" id="navAlerts">Alerts <span id="alertBadge" class="badge" style="display:none;">0</span></a>
+          <a class="btn" href="/portal/alerts.html" id="navAlerts">
+            Alerts <span id="alertBadge" class="badge" style="display:none;">0</span>
+          </a>
         </div>
-        
       </div>
     </div>
 
     <div class="grid">
       <!-- Create Admin -->
       <div class="card">
-        <h3>1) Create Admin</h3>
-        <div class="muted">First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.</div>
+        <h3>1) Initialize Organization (Create Admin)</h3>
+        <div class="muted">First-time setup only. Creates the <b>first Admin</b> for an org.</div>
 
         <div class="row">
           <div>
@@ -229,7 +219,7 @@
 
         <div class="row" style="margin-top:10px;">
           <div style="flex:0 0 auto;">
-            <button id="btnCreateAdmin" class="primary">Create Admin</button>
+            <button id="btnCreateAdmin" class="primary" type="button">Create Admin</button>
           </div>
         </div>
 
@@ -240,16 +230,18 @@
       <!-- Login -->
       <div class="card">
         <h3>2) Login</h3>
-        <div class="muted">Logs in via <code>/auth/login</code>. Token is kept in memory (not stored in localStorage).</div>
+        <div class="muted">Logs in via <code>/auth/login</code>. Token stays in memory + sessionStorage.</div>
 
         <div class="row">
           <div>
             <label for="orgId">Org Id</label>
             <input id="orgId" placeholder="org_demo" value="org_demo" />
+            <div class="muted" id="loginOrgStatus"></div>
           </div>
           <div>
             <label for="username">Username</label>
             <input id="username" placeholder="admin" />
+            <div class="muted" id="loginUserStatus"></div>
           </div>
           <div>
             <label for="password">Password</label>
@@ -259,12 +251,12 @@
 
         <div class="row" style="margin-top:10px;">
           <div style="flex:0 0 auto;">
-            <button id="btnLogin" class="primary">Login</button>
+            <button id="btnLogin" class="primary" type="button">Login</button>
           </div>
           <div style="flex:0 0 auto;">
-            <button id="btnLogout" class="secondary">Logout</button>
+            <button id="btnLogout" class="secondary" type="button">Logout</button>
           </div>
-          <div class="kbadge"><span class="dot"></span> Token in memory</div>
+          <div class="muted" style="align-self:center;">Token in memory</div>
         </div>
 
         <div id="authOk" class="ok"></div>
@@ -280,6 +272,7 @@
           <div>
             <label for="newUsername">New Username</label>
             <input id="newUsername" placeholder="alice" />
+            <div class="muted" id="newUserStatus"></div>
           </div>
           <div>
             <label for="newPassword">New Password</label>
@@ -292,9 +285,9 @@
         </div>
 
         <div class="row" style="margin-top:10px;">
-          <div style="flex:0 0 auto;"><button id="btnCreateUser" class="primary">Create User</button></div>
-          <div style="flex:0 0 auto;"><button id="btnRefreshUsers" class="secondary">Refresh</button></div>
-          <div class="kbadge">All actions are audited</div>
+          <div style="flex:0 0 auto;"><button id="btnCreateUser" class="primary" type="button">Create User</button></div>
+          <div style="flex:0 0 auto;"><button id="btnRefreshUsers" class="secondary" type="button">Refresh</button></div>
+          <div class="muted" style="align-self:center;">All actions are audited</div>
         </div>
 
         <div id="usersOk" class="ok"></div>
@@ -319,43 +312,45 @@
         </div>
       </div>
     </div>
-<div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:9999;">
-  <div style="max-width:560px; margin: 8vh auto; padding: 0 14px;">
-    <div class="card" style="position:relative;">
-      <h3 style="margin-bottom:4px;">Profile</h3>
-      <div class="muted" id="profileMeta">Not logged in.</div>
 
-      <div class="row" style="margin-top:12px;">
-        <div>
-          <label for="curPw">Current Password</label>
-          <input id="curPw" type="password" placeholder="••••••••" />
+    <!-- Profile Modal -->
+    <div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:9999;">
+      <div style="max-width:560px; margin: 8vh auto; padding: 0 14px;">
+        <div class="card" style="position:relative;">
+          <h3 style="margin-bottom:4px;">Profile</h3>
+          <div class="muted" id="profileMeta">Not logged in.</div>
+
+          <div class="row" style="margin-top:12px;">
+            <div>
+              <label for="curPw">Current Password</label>
+              <input id="curPw" type="password" placeholder="••••••••" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="newPw">New Password</label>
+              <input id="newPw" type="password" placeholder="At least 8 characters" />
+            </div>
+            <div>
+              <label for="newPw2">Confirm New Password</label>
+              <input id="newPw2" type="password" placeholder="Repeat new password" />
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px; justify-content:space-between; align-items:center;">
+            <div style="display:flex; gap:10px;">
+              <button id="btnChangePw" class="primary" type="button">Change Password</button>
+              <button id="btnCloseProfile" class="secondary" type="button">Close</button>
+            </div>
+            <button id="btnLogoutProfile" class="danger" type="button">Logout</button>
+          </div>
+
+          <div id="pwOk" class="ok"></div>
+          <div id="pwErr" class="err"></div>
         </div>
       </div>
-
-      <div class="row">
-        <div>
-          <label for="newPw">New Password</label>
-          <input id="newPw" type="password" placeholder="At least 8 characters" />
-        </div>
-        <div>
-          <label for="newPw2">Confirm New Password</label>
-          <input id="newPw2" type="password" placeholder="Repeat new password" />
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px; justify-content:space-between; align-items:center;">
-        <div style="display:flex; gap:10px;">
-          <button id="btnChangePw" class="primary" type="button">Change Password</button>
-          <button id="btnCloseProfile" class="secondary" type="button">Close</button>
-        </div>
-        <button id="btnLogoutProfile" class="danger" type="button">Logout</button>
-      </div>
-
-      <div id="pwOk" class="ok"></div>
-      <div id="pwErr" class="err"></div>
     </div>
-  </div>
-</div>
 
     <script type="module" src="/portal/admin.js"></script>
   </div>
