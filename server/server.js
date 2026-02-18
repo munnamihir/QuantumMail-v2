@@ -388,6 +388,44 @@ app.post("/auth/login", (req, res) => {
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60
   };
 
+// ----------------------------
+// AUTH: change my password (self-service)
+// ----------------------------
+app.post("/auth/change-password", requireAuth, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { user } = req.qm;
+
+  const currentPassword = String(req.body?.currentPassword || "");
+  const newPassword = String(req.body?.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "currentPassword and newPassword required" });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "New password must be at least 8 characters" });
+  }
+
+  // Verify current password
+  const curHash = sha256(currentPassword);
+  if (!timingSafeEq(curHash, user.passwordHash)) {
+    audit(req, orgId, user.userId, "change_password_failed", { reason: "bad_current_password" });
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+
+  // Prevent same password reuse (optional but nice)
+  const nextHash = sha256(newPassword);
+  if (timingSafeEq(nextHash, user.passwordHash)) {
+    return res.status(400).json({ error: "New password must be different" });
+  }
+
+  user.passwordHash = nextHash;
+  audit(req, orgId, user.userId, "change_password", { username: user.username, role: user.role });
+  saveData();
+
+  res.json({ ok: true });
+});
+
+  
   const token = signToken(payload);
   audit(req, orgId, user.userId, "login", { username: user.username, role: user.role });
   saveData();
