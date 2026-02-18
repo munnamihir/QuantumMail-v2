@@ -24,37 +24,59 @@ async function api(path, { method="GET", body=null, token="" } = {}) {
 
 async function signup() {
   ok("suOk",""); err("suErr","");
+
   const orgId = String($("suOrgId").value || "").trim();
   const username = String($("suUsername").value || "").trim();
   const password = String($("suPassword").value || "");
+  const role = String($("suRole").value || "Member");
 
-  if (!orgId || !username || !password) { err("suErr","Org ID, Username, and Password are required."); return; }
+  if (!orgId || !username || !password) {
+    err("suErr","Org ID, Username, and Password are required.");
+    return;
+  }
 
-  await api("/auth/signup", { method:"POST", body:{ orgId, username, password } });
-  ok("suOk","Account created ✅ You can now login.");
+  const out = await api("/auth/signup", {
+    method:"POST",
+    body:{ orgId, username, password, role }
+  });
+
+  ok("suOk",`Account created as ${out.role} ✅ You can now login.`);
   setTab("login");
+
   $("liOrgId").value = orgId;
   $("liUsername").value = username;
-  $("liPassword").value = "";
 }
+
 
 async function login() {
   ok("liOk",""); err("liErr","");
+
   const orgId = String($("liOrgId").value || "").trim();
   const username = String($("liUsername").value || "").trim();
   const password = String($("liPassword").value || "");
 
-  if (!orgId || !username || !password) { err("liErr","Org ID, Username, and Password are required."); return; }
+  if (!orgId || !username || !password) {
+    err("liErr","Org ID, Username, and Password are required.");
+    return;
+  }
 
-  const out = await api("/auth/login", { method:"POST", body:{ orgId, username, password } });
+  const out = await api("/auth/login", {
+    method:"POST",
+    body:{ orgId, username, password }
+  });
 
-  // store token for inbox + decrypt session
   sessionStorage.setItem("qm_token", out.token);
   sessionStorage.setItem("qm_user", JSON.stringify(out.user));
 
   ok("liOk","Logged in ✅ Redirecting…");
-  window.location.href = "/portal/inbox.html";
+
+  if (out.user.role === "Admin") {
+    window.location.href = "/portal/admin.html";
+  } else {
+    window.location.href = "/portal/inbox.html";
+  }
 }
+
 
 $("tabSignup").addEventListener("click", () => setTab("signup"));
 $("tabLogin").addEventListener("click", () => setTab("login"));
