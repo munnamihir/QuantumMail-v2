@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 let token = "";
 let sessionUser = null;
 
+// ----------------- small helpers -----------------
 function debounce(fn, ms = 400) {
   let t = null;
   return (...args) => {
@@ -11,11 +12,18 @@ function debounce(fn, ms = 400) {
   };
 }
 
+function setText(id, msg) {
+  const el = $(id);
+  if (el) el.textContent = msg || "";
+}
+function ok(id, msg) { setText(id, msg); }
+function err(id, msg) { setText(id, msg); }
+
 function setFieldState(inputId, msgId, state, msg) {
   const input = $(inputId);
   const msgEl = $(msgId);
-  if (msgEl) msgEl.textContent = msg || "";
 
+  if (msgEl) msgEl.textContent = msg || "";
   if (input) {
     input.classList.remove("goodField", "badField");
     if (state === "good") input.classList.add("goodField");
@@ -28,58 +36,6 @@ async function apiPublic(path) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
-}
-
-
-function setText(id, msg) {
-  const el = $(id);
-  if (el) el.textContent = msg || "";
-}
-function ok(id, msg) { setText(id, msg); }
-function err(id, msg) { setText(id, msg); }
-
-function openProfile() {
-  const modal = $("profileModal");
-  if (!modal) return;
-
-  // Update meta
-  const meta = $("profileMeta");
-  if (meta) {
-    meta.textContent = token && sessionUser
-      ? `${sessionUser.username}@${sessionUser.orgId} • ${sessionUser.role}`
-      : "Not logged in.";
-  }
-
-  // Clear messages/inputs
-  ok("pwOk", ""); err("pwErr", "");
-  if ($("curPw")) $("curPw").value = "";
-  if ($("newPw")) $("newPw").value = "";
-  if ($("newPw2")) $("newPw2").value = "";
-
-  modal.style.display = "";
-}
-
-function closeProfile() {
-  const modal = $("profileModal");
-  if (modal) modal.style.display = "none";
-}
-
-
-function setSessionPill() {
-  const who = $("who");
-  const dot = $("sessionDot");
-  const btn = $("btnProfile");
-
-  if (who) {
-    who.textContent = token && sessionUser
-      ? `${sessionUser.username}@${sessionUser.orgId} (${sessionUser.role})`
-      : "Not logged in";
-  }
-  if (dot) {
-    dot.classList.remove("good", "bad");
-    if (token) dot.classList.add("good");
-  }
-  if (btn) btn.disabled = !token;
 }
 
 async function api(path, { method = "GET", body = null } = {}) {
@@ -106,24 +62,171 @@ function daysOld(iso) {
   return Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
 }
 
+// ----------------- session pill + profile -----------------
+function setSessionPill() {
+  const who = $("who");
+  const dot = $("sessionDot");
+  const btn = $("btnProfile");
+
+  if (who) {
+    who.textContent = token && sessionUser
+      ? `${sessionUser.username}@${sessionUser.orgId} (${sessionUser.role})`
+      : "Not logged in";
+  }
+  if (dot) {
+    dot.classList.remove("good", "bad");
+    if (token) dot.classList.add("good");
+  }
+  if (btn) btn.disabled = !token;
+}
+
+function openProfile() {
+  const modal = $("profileModal");
+  if (!modal) return;
+
+  const meta = $("profileMeta");
+  if (meta) {
+    meta.textContent = token && sessionUser
+      ? `${sessionUser.username}@${sessionUser.orgId} • ${sessionUser.role}`
+      : "Not logged in.";
+  }
+
+  ok("pwOk", ""); err("pwErr", "");
+  if ($("curPw")) $("curPw").value = "";
+  if ($("newPw")) $("newPw").value = "";
+  if ($("newPw2")) $("newPw2").value = "";
+
+  modal.style.display = "";
+}
+
+function closeProfile() {
+  const modal = $("profileModal");
+  if (modal) modal.style.display = "none";
+}
+
+// ----------------- live checks -----------------
+const checkSeedOrgLive = debounce(async () => {
+  const orgId = String($("seedOrgId")?.value || "").trim();
+  if (!orgId) { setFieldState("seedOrgId", "seedOrgStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    if (!out.exists) {
+      setFieldState("seedOrgId", "seedOrgStatus", "good", "Org ID is available ✅");
+    } else if (out.initialized) {
+      setFieldState("seedOrgId", "seedOrgStatus", "bad", `Org already initialized ✅ Users: ${out.userCount}. Use Login instead.`);
+    } else {
+      setFieldState("seedOrgId", "seedOrgStatus", "bad", "Org exists but not initialized (unexpected).");
+    }
+  } catch (e) {
+    setFieldState("seedOrgId", "seedOrgStatus", "bad", e.message || "Org check failed");
+  }
+}, 450);
+
+const checkSeedUsernameLive = debounce(async () => {
+  const orgId = String($("seedOrgId")?.value || "").trim();
+  const username = String($("seedUsername")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("seedUsername", "seedUserStatus", null, ""); return; }
+
+  try {
+    const org = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    if (!org.exists) {
+      setFieldState("seedUsername", "seedUserStatus", "good", "Username looks good ✅ (org not created yet)");
+      return;
+    }
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (out.available) setFieldState("seedUsername", "seedUserStatus", "good", "Username is available ✅");
+    else setFieldState("seedUsername", "seedUserStatus", "bad", "Username already exists in this org.");
+  } catch (e) {
+    setFieldState("seedUsername", "seedUserStatus", "bad", e.message || "Username check failed");
+  }
+}, 450);
+
+const checkLoginOrgLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim();
+  if (!orgId) { setFieldState("orgId", "loginOrgStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    if (!out.exists) setFieldState("orgId", "loginOrgStatus", "bad", "Org not found.");
+    else if (!out.initialized) setFieldState("orgId", "loginOrgStatus", "bad", "Org not initialized yet. Create Admin first.");
+    else setFieldState("orgId", "loginOrgStatus", "good", `Org found ✅ Users: ${out.userCount}`);
+  } catch (e) {
+    setFieldState("orgId", "loginOrgStatus", "bad", e.message || "Org check failed");
+  }
+}, 450);
+
+const checkLoginUsernameLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim();
+  const username = String($("username")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("username", "loginUserStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) { setFieldState("username", "loginUserStatus", "bad", "Org not found."); return; }
+    if (!out.available) setFieldState("username", "loginUserStatus", "good", "User exists ✅");
+    else setFieldState("username", "loginUserStatus", "bad", "User not found in this org.");
+  } catch (e) {
+    setFieldState("username", "loginUserStatus", "bad", e.message || "User check failed");
+  }
+}, 450);
+
+const checkNewUserUsernameLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim();
+  const username = String($("newUsername")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("newUsername", "newUserStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) { setFieldState("newUsername", "newUserStatus", "bad", "Org not found."); return; }
+    if (out.available) setFieldState("newUsername", "newUserStatus", "good", "Username is available ✅");
+    else setFieldState("newUsername", "newUserStatus", "bad", "Username already taken.");
+  } catch (e) {
+    setFieldState("newUsername", "newUserStatus", "bad", e.message || "Username check failed");
+  }
+}, 450);
+
+// ----------------- core actions -----------------
 async function createAdmin() {
   ok("seedOk", ""); err("seedErr", "");
+
   const orgId = String($("seedOrgId")?.value || "").trim();
   const username = String($("seedUsername")?.value || "").trim();
   const password = String($("seedPassword")?.value || "");
+
   if (!orgId || !username || !password) {
     err("seedErr", "Org Id, Admin Username, and Admin Password are required.");
     return;
   }
+
+  // Guard: don’t allow seeding if already initialized
+  const orgCheck = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+  if (orgCheck.exists && orgCheck.initialized) {
+    err("seedErr", "Org already initialized. Use Login instead.");
+    return;
+  }
+
+  const userCheck = orgCheck.exists
+    ? await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`)
+    : { available: true };
+
+  if (orgCheck.exists && userCheck && userCheck.available === false) {
+    err("seedErr", "That username already exists in this org.");
+    return;
+  }
+
   const out = await api("/dev/seed-admin", { method: "POST", body: { orgId, username, password } });
-  ok("seedOk", `Admin created ✅\nOrg: ${out.orgId}\nUsername: ${username}`);
+  ok("seedOk", `Admin created ✅\nOrg: ${out.orgId}\nUsername: ${username}\nNow login on the right.`);
+  checkSeedOrgLive(); // refresh status
 }
 
 async function login() {
   ok("authOk", ""); err("authErr", "");
+
   const orgId = String($("orgId")?.value || "").trim();
   const username = String($("username")?.value || "").trim();
   const password = String($("password")?.value || "");
+
   if (!orgId || !username || !password) {
     err("authErr", "Org Id, Username, and Password are required.");
     return;
@@ -133,6 +236,7 @@ async function login() {
   token = out.token;
   sessionStorage.setItem("qm_admin_token", token);
   sessionUser = out.user;
+
   ok("authOk", "Logged in ✅");
   setSessionPill();
 
@@ -144,16 +248,21 @@ function logout() {
   token = "";
   sessionUser = null;
   sessionStorage.removeItem("qm_admin_token");
-  ok("authOk", "Logged out."); err("authErr", "");
+
+  ok("authOk", "Logged out.");
+  err("authErr", "");
   setSessionPill();
+
   const tbody = $("usersTbody");
   if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="muted">Login to load users…</td></tr>`;
+
   const badge = $("alertBadge");
   if (badge) badge.style.display = "none";
 }
 
 function escapeHtml(s) {
-  return String(s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+  return String(s || "")
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 function escapeAttr(s) { return escapeHtml(s).replaceAll("`", "&#096;"); }
@@ -226,14 +335,26 @@ async function createUser() {
   ok("usersOk", ""); err("usersErr", "");
   if (!token) { err("usersErr", "Login required."); return; }
 
+  const orgId = String($("orgId")?.value || "").trim();
   const username = String($("newUsername")?.value || "").trim();
   const password = String($("newPassword")?.value || "");
   const role = String($("newRole")?.value || "Member").trim() || "Member";
+
+  if (!orgId) { err("usersErr", "Missing orgId. Login again."); return; }
   if (!username || !password) { err("usersErr", "New Username and New Password are required."); return; }
+
+  // Guard: username taken?
+  const check = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+  if (!check.orgExists) { err("usersErr", "Org not found."); return; }
+  if (!check.available) { err("usersErr", "Username already taken."); return; }
 
   await api("/admin/users", { method: "POST", body: { username, password, role } });
   ok("usersOk", `User created ✅ (${username})`);
-  $("newUsername").value = ""; $("newPassword").value = "";
+
+  $("newUsername").value = "";
+  $("newPassword").value = "";
+  setFieldState("newUsername", "newUserStatus", null, "");
+
   await refreshUsers();
 }
 
@@ -256,16 +377,6 @@ async function refreshAlertsBadge() {
   }
 }
 
-async function checkOrgInitialization() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const orgIdFromQuery = urlParams.get("orgId");
-  if (orgIdFromQuery) {
-    $("seedOrgId").value = orgIdFromQuery;
-    $("orgId").value = orgIdFromQuery;
-  }
-}
-
-
 async function changeMyPassword() {
   ok("pwOk", ""); err("pwErr", "");
   if (!token) { err("pwErr", "Login required."); return; }
@@ -274,143 +385,41 @@ async function changeMyPassword() {
   const newPassword = String($("newPw")?.value || "");
   const confirm = String($("newPw2")?.value || "");
 
-  if (!currentPassword || !newPassword) {
-    err("pwErr", "Current and new password are required.");
-    return;
-  }
-  if (newPassword.length < 8) {
-    err("pwErr", "New password must be at least 8 characters.");
-    return;
-  }
-  if (newPassword !== confirm) {
-    err("pwErr", "New password and confirmation do not match.");
-    return;
-  }
+  if (!currentPassword || !newPassword) { err("pwErr", "Current and new password are required."); return; }
+  if (newPassword.length < 8) { err("pwErr", "New password must be at least 8 characters."); return; }
+  if (newPassword !== confirm) { err("pwErr", "New password and confirmation do not match."); return; }
 
-  await api("/auth/change-password", {
-    method: "POST",
-    body: { currentPassword, newPassword }
-  });
-
+  await api("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
   ok("pwOk", "Password updated ✅");
+
   $("curPw").value = ""; $("newPw").value = ""; $("newPw2").value = "";
 }
 
-const checkSeedOrgLive = debounce(async () => {
-  const orgId = String($("seedOrgId")?.value || "").trim();
-  if (!orgId) { setFieldState("seedOrgId", "seedOrgStatus", null, ""); return; }
-
-  try {
-    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-
-    if (!out.exists) {
-      setFieldState("seedOrgId", "seedOrgStatus", "good", "Org ID is available ✅ (will be created on Admin seed)");
-    } else if (out.initialized) {
-      setFieldState("seedOrgId", "seedOrgStatus", "bad", `Org already initialized ✅ Users: ${out.userCount}. Use Login instead.`);
-    } else {
-      setFieldState("seedOrgId", "seedOrgStatus", "bad", "Org exists but not initialized. You can still seed admin, but consider cleaning data.json.");
-    }
-  } catch (e) {
-    setFieldState("seedOrgId", "seedOrgStatus", "bad", e.message || "Org check failed");
+function checkOrgInitializationFromQuery() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const orgIdFromQuery = urlParams.get("orgId");
+  if (orgIdFromQuery) {
+    $("seedOrgId").value = orgIdFromQuery;
+    $("orgId").value = orgIdFromQuery;
   }
-}, 450);
+}
 
-const checkLoginOrgLive = debounce(async () => {
-  const orgId = String($("orgId")?.value || "").trim();
-  if (!orgId) { setFieldState("orgId", "loginOrgStatus", null, ""); return; }
-
-  try {
-    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-
-    if (!out.exists) {
-      setFieldState("orgId", "loginOrgStatus", "bad", "Org not found.");
-    } else if (!out.initialized) {
-      setFieldState("orgId", "loginOrgStatus", "bad", "Org not initialized yet. Seed an Admin first.");
-    } else {
-      setFieldState("orgId", "loginOrgStatus", "good", `Org found ✅ Users: ${out.userCount}`);
-    }
-  } catch (e) {
-    setFieldState("orgId", "loginOrgStatus", "bad", e.message || "Org check failed");
-  }
-}, 450);
-
-const checkSeedUsernameLive = debounce(async () => {
-  const orgId = String($("seedOrgId")?.value || "").trim();
-  const username = String($("seedUsername")?.value || "").trim();
-  if (!orgId || !username) { setFieldState("seedUsername", "seedUserStatus", null, ""); return; }
-
-  try {
-    const org = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-    // If org doesn't exist yet, username is fine (no users)
-    if (!org.exists) {
-      setFieldState("seedUsername", "seedUserStatus", "good", "Username looks good ✅ (org not created yet)");
-      return;
-    }
-
-    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
-    if (out.available) setFieldState("seedUsername", "seedUserStatus", "good", "Username is available ✅");
-    else setFieldState("seedUsername", "seedUserStatus", "bad", "Username already exists in this org.");
-  } catch (e) {
-    setFieldState("seedUsername", "seedUserStatus", "bad", e.message || "Username check failed");
-  }
-}, 450);
-
-const checkLoginUsernameLive = debounce(async () => {
-  const orgId = String($("orgId")?.value || "").trim();
-  const username = String($("username")?.value || "").trim();
-  if (!orgId || !username) { setFieldState("username", "loginUserStatus", null, ""); return; }
-
-  try {
-    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
-    if (!out.orgExists) {
-      setFieldState("username", "loginUserStatus", "bad", "Org not found.");
-      return;
-    }
-    // For login: if not available => it means taken => good sign (account exists)
-    if (!out.available) setFieldState("username", "loginUserStatus", "good", "User found ✅");
-    else setFieldState("username", "loginUserStatus", "bad", "User not found in this org.");
-  } catch (e) {
-    setFieldState("username", "loginUserStatus", "bad", e.message || "User check failed");
-  }
-}, 450);
-
-const checkNewUserUsernameLive = debounce(async () => {
-  const orgId = String($("orgId")?.value || "").trim(); // admin login org field
-  const username = String($("newUsername")?.value || "").trim();
-  if (!orgId || !username) { setFieldState("newUsername", "newUserStatus", null, ""); return; }
-
-  try {
-    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
-    if (!out.orgExists) {
-      setFieldState("newUsername", "newUserStatus", "bad", "Org not found.");
-      return;
-    }
-    if (out.available) setFieldState("newUsername", "newUserStatus", "good", "Username is available ✅");
-    else setFieldState("newUsername", "newUserStatus", "bad", "Username already taken.");
-  } catch (e) {
-    setFieldState("newUsername", "newUserStatus", "bad", e.message || "Username check failed");
-  }
-}, 450);
-
-
-// Wire up
+// ----------------- wiring -----------------
 $("btnCreateAdmin")?.addEventListener("click", () => createAdmin().catch(e => err("seedErr", e.message)));
 $("btnLogin")?.addEventListener("click", () => login().catch(e => err("authErr", e.message)));
 $("btnLogout")?.addEventListener("click", logout);
+
 $("btnCreateUser")?.addEventListener("click", () => createUser().catch(e => err("usersErr", e.message)));
 $("btnRefreshUsers")?.addEventListener("click", () => refreshUsers().catch(e => err("usersErr", e.message)));
-$("profileModal")?.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "profileModal") closeProfile();
-});
-$("btnProfile")?.addEventListener("click", () => openProfile());
-$("btnCloseProfile")?.addEventListener("click", closeProfile);
-$("btnChangePw")?.addEventListener("click", () => changeMyPassword().catch(e => err("pwErr", e.message)));
 
-$("btnLogoutProfile")?.addEventListener("click", () => {
-  closeProfile();
-  logout();
-});
-// Live checks
+$("btnProfile")?.addEventListener("click", openProfile);
+$("btnCloseProfile")?.addEventListener("click", closeProfile);
+$("profileModal")?.addEventListener("click", (e) => { if (e.target?.id === "profileModal") closeProfile(); });
+
+$("btnChangePw")?.addEventListener("click", () => changeMyPassword().catch(e => err("pwErr", e.message)));
+$("btnLogoutProfile")?.addEventListener("click", () => { closeProfile(); logout(); });
+
+// Live check listeners
 $("seedOrgId")?.addEventListener("input", () => { checkSeedOrgLive(); checkSeedUsernameLive(); });
 $("seedUsername")?.addEventListener("input", () => checkSeedUsernameLive());
 
@@ -419,7 +428,8 @@ $("username")?.addEventListener("input", () => checkLoginUsernameLive());
 
 $("newUsername")?.addEventListener("input", () => checkNewUserUsernameLive());
 
+// Boot
+checkOrgInitializationFromQuery();
 checkSeedOrgLive();
 checkLoginOrgLive();
-checkOrgInitialization();
 setSessionPill();
