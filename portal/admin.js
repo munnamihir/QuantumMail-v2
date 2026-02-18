@@ -3,6 +3,34 @@ const $ = (id) => document.getElementById(id);
 let token = "";
 let sessionUser = null;
 
+function debounce(fn, ms = 400) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function setFieldState(inputId, msgId, state, msg) {
+  const input = $(inputId);
+  const msgEl = $(msgId);
+  if (msgEl) msgEl.textContent = msg || "";
+
+  if (input) {
+    input.classList.remove("goodField", "badField");
+    if (state === "good") input.classList.add("goodField");
+    if (state === "bad") input.classList.add("badField");
+  }
+}
+
+async function apiPublic(path) {
+  const res = await fetch(path);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+
 function setText(id, msg) {
   const el = $(id);
   if (el) el.textContent = msg || "";
@@ -268,6 +296,102 @@ async function changeMyPassword() {
   $("curPw").value = ""; $("newPw").value = ""; $("newPw2").value = "";
 }
 
+const checkSeedOrgLive = debounce(async () => {
+  const orgId = String($("seedOrgId")?.value || "").trim();
+  if (!orgId) { setFieldState("seedOrgId", "seedOrgStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+
+    if (!out.exists) {
+      setFieldState("seedOrgId", "seedOrgStatus", "good", "Org ID is available ✅ (will be created on Admin seed)");
+    } else if (out.initialized) {
+      setFieldState("seedOrgId", "seedOrgStatus", "bad", `Org already initialized ✅ Users: ${out.userCount}. Use Login instead.`);
+    } else {
+      setFieldState("seedOrgId", "seedOrgStatus", "bad", "Org exists but not initialized. You can still seed admin, but consider cleaning data.json.");
+    }
+  } catch (e) {
+    setFieldState("seedOrgId", "seedOrgStatus", "bad", e.message || "Org check failed");
+  }
+}, 450);
+
+const checkLoginOrgLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim();
+  if (!orgId) { setFieldState("orgId", "loginOrgStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+
+    if (!out.exists) {
+      setFieldState("orgId", "loginOrgStatus", "bad", "Org not found.");
+    } else if (!out.initialized) {
+      setFieldState("orgId", "loginOrgStatus", "bad", "Org not initialized yet. Seed an Admin first.");
+    } else {
+      setFieldState("orgId", "loginOrgStatus", "good", `Org found ✅ Users: ${out.userCount}`);
+    }
+  } catch (e) {
+    setFieldState("orgId", "loginOrgStatus", "bad", e.message || "Org check failed");
+  }
+}, 450);
+
+const checkSeedUsernameLive = debounce(async () => {
+  const orgId = String($("seedOrgId")?.value || "").trim();
+  const username = String($("seedUsername")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("seedUsername", "seedUserStatus", null, ""); return; }
+
+  try {
+    const org = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    // If org doesn't exist yet, username is fine (no users)
+    if (!org.exists) {
+      setFieldState("seedUsername", "seedUserStatus", "good", "Username looks good ✅ (org not created yet)");
+      return;
+    }
+
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (out.available) setFieldState("seedUsername", "seedUserStatus", "good", "Username is available ✅");
+    else setFieldState("seedUsername", "seedUserStatus", "bad", "Username already exists in this org.");
+  } catch (e) {
+    setFieldState("seedUsername", "seedUserStatus", "bad", e.message || "Username check failed");
+  }
+}, 450);
+
+const checkLoginUsernameLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim();
+  const username = String($("username")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("username", "loginUserStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) {
+      setFieldState("username", "loginUserStatus", "bad", "Org not found.");
+      return;
+    }
+    // For login: if not available => it means taken => good sign (account exists)
+    if (!out.available) setFieldState("username", "loginUserStatus", "good", "User found ✅");
+    else setFieldState("username", "loginUserStatus", "bad", "User not found in this org.");
+  } catch (e) {
+    setFieldState("username", "loginUserStatus", "bad", e.message || "User check failed");
+  }
+}, 450);
+
+const checkNewUserUsernameLive = debounce(async () => {
+  const orgId = String($("orgId")?.value || "").trim(); // admin login org field
+  const username = String($("newUsername")?.value || "").trim();
+  if (!orgId || !username) { setFieldState("newUsername", "newUserStatus", null, ""); return; }
+
+  try {
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    if (!out.orgExists) {
+      setFieldState("newUsername", "newUserStatus", "bad", "Org not found.");
+      return;
+    }
+    if (out.available) setFieldState("newUsername", "newUserStatus", "good", "Username is available ✅");
+    else setFieldState("newUsername", "newUserStatus", "bad", "Username already taken.");
+  } catch (e) {
+    setFieldState("newUsername", "newUserStatus", "bad", e.message || "Username check failed");
+  }
+}, 450);
+
 
 // Wire up
 $("btnCreateAdmin")?.addEventListener("click", () => createAdmin().catch(e => err("seedErr", e.message)));
@@ -286,6 +410,16 @@ $("btnLogoutProfile")?.addEventListener("click", () => {
   closeProfile();
   logout();
 });
+// Live checks
+$("seedOrgId")?.addEventListener("input", () => { checkSeedOrgLive(); checkSeedUsernameLive(); });
+$("seedUsername")?.addEventListener("input", () => checkSeedUsernameLive());
 
+$("orgId")?.addEventListener("input", () => { checkLoginOrgLive(); checkLoginUsernameLive(); });
+$("username")?.addEventListener("input", () => checkLoginUsernameLive());
+
+$("newUsername")?.addEventListener("input", () => checkNewUserUsernameLive());
+
+checkSeedOrgLive();
+checkLoginOrgLive();
 checkOrgInitialization();
 setSessionPill();
