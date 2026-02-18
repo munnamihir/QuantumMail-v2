@@ -10,6 +10,33 @@ function setText(id, msg) {
 function ok(id, msg) { setText(id, msg); }
 function err(id, msg) { setText(id, msg); }
 
+function openProfile() {
+  const modal = $("profileModal");
+  if (!modal) return;
+
+  // Update meta
+  const meta = $("profileMeta");
+  if (meta) {
+    meta.textContent = token && sessionUser
+      ? `${sessionUser.username}@${sessionUser.orgId} • ${sessionUser.role}`
+      : "Not logged in.";
+  }
+
+  // Clear messages/inputs
+  ok("pwOk", ""); err("pwErr", "");
+  if ($("curPw")) $("curPw").value = "";
+  if ($("newPw")) $("newPw").value = "";
+  if ($("newPw2")) $("newPw2").value = "";
+
+  modal.style.display = "";
+}
+
+function closeProfile() {
+  const modal = $("profileModal");
+  if (modal) modal.style.display = "none";
+}
+
+
 function setSessionPill() {
   const who = $("who");
   const dot = $("sessionDot");
