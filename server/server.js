@@ -6,60 +6,50 @@ import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ---- CORS (Chrome extension + portal) ----
-// Put your extension ID here:
+/* =========================================================
+   CORS
+========================================================= */
 const EXTENSION_ID = process.env.QM_EXTENSION_ID || "cfofgajelokgkofefofgpllaockghgjg";
 
-// Optional: add any web origins you use (portal, codespaces, etc.)
 const ALLOWED_WEB_ORIGINS = [
   "https://quantummail-v2.onrender.com",
-  "http://localhost:5173"
+  "http://localhost:5173",
 ];
 
 function isAllowedOrigin(origin) {
-  if (!origin) return true; // allow server-to-server, curl, etc.
-
-  // Allow the Chrome extension origin:
+  if (!origin) return true; // curl/server-to-server
   if (origin === `chrome-extension://${EXTENSION_ID}`) return true;
-
-  // Allow your portal / dev origins:
   if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
-
-
   return false;
 }
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (isAllowedOrigin(origin)) return cb(null, true);
-    return cb(new Error(`CORS blocked origin: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (isAllowedOrigin(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+  })
+);
 
-// IMPORTANT: handle preflight requests
+// preflight
 app.options("*", cors());
-
-
 app.use(express.json({ limit: "25mb" }));
 
-// ----------------------------
-// Paths
-// ----------------------------
+/* =========================================================
+   Paths + persistence
+========================================================= */
 const portalDir = path.join(__dirname, "..", "portal");
 const dataPath = path.join(__dirname, "data.json");
 
-// ----------------------------
-// Persistence (data.json)
-// ----------------------------
 function loadData() {
   try {
     if (!fs.existsSync(dataPath)) return { orgs: {} };
@@ -68,24 +58,20 @@ function loadData() {
     return { orgs: {} };
   }
 }
-function saveData() {
-  fs.writeFileSync(dataPath, JSON.stringify(DB, null, 2), "utf8");
-}
 
 const DB = loadData();
 if (!DB.orgs) DB.orgs = {};
 
-// ----------------------------
-// Helpers
-// ----------------------------
-function nowIso() { return new Date().toISOString(); }
-
-function peekOrg(orgId) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return null;
-  return DB.orgs?.[oid] || null;
+function saveData() {
+  fs.writeFileSync(dataPath, JSON.stringify(DB, null, 2), "utf8");
 }
 
+/* =========================================================
+   Helpers
+========================================================= */
+function nowIso() {
+  return new Date().toISOString();
+}
 
 function sha256(s) {
   return crypto.createHash("sha256").update(String(s)).digest("hex");
@@ -102,18 +88,24 @@ function b64urlEncode(bufOrStr) {
   const buf = Buffer.isBuffer(bufOrStr) ? bufOrStr : Buffer.from(String(bufOrStr), "utf8");
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
+
 function b64urlDecodeToString(s) {
   const str = String(s || "");
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
   const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + pad;
   return Buffer.from(b64, "base64").toString("utf8");
 }
-function bytesToB64(buf) { return Buffer.from(buf).toString("base64"); }
-function b64ToBytes(b64) { return Buffer.from(String(b64 || ""), "base64"); }
 
-// ----------------------------
-// Minimal JWT-like token (HMAC-SHA256)
-// ----------------------------
+function bytesToB64(buf) {
+  return Buffer.from(buf).toString("base64");
+}
+function b64ToBytes(b64) {
+  return Buffer.from(String(b64 || ""), "base64");
+}
+
+/* =========================================================
+   Token (minimal JWT-like HMAC-SHA256)
+========================================================= */
 const TOKEN_SECRET = process.env.QM_TOKEN_SECRET || "dev_secret_change_me";
 
 function signToken(payload) {
@@ -139,27 +131,35 @@ function verifyToken(token) {
   return payload;
 }
 
-// ----------------------------
-// Public base URL helper
-// ----------------------------
+/* =========================================================
+   Public base URL helper
+========================================================= */
 function getPublicBase(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   return `${proto}://${host}`;
 }
 
-// ----------------------------
-// Org + policies + alerts
-// ----------------------------
+/* =========================================================
+   Org / policies / keyring
+========================================================= */
 function defaultPolicies() {
   return {
     forceAttachmentEncryption: false,
-    disablePassphraseMode: false,        // flag for future (your decrypt still uses login anyway)
-    enforceKeyRotationDays: 0,           // 0 = off
-    requireReauthForDecrypt: true        // you already do login+decrypt; keep true
+    disablePassphraseMode: false,
+    enforceKeyRotationDays: 0,
+    requireReauthForDecrypt: true,
   };
 }
 
+// peek-only (DO NOT create)
+function peekOrg(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return null;
+  return DB.orgs?.[oid] || null;
+}
+
+// create-or-get (used where creation is intended)
 function getOrg(orgId) {
   const oid = String(orgId || "").trim();
   if (!oid) return null;
@@ -171,7 +171,7 @@ function getOrg(orgId) {
       messages: {},
       keyring: null,
       policies: defaultPolicies(),
-      invites: {}
+      invites: {},
     };
   }
 
@@ -180,111 +180,16 @@ function getOrg(orgId) {
   if (!org.audit) org.audit = [];
   if (!org.messages) org.messages = {};
   if (!org.policies) org.policies = defaultPolicies();
+  if (!org.invites) org.invites = {}; // important for older data.json files
+  if (!org.keyring) org.keyring = null;
 
   ensureKeyring(org);
   saveData();
   return org;
 }
 
-function genInviteCode() {
-  const n = crypto.randomInt(0, 1000000);
-  const s = String(n).padStart(6, "0");
-  return `${s.slice(0,3)}-${s.slice(3)}`; // e.g., 493-118
-}
-
-// ----------------------------
-// ORG: check org existence / initialized
-// GET /org/check?orgId=org_demo
-// ----------------------------
-app.get("/org/check", (req, res) => {
-  const orgId = String(req.query.orgId || "").trim();
-  if (!orgId) return res.status(400).json({ error: "orgId required" });
-
-  const org = peekOrg(orgId);
-  const exists = !!org;
-  const userCount = exists ? (org.users?.length || 0) : 0;
-  const hasAdmin = exists ? !!(org.users || []).find(u => u.role === "Admin") : false;
-
-  res.json({
-    ok: true,
-    orgId,
-    exists,
-    initialized: exists && userCount > 0 && hasAdmin,
-    userCount,
-    hasAdmin
-  });
-});
-
-// ----------------------------
-// ORG: check username availability
-// GET /org/check-username?orgId=org_demo&username=alice
-// ----------------------------
-app.get("/org/check-username", (req, res) => {
-  const orgId = String(req.query.orgId || "").trim();
-  const username = String(req.query.username || "").trim();
-  if (!orgId || !username) return res.status(400).json({ error: "orgId and username required" });
-
-  const org = peekOrg(orgId);
-  if (!org) {
-    return res.json({ ok: true, orgId, username, orgExists: false, available: false, reason: "org_not_found" });
-  }
-
-  const taken = !!(org.users || []).find(u => String(u.username || "").toLowerCase() === username.toLowerCase());
-  res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
-});
-
-
-// ----------------------------
-// ADMIN: generate one-time invite code
-// POST /admin/invites/generate { role?: "Member"|"Admin", expiresMinutes?: number }
-// ----------------------------
-app.post("/admin/invites/generate", requireAuth, requireAdmin, (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user: admin } = req.qm;
-
-  const role = String(req.body?.role || "Member") === "Admin" ? "Admin" : "Member";
-  const expiresMinutes = Math.min(Math.max(parseInt(req.body?.expiresMinutes || "60", 10) || 60, 5), 7 * 24 * 60);
-
-  let code;
-  for (let i = 0; i < 5; i++) {
-    code = genInviteCode();
-    if (!org.invites[code]) break;
-  }
-  if (!code || org.invites[code]) return res.status(500).json({ error: "Could not generate code" });
-
-  const createdAt = nowIso();
-  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
-
-  org.invites[code] = {
-    code,
-    role,
-    createdAt,
-    expiresAt,
-    createdByUserId: admin.userId,
-    usedAt: null,
-    usedByUserId: null
-  };
-
-  audit(req, orgId, admin.userId, "invite_generate", { code, role, expiresAt });
-  saveData();
-
-  res.json({ ok: true, code, role, expiresAt });
-});
-
-app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
-  const { org } = req.qm;
-  const items = Object.values(org.invites || {})
-    .sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 50);
-  res.json({ items });
-});
-
-
-// ----------------------------
-// Audit log
-// ----------------------------
 function audit(req, orgId, userId, action, details = {}) {
-  const org = getOrg(orgId);
+  const org = getOrg(orgId); // audit implies org exists
   if (!org) return;
 
   const entry = {
@@ -295,7 +200,7 @@ function audit(req, orgId, userId, action, details = {}) {
     action,
     ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "",
     ua: req.headers["user-agent"] || "",
-    ...details
+    ...details,
   };
 
   org.audit.unshift(entry);
@@ -303,10 +208,12 @@ function audit(req, orgId, userId, action, details = {}) {
   saveData();
 }
 
-// ----------------------------
-// KEK keyring (server-side at-rest encryption)
-// ----------------------------
-function randomKey32() { return crypto.randomBytes(32); }
+/* =========================================================
+   KEK keyring (server-side at-rest encryption)
+========================================================= */
+function randomKey32() {
+  return crypto.randomBytes(32);
+}
 
 function sealWithKek(kekBytes, obj) {
   const iv = crypto.randomBytes(12);
@@ -348,9 +255,9 @@ function ensureKeyring(org) {
           createdAt: nowIso(),
           activatedAt: nowIso(),
           retiredAt: null,
-          kekB64: bytesToB64(kek)
-        }
-      }
+          kekB64: bytesToB64(kek),
+        },
+      },
     };
     saveData();
   }
@@ -371,9 +278,18 @@ function getKekByVersion(org, version) {
   return { version: v, kekBytes: b64ToBytes(k.kekB64), meta: k };
 }
 
-// ----------------------------
-// Auth middleware
-// ----------------------------
+/* =========================================================
+   Invite helpers
+========================================================= */
+function genInviteCode() {
+  const n = crypto.randomInt(0, 1000000);
+  const s = String(n).padStart(6, "0");
+  return `${s.slice(0, 3)}-${s.slice(3)}`;
+}
+
+/* =========================================================
+   Auth middleware
+========================================================= */
 function requireAuth(req, res, next) {
   const auth = String(req.headers.authorization || "");
   const m = auth.match(/^Bearer\s+(.+)$/i);
@@ -402,9 +318,9 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ----------------------------
-// No-cache for portal + /m
-// ----------------------------
+/* =========================================================
+   No-cache for portal + /m
+========================================================= */
 app.use((req, res, next) => {
   if (req.path.startsWith("/portal") || req.path.startsWith("/m/")) {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -415,10 +331,45 @@ app.use((req, res, next) => {
   next();
 });
 
-// ----------------------------
-// DEV: create admin with custom creds
-// POST /dev/seed-admin { orgId, username, password }
-// ----------------------------
+/* =========================================================
+   ORG: check + check-username (peek-only)
+========================================================= */
+app.get("/org/check", (req, res) => {
+  const orgId = String(req.query.orgId || "").trim();
+  if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+  const org = peekOrg(orgId);
+  const exists = !!org;
+  const userCount = exists ? (org.users?.length || 0) : 0;
+  const hasAdmin = exists ? !!(org.users || []).find((u) => u.role === "Admin") : false;
+
+  res.json({
+    ok: true,
+    orgId,
+    exists,
+    initialized: exists && userCount > 0 && hasAdmin,
+    userCount,
+    hasAdmin,
+  });
+});
+
+app.get("/org/check-username", (req, res) => {
+  const orgId = String(req.query.orgId || "").trim();
+  const username = String(req.query.username || "").trim();
+  if (!orgId || !username) return res.status(400).json({ error: "orgId and username required" });
+
+  const org = peekOrg(orgId);
+  if (!org) {
+    return res.json({ ok: true, orgId, username, orgExists: false, available: false, reason: "org_not_found" });
+  }
+
+  const taken = !!(org.users || []).find((u) => String(u.username || "").toLowerCase() === username.toLowerCase());
+  res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
+});
+
+/* =========================================================
+   DEV: seed admin
+========================================================= */
 app.post("/dev/seed-admin", (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const username = String(req.body?.username || "").trim();
@@ -442,7 +393,7 @@ app.post("/dev/seed-admin", (req, res) => {
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   };
 
   org.users.push(newAdmin);
@@ -452,38 +403,9 @@ app.post("/dev/seed-admin", (req, res) => {
   res.json({ ok: true, orgId, userId: newAdmin.userId, username });
 });
 
-// ----------------------------
-// AUTH: current user info
-// GET /auth/me
-// ----------------------------
-app.get("/auth/me", requireAuth, (req, res) => {
-  const { user } = req.qm;
-  res.json({
-    ok: true,
-    user: {
-      userId: user.userId,
-      orgId: req.qm.tokenPayload.orgId,
-      username: user.username,
-      role: user.role,
-      status: user.status || "Active"
-    }
-  });
-});
-
-
-
-// ----------------------------
-// AUTH: signup (Individual vs OrgType)
-// POST /auth/signup
-// body:
-// {
-//   signupType: "Individual" | "OrgType",
-//   orgId?: string,          // required for OrgType; optional for Individual join
-//   username, password,
-//   wantAdmin?: boolean,     // only for Individual creating new org
-//   inviteCode?: string      // required for OrgType
-// }
-// ----------------------------
+/* =========================================================
+   AUTH: signup
+========================================================= */
 app.post("/auth/signup", (req, res) => {
   const signupType = String(req.body?.signupType || "Individual");
   const username = String(req.body?.username || "").trim();
@@ -494,21 +416,17 @@ app.post("/auth/signup", (req, res) => {
 
   if (!username || !password) return res.status(400).json({ error: "username and password required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
-  
+
   // ---- Individual flow ----
-  // If orgId missing => create a new personal org and make user Admin
   if (signupType === "Individual") {
-    if (!orgId) {
-      // create orgId server-side (shareable)
-      orgId = `org_${nanoid(8)}`; // e.g., org_k3f9a2bx
-    }
+    if (!orgId) orgId = `org_${nanoid(8)}`; // server generates org id
 
     const org = getOrg(orgId);
 
-    const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (exists) return res.status(409).json({ error: "Username already exists" });
 
-    const role = wantAdmin ? "Admin" : "Member"; // if creating, you’ll set wantAdmin true in UI
+    const role = wantAdmin ? "Admin" : "Member";
 
     const newUser = {
       userId: nanoid(10),
@@ -519,7 +437,7 @@ app.post("/auth/signup", (req, res) => {
       publicKeySpkiB64: null,
       publicKeyRegisteredAt: null,
       createdAt: nowIso(),
-      lastLoginAt: null
+      lastLoginAt: null,
     };
 
     org.users.push(newUser);
@@ -529,7 +447,7 @@ app.post("/auth/signup", (req, res) => {
     return res.json({ ok: true, orgId, role });
   }
 
-  // ---- OrgType flow (invite code required) ----
+  // ---- OrgType flow ----
   if (signupType === "OrgType") {
     if (!orgId) return res.status(400).json({ error: "orgId required for OrgType signup" });
     if (!inviteCode) return res.status(400).json({ error: "inviteCode required for OrgType signup" });
@@ -538,17 +456,18 @@ app.post("/auth/signup", (req, res) => {
 
     const inv = org.invites?.[inviteCode];
     if (!inv) return res.status(403).json({ error: "Invalid invite code" });
-
     if (inv.usedAt) return res.status(403).json({ error: "Invite code already used" });
-    if (!org.users || org.users.length === 0) {
-      return res.status(400).json({
-        error: "Organization not initialized yet. Please initialize as Admin first."
-      });
+
+    // require org initialized
+    const hasAdmin = !!(org.users || []).find((u) => u.role === "Admin");
+    if (!hasAdmin) {
+      return res.status(400).json({ error: "Organization not initialized yet. Please initialize as Admin first." });
     }
+
     const exp = Date.parse(inv.expiresAt || "");
     if (!Number.isNaN(exp) && Date.now() > exp) return res.status(403).json({ error: "Invite code expired" });
 
-    const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (exists) return res.status(409).json({ error: "Username already exists" });
 
     const role = inv.role === "Admin" ? "Admin" : "Member";
@@ -562,12 +481,11 @@ app.post("/auth/signup", (req, res) => {
       publicKeySpkiB64: null,
       publicKeyRegisteredAt: null,
       createdAt: nowIso(),
-      lastLoginAt: null
+      lastLoginAt: null,
     };
 
     org.users.push(newUser);
 
-    // mark invite used (one-time)
     inv.usedAt = nowIso();
     inv.usedByUserId = newUser.userId;
 
@@ -580,11 +498,9 @@ app.post("/auth/signup", (req, res) => {
   return res.status(400).json({ error: "Invalid signupType" });
 });
 
-
-
-// ----------------------------
-// AUTH: login
-// ----------------------------
+/* =========================================================
+   AUTH: login + me + change-password
+========================================================= */
 app.post("/auth/login", (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const username = String(req.body?.username || "").trim();
@@ -593,11 +509,8 @@ app.post("/auth/login", (req, res) => {
   if (!orgId) return res.status(400).json({ error: "Invalid orgId" });
 
   const org = getOrg(orgId);
-  if (!org) return res.status(400).json({ error: "Invalid orgId" });
-
   const user = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
 
-  // audit failures too (risk alerts)
   if (!user) {
     audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
     return res.status(401).json({ error: "Invalid creds" });
@@ -617,47 +530,9 @@ app.post("/auth/login", (req, res) => {
     role: user.role,
     username: user.username,
     iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60
+    exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
   };
 
-// ----------------------------
-// AUTH: change my password (self-service)
-// ----------------------------
-app.post("/auth/change-password", requireAuth, (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { user } = req.qm;
-
-  const currentPassword = String(req.body?.currentPassword || "");
-  const newPassword = String(req.body?.newPassword || "");
-
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: "currentPassword and newPassword required" });
-  }
-  if (newPassword.length < 8) {
-    return res.status(400).json({ error: "New password must be at least 8 characters" });
-  }
-
-  // Verify current password
-  const curHash = sha256(currentPassword);
-  if (!timingSafeEq(curHash, user.passwordHash)) {
-    audit(req, orgId, user.userId, "change_password_failed", { reason: "bad_current_password" });
-    return res.status(401).json({ error: "Current password is incorrect" });
-  }
-
-  // Prevent same password reuse (optional but nice)
-  const nextHash = sha256(newPassword);
-  if (timingSafeEq(nextHash, user.passwordHash)) {
-    return res.status(400).json({ error: "New password must be different" });
-  }
-
-  user.passwordHash = nextHash;
-  audit(req, orgId, user.userId, "change_password", { username: user.username, role: user.role });
-  saveData();
-
-  res.json({ ok: true });
-});
-
-  
   const token = signToken(payload);
   audit(req, orgId, user.userId, "login", { username: user.username, role: user.role });
   saveData();
@@ -672,14 +547,60 @@ app.post("/auth/change-password", requireAuth, (req, res) => {
       status: user.status || "Active",
       hasPublicKey: !!user.publicKeySpkiB64,
       lastLoginAt: user.lastLoginAt,
-      publicKeyRegisteredAt: user.publicKeyRegisteredAt
-    }
+      publicKeyRegisteredAt: user.publicKeyRegisteredAt,
+    },
   });
 });
 
-// ----------------------------
-// ORG: register public key
-// ----------------------------
+app.get("/auth/me", requireAuth, (req, res) => {
+  const { user } = req.qm;
+  res.json({
+    ok: true,
+    user: {
+      userId: user.userId,
+      orgId: req.qm.tokenPayload.orgId,
+      username: user.username,
+      role: user.role,
+      status: user.status || "Active",
+    },
+  });
+});
+
+app.post("/auth/change-password", requireAuth, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { user } = req.qm;
+
+  const currentPassword = String(req.body?.currentPassword || "");
+  const newPassword = String(req.body?.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "currentPassword and newPassword required" });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "New password must be at least 8 characters" });
+  }
+
+  const curHash = sha256(currentPassword);
+  if (!timingSafeEq(curHash, user.passwordHash)) {
+    audit(req, orgId, user.userId, "change_password_failed", { reason: "bad_current_password" });
+    return res.status(401).json({ error: "Current password is incorrect" });
+  }
+
+  const nextHash = sha256(newPassword);
+  if (timingSafeEq(nextHash, user.passwordHash)) {
+    return res.status(400).json({ error: "New password must be different" });
+  }
+
+  user.passwordHash = nextHash;
+  audit(req, orgId, user.userId, "change_password", { username: user.username, role: user.role });
+  saveData();
+
+  res.json({ ok: true });
+});
+
+/* =========================================================
+   ORG: register key + list users
+========================================================= */
 app.post("/org/register-key", requireAuth, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { user } = req.qm;
@@ -696,7 +617,7 @@ app.post("/org/register-key", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Back-compat alias
+// back-compat alias
 app.post("/pubkey_register", requireAuth, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { user } = req.qm;
@@ -713,7 +634,6 @@ app.post("/pubkey_register", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ORG: list users (extension uses this for wrapping keys)
 app.get("/org/users", requireAuth, (req, res) => {
   const { org } = req.qm;
   res.json({
@@ -723,14 +643,62 @@ app.get("/org/users", requireAuth, (req, res) => {
       role: u.role,
       status: u.status || "Active",
       publicKeySpkiB64: u.publicKeySpkiB64 || null,
-      hasPublicKey: !!u.publicKeySpkiB64
-    }))
+      hasPublicKey: !!u.publicKeySpkiB64,
+    })),
   });
 });
 
-// ----------------------------
-// ADMIN: users
-// ----------------------------
+/* =========================================================
+   ADMIN: invites
+========================================================= */
+app.post("/admin/invites/generate", requireAuth, requireAdmin, (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const { org, user: admin } = req.qm;
+
+  const role = String(req.body?.role || "Member") === "Admin" ? "Admin" : "Member";
+  const expiresMinutes = Math.min(
+    Math.max(parseInt(req.body?.expiresMinutes || "60", 10) || 60, 5),
+    7 * 24 * 60
+  );
+
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = genInviteCode();
+    if (!org.invites[code]) break;
+  }
+  if (!code || org.invites[code]) return res.status(500).json({ error: "Could not generate code" });
+
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+
+  org.invites[code] = {
+    code,
+    role,
+    createdAt,
+    expiresAt,
+    createdByUserId: admin.userId,
+    usedAt: null,
+    usedByUserId: null,
+  };
+
+  audit(req, orgId, admin.userId, "invite_generate", { code, role, expiresAt });
+  saveData();
+
+  res.json({ ok: true, code, role, expiresAt });
+});
+
+app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
+  const { org } = req.qm;
+  const items = Object.values(org.invites || {})
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 50);
+
+  res.json({ items });
+});
+
+/* =========================================================
+   ADMIN: users
+========================================================= */
 app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
   const { org } = req.qm;
   res.json({
@@ -741,8 +709,8 @@ app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
       status: u.status || "Active",
       hasPublicKey: !!u.publicKeySpkiB64,
       lastLoginAt: u.lastLoginAt || null,
-      publicKeyRegisteredAt: u.publicKeyRegisteredAt || null
-    }))
+      publicKeyRegisteredAt: u.publicKeyRegisteredAt || null,
+    })),
   });
 });
 
@@ -755,6 +723,7 @@ app.post("/admin/users", requireAuth, requireAdmin, (req, res) => {
   const role = String(req.body?.role || "Member").trim() || "Member";
 
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
   if (exists) return res.status(409).json({ error: "Username already exists" });
@@ -768,21 +737,20 @@ app.post("/admin/users", requireAuth, requireAdmin, (req, res) => {
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   };
 
   org.users.push(newUser);
   audit(req, orgId, admin.userId, "create_user", {
     createdUserId: newUser.userId,
     username: newUser.username,
-    role: newUser.role
+    role: newUser.role,
   });
   saveData();
 
   res.json({ ok: true, userId: newUser.userId });
 });
 
-// delete user
 app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user: admin } = req.qm;
@@ -797,7 +765,7 @@ app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
   const idx = org.users.findIndex((u) => u.userId === targetId);
   if (idx < 0) return res.status(404).json({ error: "User not found" });
 
-  // remove wrapped keys for that user from stored messages (cleanup)
+  // cleanup wrapped keys inside messages
   for (const mid of Object.keys(org.messages || {})) {
     try {
       const rec = org.messages[mid];
@@ -810,7 +778,9 @@ app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
         delete msg.wrappedKeys[targetId];
         rec.sealed = sealWithKek(kk.kekBytes, msg);
       }
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }
 
   const removed = org.users.splice(idx, 1)[0];
@@ -820,7 +790,6 @@ app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, deletedUserId: targetId });
 });
 
-// clear key
 app.post("/admin/users/:userId/clear-key", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user: admin } = req.qm;
@@ -840,9 +809,10 @@ app.post("/admin/users/:userId/clear-key", requireAuth, requireAdmin, (req, res)
   res.json({ ok: true });
 });
 
-// ----------------------------
-// ADMIN: audit
-// ----------------------------
+/* =========================================================
+   ADMIN: audit + policies + analytics + alerts + keys
+   (kept as-is from your design, just clean separation)
+========================================================= */
 app.get("/admin/audit", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const limit = Math.min(parseInt(req.query.limit || "200", 10) || 200, 2000);
@@ -850,9 +820,6 @@ app.get("/admin/audit", requireAuth, requireAdmin, (req, res) => {
   res.json({ orgId, items });
 });
 
-// ----------------------------
-// ADMIN: policies
-// ----------------------------
 app.get("/admin/policies", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   res.json({ orgId, policies: req.qm.org.policies || defaultPolicies() });
@@ -869,7 +836,7 @@ app.post("/admin/policies", requireAuth, requireAdmin, (req, res) => {
     forceAttachmentEncryption: !!p.forceAttachmentEncryption,
     disablePassphraseMode: !!p.disablePassphraseMode,
     enforceKeyRotationDays: Math.max(0, parseInt(p.enforceKeyRotationDays || cur.enforceKeyRotationDays || 0, 10) || 0),
-    requireReauthForDecrypt: !!p.requireReauthForDecrypt
+    requireReauthForDecrypt: !!p.requireReauthForDecrypt,
   };
 
   audit(req, orgId, admin.userId, "policy_update", { policies: org.policies });
@@ -878,9 +845,6 @@ app.post("/admin/policies", requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, policies: org.policies });
 });
 
-// ----------------------------
-// ADMIN: analytics
-// ----------------------------
 function withinDays(iso, days) {
   if (!iso) return false;
   const t = Date.parse(iso);
@@ -892,17 +856,17 @@ function withinDays(iso, days) {
 app.get("/admin/analytics", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const days = Math.min(Math.max(parseInt(req.query.days || "30", 10) || 30, 1), 365);
-  const items = req.qm.org.audit.filter(a => withinDays(a.at, days));
+  const items = req.qm.org.audit.filter((a) => withinDays(a.at, days));
 
   const countByAction = {};
-  const userActivity = {}; // userId -> score + per-action
-  const attachmentBytesPerDay = {}; // YYYY-MM-DD -> bytes
+  const userActivity = {};
+  const attachmentBytesPerDay = {};
 
   for (const a of items) {
     countByAction[a.action] = (countByAction[a.action] || 0) + 1;
 
     if (a.userId) {
-      if (!userActivity[a.userId]) userActivity[a.userId] = { userId: a.userId, decrypts: 0, encrypts: 0, denied: 0, logins: 0, username: a.username || "" };
+      if (!userActivity[a.userId]) userActivity[a.userId] = { userId: a.userId, decrypts: 0, encrypts: 0, denied: 0, logins: 0 };
       if (a.action === "decrypt_payload") userActivity[a.userId].decrypts++;
       if (a.action === "encrypt_store") userActivity[a.userId].encrypts++;
       if (a.action === "decrypt_denied") userActivity[a.userId].denied++;
@@ -919,15 +883,11 @@ app.get("/admin/analytics", requireAuth, requireAdmin, (req, res) => {
     .sort((x, y) => (y.decrypts + y.encrypts) - (x.decrypts + x.encrypts))
     .slice(0, 10);
 
-  // timeseries last N days
   const series = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
     const day = d.toISOString().slice(0, 10);
-    series.push({
-      day,
-      attachmentBytes: attachmentBytesPerDay[day] || 0
-    });
+    series.push({ day, attachmentBytes: attachmentBytesPerDay[day] || 0 });
   }
 
   res.json({
@@ -937,28 +897,25 @@ app.get("/admin/analytics", requireAuth, requireAdmin, (req, res) => {
       encryptedMessages: countByAction["encrypt_store"] || 0,
       decrypts: countByAction["decrypt_payload"] || 0,
       deniedDecrypts: countByAction["decrypt_denied"] || 0,
-      failedLogins: countByAction["login_failed"] || 0
+      failedLogins: countByAction["login_failed"] || 0,
     },
     topUsers,
-    attachmentSeries: series
+    attachmentSeries: series,
   });
 });
 
-// ----------------------------
-// ADMIN: alerts (risk)
-// ----------------------------
 app.get("/admin/alerts", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const minutes = Math.min(Math.max(parseInt(req.query.minutes || "60", 10) || 60, 5), 1440);
   const since = Date.now() - minutes * 60 * 1000;
 
-  const recent = req.qm.org.audit.filter(a => {
+  const recent = req.qm.org.audit.filter((a) => {
     const t = Date.parse(a.at);
     return !Number.isNaN(t) && t >= since;
   });
 
-  const denied = recent.filter(a => a.action === "decrypt_denied").length;
-  const failedLogins = recent.filter(a => a.action === "login_failed").length;
+  const denied = recent.filter((a) => a.action === "decrypt_denied").length;
+  const failedLogins = recent.filter((a) => a.action === "login_failed").length;
 
   const alerts = [];
   if (denied >= 10) alerts.push({ severity: "high", code: "DENIED_DECRYPT_SPIKE", message: `High denied decrypts: ${denied} in last ${minutes} min` });
@@ -970,9 +927,6 @@ app.get("/admin/alerts", requireAuth, requireAdmin, (req, res) => {
   res.json({ orgId, minutes, alerts, summary: { denied, failedLogins } });
 });
 
-// ----------------------------
-// ADMIN: keyring rotate/retire
-// ----------------------------
 app.get("/admin/keys", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = req.qm.org;
@@ -985,7 +939,7 @@ app.get("/admin/keys", requireAuth, requireAdmin, (req, res) => {
       status: k.status,
       createdAt: k.createdAt,
       activatedAt: k.activatedAt,
-      retiredAt: k.retiredAt
+      retiredAt: k.retiredAt,
     }))
     .sort((a, b) => Number(a.version) - Number(b.version));
 
@@ -1004,8 +958,8 @@ app.post("/admin/keys/rotate", requireAuth, requireAdmin, (req, res) => {
     .filter((n) => !Number.isNaN(n));
 
   const next = String((Math.max(...versions, 0) + 1) || 1);
-
   const curV = String(org.keyring.active);
+
   if (org.keyring.keys[curV]) {
     org.keyring.keys[curV].status = "retired";
     org.keyring.keys[curV].retiredAt = nowIso();
@@ -1018,7 +972,7 @@ app.post("/admin/keys/rotate", requireAuth, requireAdmin, (req, res) => {
     createdAt: nowIso(),
     activatedAt: nowIso(),
     retiredAt: null,
-    kekB64: bytesToB64(kek)
+    kekB64: bytesToB64(kek),
   };
   org.keyring.active = next;
 
@@ -1028,9 +982,9 @@ app.post("/admin/keys/rotate", requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true, active: next, previous: curV });
 });
 
-// ----------------------------
-// MESSAGES: create + fetch (at-rest sealed with KEK)
-// ----------------------------
+/* =========================================================
+   MESSAGES: create + inbox + fetch
+========================================================= */
 app.post("/api/messages", requireAuth, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user } = req.qm;
@@ -1040,10 +994,8 @@ app.post("/api/messages", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Invalid payload (iv, ciphertext, wrappedKeys required)" });
   }
 
-  // enforce attachment policy
   const pol = org.policies || defaultPolicies();
   if (pol.forceAttachmentEncryption) {
-    // if attachments provided, validate shape
     if (payload.attachments != null && !Array.isArray(payload.attachments)) {
       return res.status(400).json({ error: "attachments must be an array" });
     }
@@ -1060,7 +1012,6 @@ app.post("/api/messages", requireAuth, (req, res) => {
 
   const { version, kekBytes, meta } = getActiveKek(org);
 
-  // policy: key rotation reminder (alert via audit)
   const rotateDays = Number(pol.enforceKeyRotationDays || 0);
   if (rotateDays > 0) {
     const activated = Date.parse(meta?.activatedAt || meta?.createdAt || "");
@@ -1080,29 +1031,37 @@ app.post("/api/messages", requireAuth, (req, res) => {
     ciphertext: payload.ciphertext,
     aad: payload.aad || "gmail",
     wrappedKeys: payload.wrappedKeys,
-    attachments: attachmentsArr
+    attachments: attachmentsArr,
   });
 
-  //org.messages[id] = { createdAt, kekVersion: version, sealed };
   org.messages[id] = {
-  createdAt,
-  kekVersion: version,
-  sealed,
-  createdByUserId: user.userId,
-  createdByUsername: user.username
-};
+    createdAt,
+    kekVersion: version,
+    sealed,
+    createdByUserId: user.userId,
+    createdByUsername: user.username,
+  };
 
-// ----------------------------
-// INBOX: list messages decryptable by this user
-// GET /api/inbox
-// ----------------------------
+  audit(req, orgId, user.userId, "encrypt_store", {
+    msgId: id,
+    kekVersion: version,
+    attachmentCount: attachmentsArr.length,
+    attachmentsTotalBytes,
+  });
+
+  saveData();
+
+  const base = getPublicBase(req);
+  const url = `${base}/m/${id}`;
+  res.json({ id, url, kekVersion: version });
+});
+
 app.get("/api/inbox", requireAuth, (req, res) => {
   const { org, user } = req.qm;
 
   const items = [];
   const ids = Object.keys(org.messages || {});
 
-  // newest first
   ids.sort((a, b) => {
     const aa = Date.parse(org.messages[a]?.createdAt || "") || 0;
     const bb = Date.parse(org.messages[b]?.createdAt || "") || 0;
@@ -1113,8 +1072,6 @@ app.get("/api/inbox", requireAuth, (req, res) => {
     const rec = org.messages[id];
     if (!rec) continue;
 
-    // open sealed record
-    ensureKeyring(org);
     const kv = String(rec.kekVersion || org.keyring.active);
     const kk = getKekByVersion(org, kv);
     if (!kk) continue;
@@ -1126,7 +1083,6 @@ app.get("/api/inbox", requireAuth, (req, res) => {
       continue;
     }
 
-    // Only show messages where this user has a wrapped key
     const hasKey = !!msg?.wrappedKeys?.[user.userId];
     if (!hasKey) continue;
 
@@ -1141,36 +1097,21 @@ app.get("/api/inbox", requireAuth, (req, res) => {
       from: rec.createdByUsername || null,
       fromUserId: rec.createdByUserId || null,
       attachmentCount: attCount,
-      attachmentsTotalBytes: attBytes
+      attachmentsTotalBytes: attBytes,
     });
   }
 
   res.json({ items });
 });
 
-  audit(req, orgId, user.userId, "encrypt_store", {
-    msgId: id,
-    kekVersion: version,
-    attachmentCount: attachmentsArr.length,
-    attachmentsTotalBytes
-  });
-
-  saveData();
-
-  const base = getPublicBase(req);
-  const url = `${base}/m/${id}`;
-  res.json({ id, url, kekVersion: version });
-});
-
 app.get("/api/messages/:id", requireAuth, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user } = req.qm;
 
-  const id = req.params.id;
+  const id = String(req.params.id || "").trim();
   const rec = org.messages[id];
   if (!rec) return res.status(404).json({ error: "Not found" });
 
-  ensureKeyring(org);
   const kv = String(rec.kekVersion || org.keyring.active);
   const kk = getKekByVersion(org, kv);
   if (!kk) return res.status(500).json({ error: "Missing KEK for stored message" });
@@ -1198,13 +1139,13 @@ app.get("/api/messages/:id", requireAuth, (req, res) => {
     aad: msg.aad,
     wrappedDek,
     kekVersion: kv,
-    attachments: Array.isArray(msg.attachments) ? msg.attachments : []
+    attachments: Array.isArray(msg.attachments) ? msg.attachments : [],
   });
 });
 
-// ----------------------------
-// Portal static + routes
-// ----------------------------
+/* =========================================================
+   Portal static + routes
+========================================================= */
 app.use("/portal", express.static(portalDir, { extensions: ["html"], etag: false, maxAge: 0 }));
 
 app.get("/m/:id", (_req, res) => {
@@ -1214,5 +1155,8 @@ app.get("/m/:id", (_req, res) => {
 app.get("/portal/m/:id", (req, res) => res.redirect(`/m/${req.params.id}`));
 app.get("/", (_req, res) => res.redirect("/portal/index.html"));
 
+/* =========================================================
+   Start
+========================================================= */
 const PORT = process.env.PORT || 5173;
 app.listen(PORT, () => console.log(`QuantumMail server running on port ${PORT}`));
