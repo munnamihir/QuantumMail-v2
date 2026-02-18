@@ -80,6 +80,13 @@ if (!DB.orgs) DB.orgs = {};
 // ----------------------------
 function nowIso() { return new Date().toISOString(); }
 
+function peekOrg(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return null;
+  return DB.orgs?.[oid] || null;
+}
+
+
 function sha256(s) {
   return crypto.createHash("sha256").update(String(s)).digest("hex");
 }
@@ -184,6 +191,48 @@ function genInviteCode() {
   const s = String(n).padStart(6, "0");
   return `${s.slice(0,3)}-${s.slice(3)}`; // e.g., 493-118
 }
+
+// ----------------------------
+// ORG: check org existence / initialized
+// GET /org/check?orgId=org_demo
+// ----------------------------
+app.get("/org/check", (req, res) => {
+  const orgId = String(req.query.orgId || "").trim();
+  if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+  const org = peekOrg(orgId);
+  const exists = !!org;
+  const userCount = exists ? (org.users?.length || 0) : 0;
+  const hasAdmin = exists ? !!(org.users || []).find(u => u.role === "Admin") : false;
+
+  res.json({
+    ok: true,
+    orgId,
+    exists,
+    initialized: exists && userCount > 0 && hasAdmin,
+    userCount,
+    hasAdmin
+  });
+});
+
+// ----------------------------
+// ORG: check username availability
+// GET /org/check-username?orgId=org_demo&username=alice
+// ----------------------------
+app.get("/org/check-username", (req, res) => {
+  const orgId = String(req.query.orgId || "").trim();
+  const username = String(req.query.username || "").trim();
+  if (!orgId || !username) return res.status(400).json({ error: "orgId and username required" });
+
+  const org = peekOrg(orgId);
+  if (!org) {
+    return res.json({ ok: true, orgId, username, orgExists: false, available: false, reason: "org_not_found" });
+  }
+
+  const taken = !!(org.users || []).find(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+  res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
+});
+
 
 // ----------------------------
 // ADMIN: generate one-time invite code
