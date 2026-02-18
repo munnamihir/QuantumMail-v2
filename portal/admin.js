@@ -40,6 +40,7 @@ function closeProfile() {
 function setSessionPill() {
   const who = $("who");
   const dot = $("sessionDot");
+  const btn = $("btnProfile");
 
   if (who) {
     who.textContent = token && sessionUser
@@ -50,6 +51,7 @@ function setSessionPill() {
     dot.classList.remove("good", "bad");
     if (token) dot.classList.add("good");
   }
+  if (btn) btn.disabled = !token;
 }
 
 async function api(path, { method = "GET", body = null } = {}) {
@@ -226,11 +228,53 @@ async function refreshAlertsBadge() {
   }
 }
 
+async function changeMyPassword() {
+  ok("pwOk", ""); err("pwErr", "");
+  if (!token) { err("pwErr", "Login required."); return; }
+
+  const currentPassword = String($("curPw")?.value || "");
+  const newPassword = String($("newPw")?.value || "");
+  const confirm = String($("newPw2")?.value || "");
+
+  if (!currentPassword || !newPassword) {
+    err("pwErr", "Current and new password are required.");
+    return;
+  }
+  if (newPassword.length < 8) {
+    err("pwErr", "New password must be at least 8 characters.");
+    return;
+  }
+  if (newPassword !== confirm) {
+    err("pwErr", "New password and confirmation do not match.");
+    return;
+  }
+
+  await api("/auth/change-password", {
+    method: "POST",
+    body: { currentPassword, newPassword }
+  });
+
+  ok("pwOk", "Password updated ✅");
+  $("curPw").value = ""; $("newPw").value = ""; $("newPw2").value = "";
+}
+
+
 // Wire up
 $("btnCreateAdmin")?.addEventListener("click", () => createAdmin().catch(e => err("seedErr", e.message)));
 $("btnLogin")?.addEventListener("click", () => login().catch(e => err("authErr", e.message)));
 $("btnLogout")?.addEventListener("click", logout);
 $("btnCreateUser")?.addEventListener("click", () => createUser().catch(e => err("usersErr", e.message)));
 $("btnRefreshUsers")?.addEventListener("click", () => refreshUsers().catch(e => err("usersErr", e.message)));
+$("profileModal")?.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "profileModal") closeProfile();
+});
+$("btnProfile")?.addEventListener("click", () => openProfile());
+$("btnCloseProfile")?.addEventListener("click", closeProfile);
+$("btnChangePw")?.addEventListener("click", () => changeMyPassword().catch(e => err("pwErr", e.message)));
+
+$("btnLogoutProfile")?.addEventListener("click", () => {
+  closeProfile();
+  logout();
+});
 
 setSessionPill();
