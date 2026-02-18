@@ -851,7 +851,70 @@ app.post("/api/messages", requireAuth, (req, res) => {
     attachments: attachmentsArr
   });
 
-  org.messages[id] = { createdAt, kekVersion: version, sealed };
+  //org.messages[id] = { createdAt, kekVersion: version, sealed };
+  org.messages[id] = {
+  createdAt,
+  kekVersion: version,
+  sealed,
+  createdByUserId: user.userId,
+  createdByUsername: user.username
+};
+
+// ----------------------------
+// INBOX: list messages decryptable by this user
+// GET /api/inbox
+// ----------------------------
+app.get("/api/inbox", requireAuth, (req, res) => {
+  const { org, user } = req.qm;
+
+  const items = [];
+  const ids = Object.keys(org.messages || {});
+
+  // newest first
+  ids.sort((a, b) => {
+    const aa = Date.parse(org.messages[a]?.createdAt || "") || 0;
+    const bb = Date.parse(org.messages[b]?.createdAt || "") || 0;
+    return bb - aa;
+  });
+
+  for (const id of ids) {
+    const rec = org.messages[id];
+    if (!rec) continue;
+
+    // open sealed record
+    ensureKeyring(org);
+    const kv = String(rec.kekVersion || org.keyring.active);
+    const kk = getKekByVersion(org, kv);
+    if (!kk) continue;
+
+    let msg;
+    try {
+      msg = openWithKek(kk.kekBytes, rec.sealed);
+    } catch {
+      continue;
+    }
+
+    // Only show messages where this user has a wrapped key
+    const hasKey = !!msg?.wrappedKeys?.[user.userId];
+    if (!hasKey) continue;
+
+    const attCount = Array.isArray(msg.attachments) ? msg.attachments.length : 0;
+    const attBytes = Array.isArray(msg.attachments)
+      ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0)
+      : 0;
+
+    items.push({
+      id,
+      createdAt: rec.createdAt,
+      from: rec.createdByUsername || null,
+      fromUserId: rec.createdByUserId || null,
+      attachmentCount: attCount,
+      attachmentsTotalBytes: attBytes
+    });
+  }
+
+  res.json({ items });
+});
 
   audit(req, orgId, user.userId, "encrypt_store", {
     msgId: id,
