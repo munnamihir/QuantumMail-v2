@@ -351,6 +351,47 @@ app.post("/dev/seed-admin", (req, res) => {
 });
 
 // ----------------------------
+// AUTH: signup (creates org if missing, creates first user as Member)
+// POST /auth/signup { orgId, username, password }
+// ----------------------------
+app.post("/auth/signup", (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
+
+  if (!orgId || !username || !password) {
+    return res.status(400).json({ error: "orgId, username, password required" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const org = getOrg(orgId);
+
+  const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  if (exists) return res.status(409).json({ error: "Username already exists" });
+
+  const newUser = {
+    userId: nanoid(10),
+    username,
+    passwordHash: sha256(password),
+    role: "Member",
+    status: "Active",
+    publicKeySpkiB64: null,
+    publicKeyRegisteredAt: null,
+    createdAt: nowIso(),
+    lastLoginAt: null
+  };
+
+  org.users.push(newUser);
+  audit(req, orgId, newUser.userId, "signup", { username });
+  saveData();
+
+  res.json({ ok: true });
+});
+
+
+// ----------------------------
 // AUTH: login
 // ----------------------------
 app.post("/auth/login", (req, res) => {
