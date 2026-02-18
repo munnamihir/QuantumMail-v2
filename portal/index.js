@@ -178,6 +178,96 @@ async function login() {
   window.location.href = "/portal/inbox.html";
 }
 
+  const checkOrgIdLive = debounce(async () => {
+  const orgId = String($("suOrgId")?.value || "").trim();
+  const signupType = String($("suSignupType")?.value || "Individual");
+  const indivMode = String($("suIndividualMode")?.value || "create");
+
+  // if orgId field not shown, clear state
+  if ($("suOrgRow")?.style.display === "none") {
+    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
+    return;
+  }
+
+  if (!orgId) {
+    setFieldState($("suOrgId"), $("suOrgStatus"), null, "");
+    return;
+  }
+
+  try {
+    const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+
+    if (signupType === "OrgType") {
+      // OrgType must join existing org
+      if (!out.exists) {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found. Click “Initialize Organization as Admin”.");
+      } else if (!out.initialized) {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org exists but not initialized. Initialize as Admin first.");
+      } else {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
+      }
+      return;
+    }
+
+    // Individual join existing org:
+    if (indivMode === "join") {
+      if (!out.exists) {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "Org not found.");
+      } else {
+        setFieldState($("suOrgId"), $("suOrgStatus"), "good", `Org found ✅ Users: ${out.userCount}`);
+      }
+      return;
+    }
+
+    // Individual create mode doesn't require orgId; if they typed one manually we can warn if taken:
+    if (out.exists) {
+      setFieldState($("suOrgId"), $("suOrgStatus"), "bad", "This Org ID already exists. Pick another or switch to Join.");
+    } else {
+      setFieldState($("suOrgId"), $("suOrgStatus"), "good", "Org ID is available ✅");
+    }
+  } catch (e) {
+    setFieldState($("suOrgId"), $("suOrgStatus"), "bad", e.message || "Org check failed");
+  }
+}, 400);
+
+const checkUsernameLive = debounce(async () => {
+  const orgId = String($("suOrgId")?.value || "").trim();
+  const username = String($("suUsername")?.value || "").trim();
+  const signupType = String($("suSignupType")?.value || "Individual");
+  const indivMode = String($("suIndividualMode")?.value || "create");
+
+  // For Individual create mode, orgId is generated server-side → cannot pre-check username uniqueness
+  if (signupType === "Individual" && indivMode === "create") {
+    setFieldState($("suUsername"), $("suUserStatus"), null, "Username will be checked after org is created.");
+    return;
+  }
+
+  if (!orgId || !username) {
+    setFieldState($("suUsername"), $("suUserStatus"), null, "");
+    return;
+  }
+
+  try {
+    const out = await apiPublic(
+      `/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`
+    );
+
+    if (!out.orgExists) {
+      setFieldState($("suUsername"), $("suUserStatus"), "bad", "Org not found yet.");
+      return;
+    }
+
+    if (out.available) {
+      setFieldState($("suUsername"), $("suUserStatus"), "good", "Username is available ✅");
+    } else {
+      setFieldState($("suUsername"), $("suUserStatus"), "bad", "Username is already taken.");
+    }
+  } catch (e) {
+    setFieldState($("suUsername"), $("suUserStatus"), "bad", e.message || "Username check failed");
+  }
+}, 400);
+
+
 $("tabSignup").addEventListener("click", () => setTab("signup"));
 $("tabLogin").addEventListener("click", () => setTab("login"));
 $("btnSignup").addEventListener("click", () => signup().catch(e => err("suErr", e.message)));
@@ -191,5 +281,12 @@ $("btnGoAdminSetup")?.addEventListener("click", () => {
     window.location.href = "/portal/admin.html";
   }
 });
+$("suOrgId")?.addEventListener("input", () => { checkOrgIdLive(); checkUsernameLive(); });
+$("suUsername")?.addEventListener("input", () => checkUsernameLive());
+
+// Also re-run checks when signup type/mode changes (because required fields change)
+$("suSignupType")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
+$("suIndividualMode")?.addEventListener("change", () => { computeSignupUI(); checkOrgIdLive(); checkUsernameLive(); });
+
 
 wireSignupUI();
