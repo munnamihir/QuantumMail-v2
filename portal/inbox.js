@@ -9,6 +9,46 @@ function getUser() {
   catch { return null; }
 }
 
+const $ = (id) => document.getElementById(id);
+
+async function api(path, { method="GET", body=null } = {}) {
+  const token = sessionStorage.getItem("qm_token") || "";
+  if (!token) throw new Error("Not logged in.");
+
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+async function initRoleUI() {
+  try {
+    const me = await api("/auth/me");
+    const role = me?.user?.role;
+
+    if (role === "Admin") {
+      // show admin-only UI
+      $("btnAdminDash").style.display = "";
+      $("btnInvites").style.display = "";
+
+      // also store admin token so admin pages work without separate login
+      sessionStorage.setItem("qm_admin_token", sessionStorage.getItem("qm_token"));
+    } else {
+      $("btnAdminDash").style.display = "none";
+      $("btnInvites").style.display = "none";
+    }
+  } catch (e) {
+    // if token invalid, send them back to login
+    window.location.href = "/portal/index.html";
+  }
+}
+
+initRoleUI();
+
+
 async function api(path, { method="GET", body=null } = {}) {
   const token = getToken();
   if (!token) throw new Error("Not logged in.");
