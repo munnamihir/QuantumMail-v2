@@ -157,5 +157,14 @@ $("tabSignup").addEventListener("click", () => setTab("signup"));
 $("tabLogin").addEventListener("click", () => setTab("login"));
 $("btnSignup").addEventListener("click", () => signup().catch(e => err("suErr", e.message)));
 $("btnLogin").addEventListener("click", () => login().catch(e => err("liErr", e.message)));
+$("btnGoAdminSetup")?.addEventListener("click", () => {
+  const orgId = $("suOrgId")?.value?.trim();
+  if (orgId) {
+    // Pass orgId in query so admin page can pre-fill
+    window.location.href = `/portal/admin.html?orgId=${encodeURIComponent(orgId)}`;
+  } else {
+    window.location.href = "/portal/admin.html";
+  }
+});
 
 wireSignupUI();
