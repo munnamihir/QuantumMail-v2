@@ -980,7 +980,7 @@ app.get("/m/:id", (_req, res) => {
 });
 
 app.get("/portal/m/:id", (req, res) => res.redirect(`/m/${req.params.id}`));
-app.get("/", (_req, res) => res.redirect("/portal/admin.html"));
+app.get("/", (_req, res) => res.redirect("/portal/index.html"));
 
 const PORT = process.env.PORT || 5173;
 app.listen(PORT, () => console.log(`QuantumMail server running on port ${PORT}`));
