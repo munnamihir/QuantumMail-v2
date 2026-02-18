@@ -351,13 +351,14 @@ app.post("/dev/seed-admin", (req, res) => {
 });
 
 // ----------------------------
-// AUTH: signup (creates org if missing, creates first user as Member)
-// POST /auth/signup { orgId, username, password }
+// AUTH: signup with role
+// POST /auth/signup { orgId, username, password, role }
 // ----------------------------
 app.post("/auth/signup", (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const username = String(req.body?.username || "").trim();
   const password = String(req.body?.password || "");
+  const roleInput = String(req.body?.role || "Member").trim();
 
   if (!orgId || !username || !password) {
     return res.status(400).json({ error: "orgId, username, password required" });
@@ -366,16 +367,28 @@ app.post("/auth/signup", (req, res) => {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
 
+  // Only allow Admin if org has no users yet
   const org = getOrg(orgId);
+  const isFirstUser = org.users.length === 0;
 
-  const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  let role = "Member";
+  if (roleInput === "Admin") {
+    if (!isFirstUser) {
+      return res.status(403).json({ error: "Admin accounts can only be created as the first user of an organization." });
+    }
+    role = "Admin";
+  }
+
+  const exists = org.users.find((u) =>
+    u.username.toLowerCase() === username.toLowerCase()
+  );
   if (exists) return res.status(409).json({ error: "Username already exists" });
 
   const newUser = {
     userId: nanoid(10),
     username,
     passwordHash: sha256(password),
-    role: "Member",
+    role,
     status: "Active",
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
@@ -384,11 +397,12 @@ app.post("/auth/signup", (req, res) => {
   };
 
   org.users.push(newUser);
-  audit(req, orgId, newUser.userId, "signup", { username });
+  audit(req, orgId, newUser.userId, "signup", { username, role });
   saveData();
 
-  res.json({ ok: true });
+  res.json({ ok: true, role });
 });
+
 
 
 // ----------------------------
