@@ -445,7 +445,7 @@ app.post("/auth/signup", (req, res) => {
 
   if (!username || !password) return res.status(400).json({ error: "username and password required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
-
+  
   // ---- Individual flow ----
   // If orgId missing => create a new personal org and make user Admin
   if (signupType === "Individual") {
@@ -491,7 +491,11 @@ app.post("/auth/signup", (req, res) => {
     if (!inv) return res.status(403).json({ error: "Invalid invite code" });
 
     if (inv.usedAt) return res.status(403).json({ error: "Invite code already used" });
-
+    if (!org.users || org.users.length === 0) {
+      return res.status(400).json({
+        error: "Organization not initialized yet. Please initialize as Admin first."
+      });
+    }
     const exp = Date.parse(inv.expiresAt || "");
     if (!Number.isNaN(exp) && Date.now() > exp) return res.status(403).json({ error: "Invite code expired" });
 
