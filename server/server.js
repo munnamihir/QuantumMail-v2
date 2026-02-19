@@ -371,6 +371,23 @@ async function ensureTables() {
 await ensureTables();
 
 // =========================================================
+// ORG: get my org info (for Profile UI)
+// GET /org/me
+// =========================================================
+app.get("/org/me", requireAuth, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const org = await getOrg(orgId);
+
+  res.json({
+    ok: true,
+    org: {
+      orgId,
+      orgName: org.orgName || org.name || orgId, // fallback
+    }
+  });
+});
+
+// =========================================================
 // ADMIN: SECURITY ALERTS
 // GET /admin/alerts?minutes=60
 // =========================================================
