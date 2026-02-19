@@ -445,6 +445,104 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
+// =========================================================
+// ADMIN: AUDIT
+// GET /admin/audit?limit=200
+// =========================================================
+app.get("/admin/audit", requireAuth, requireAdmin, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const org = await getOrg(orgId);
+
+  const limit = Math.min(
+    Math.max(parseInt(req.query.limit || "200", 10) || 200, 10),
+    2000
+  );
+
+  const items = Array.isArray(org.audit) ? org.audit.slice(0, limit) : [];
+  res.json({ ok: true, orgId, items });
+});
+
+// =========================================================
+// ADMIN: POLICIES
+// GET /admin/policies
+// POST/PUT /admin/policies
+// =========================================================
+app.get("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const org = await getOrg(orgId);
+
+  org.policies = org.policies || defaultPolicies();
+  res.json({ ok: true, orgId, policies: org.policies });
+});
+
+app.post("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const org = await getOrg(orgId);
+
+  org.policies = org.policies || defaultPolicies();
+
+  const b = req.body || {};
+  org.policies.forceAttachmentEncryption = !!b.forceAttachmentEncryption;
+  org.policies.disablePassphraseMode = !!b.disablePassphraseMode;
+  org.policies.requireReauthForDecrypt = !!b.requireReauthForDecrypt;
+  org.policies.enforceKeyRotationDays = Math.max(0, parseInt(b.enforceKeyRotationDays || "0", 10) || 0);
+
+  await audit(req, orgId, req.qm.user.userId, "policies_update", { policies: org.policies });
+  await saveOrg(orgId, org);
+
+  res.json({ ok: true, orgId, policies: org.policies });
+});
+
+// optional: PUT alias
+app.put("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
+  req.method = "POST";
+  return app._router.handle(req, res);
+});
+
+// =========================================================
+// ADMIN: ANALYTICS
+// GET /admin/analytics?days=7
+// =========================================================
+app.get("/admin/analytics", requireAuth, requireAdmin, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const org = await getOrg(orgId);
+
+  const days = Math.min(Math.max(parseInt(req.query.days || "7", 10) || 7, 1), 90);
+  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+
+  const auditItems = Array.isArray(org.audit) ? org.audit : [];
+  const messages = org.messages || {};
+
+  const usersTotal = Array.isArray(org.users) ? org.users.length : 0;
+  const messagesTotal = Object.keys(messages).length;
+
+  let encryptStore = 0, decryptPayload = 0, loginFailed = 0, decryptDenied = 0;
+
+  for (const a of auditItems) {
+    const at = Date.parse(a.at || "");
+    if (Number.isNaN(at) || at < since) continue;
+
+    if (a.action === "encrypt_store") encryptStore++;
+    if (a.action === "decrypt_payload") decryptPayload++;
+    if (a.action === "login_failed") loginFailed++;
+    if (a.action === "decrypt_denied") decryptDenied++;
+  }
+
+  res.json({
+    ok: true,
+    orgId,
+    days,
+    summary: {
+      usersTotal,
+      messagesTotal,
+      encryptStoreLastNDays: encryptStore,
+      decryptPayloadLastNDays: decryptPayload,
+      loginFailedLastNDays: loginFailed,
+      decryptDeniedLastNDays: decryptDenied
+    }
+  });
+});
+
 /* =========================================================
    ORG: check + check-username (peek-only)
 ========================================================= */
