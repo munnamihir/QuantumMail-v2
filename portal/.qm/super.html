@@ -179,8 +179,10 @@
           </div>
           <div>
             <label>SuperAdmin Bearer Token</label>
-            <input id="token" placeholder="Paste Bearer token here (or auto from localStorage)" />
-            <div class="small">Stored in <span class="mono">localStorage.qm_token</span></div>
+            <input id="token" placeholder="Auto-loads from sessionStorage (qm_super_token/qm_token)" />
+            <div class="small">
+              Reads from <span class="mono">sessionStorage.qm_super_token</span> then <span class="mono">sessionStorage.qm_token</span>.
+            </div>
           </div>
         </div>
 
@@ -215,7 +217,7 @@
               <th style="width:120px">Status</th>
               <th style="width:200px">Org</th>
               <th>Requester</th>
-              <th style="width:260px">Actions</th>
+              <th style="width:300px">Actions</th>
             </tr>
           </thead>
           <tbody id="tbody">
