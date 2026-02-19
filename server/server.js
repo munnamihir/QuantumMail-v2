@@ -370,6 +370,81 @@ async function ensureTables() {
 }
 await ensureTables();
 
+// =========================================================
+// ADMIN: SECURITY ALERTS
+// GET /admin/alerts?minutes=60
+// =========================================================
+app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
+  const orgId = req.qm.tokenPayload.orgId;
+  const minutes = Math.min(
+    Math.max(parseInt(req.query.minutes || "60", 10) || 60, 1),
+    7 * 24 * 60
+  );
+
+  const org = await getOrg(orgId);
+  const since = Date.now() - minutes * 60 * 1000;
+
+  const alerts = [];
+
+  for (const a of org.audit || []) {
+    const at = Date.parse(a.at || "");
+    if (Number.isNaN(at) || at < since) continue;
+
+    // 🚨 FAILED LOGIN
+    if (a.action === "login_failed") {
+      alerts.push({
+        type: "FailedLogin",
+        severity: "High",
+        userId: a.userId || null,
+        username: a.username || null,
+        ip: a.ip || "",
+        at: a.at,
+        message: "Repeated failed login attempt"
+      });
+    }
+
+    // 🚨 DECRYPT DENIED
+    if (a.action === "decrypt_denied") {
+      alerts.push({
+        type: "DecryptDenied",
+        severity: "Critical",
+        userId: a.userId || null,
+        msgId: a.msgId || null,
+        at: a.at,
+        message: "Unauthorized decrypt attempt"
+      });
+    }
+
+    // 🚨 PUBLIC KEY CLEARED
+    if (a.action === "clear_user_pubkey") {
+      alerts.push({
+        type: "KeyCleared",
+        severity: "Medium",
+        userId: a.targetUserId || null,
+        at: a.at,
+        message: "User public key cleared (re-key required)"
+      });
+    }
+
+    // 🚨 KEY ROTATION DUE
+    if (a.action === "risk_key_rotation_due") {
+      alerts.push({
+        type: "KeyRotationDue",
+        severity: "Medium",
+        userId: a.userId || null,
+        at: a.at,
+        message: "Encryption KEK rotation recommended"
+      });
+    }
+  }
+
+  res.json({
+    orgId,
+    minutes,
+    alerts: alerts.slice(0, 200) // limit for UI
+  });
+});
+
 /* =========================================================
    ORG: check + check-username (peek-only)
 ========================================================= */
