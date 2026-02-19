@@ -15,6 +15,8 @@ function setText(id, msg) {
 function ok(id, msg) { setText(id, msg); }
 function err(id, msg) { setText(id, msg); }
 
+
+
 function setSessionPill() {
   const who = $("who");
   const dot = $("sessionDot");
@@ -41,6 +43,102 @@ function setAuthedUI() {
   if (authedActions) authedActions.style.display = isAuthed ? "" : "none";
 }
 
+
+function getAdminToken() {
+  return sessionStorage.getItem("qm_admin_token") || "";
+}
+
+async function apiWithAdmin(path, { method="GET", body=null } = {}) {
+  const t = getAdminToken();
+  if (!t) throw new Error("Not logged in.");
+  const headers = { Authorization: `Bearer ${t}` };
+  if (body) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function openProfileModal() {
+  const m = document.getElementById("profileModal");
+  if (m) m.style.display = "";
+}
+function closeProfileModal() {
+  const m = document.getElementById("profileModal");
+  if (m) m.style.display = "none";
+}
+
+function setPwMsg(okMsg, errMsg) {
+  const okEl = document.getElementById("pwOk");
+  const errEl = document.getElementById("pwErr");
+  if (okEl) okEl.textContent = okMsg || "";
+  if (errEl) errEl.textContent = errMsg || "";
+}
+
+async function loadProfile() {
+  setPwMsg("", "");
+  const me = await apiWithAdmin("/auth/me");
+  const org = await apiWithAdmin("/org/me");
+
+  const user = me?.user;
+  const orgInfo = org?.org;
+
+  document.getElementById("profileMeta").textContent =
+    user ? `${user.username}@${user.orgId} • ${user.role}` : "—";
+
+  document.getElementById("profileOrgName").textContent = orgInfo?.orgName || "—";
+  document.getElementById("profileOrgId").textContent = user?.orgId || orgInfo?.orgId || "—";
+  document.getElementById("profileUsername").textContent = user?.username || "—";
+}
+
+function showChangePasswordBox() {
+  document.getElementById("pwBox").style.display = "";
+  document.getElementById("curPw").value = "";
+  document.getElementById("newPw").value = "";
+  document.getElementById("newPw2").value = "";
+  setPwMsg("", "");
+}
+
+async function changePassword() {
+  setPwMsg("", "");
+
+  const currentPassword = String(document.getElementById("curPw").value || "");
+  const newPassword = String(document.getElementById("newPw").value || "");
+  const confirm = String(document.getElementById("newPw2").value || "");
+
+  if (!currentPassword || !newPassword) return setPwMsg("", "Current and new password are required.");
+  if (newPassword.length < 12) return setPwMsg("", "New password must be at least 12 characters.");
+  if (newPassword !== confirm) return setPwMsg("", "Confirmation does not match.");
+
+  await apiWithAdmin("/auth/change-password", { method:"POST", body:{ currentPassword, newPassword } });
+
+  setPwMsg("Password updated ✅", "");
+  document.getElementById("curPw").value = "";
+  document.getElementById("newPw").value = "";
+  document.getElementById("newPw2").value = "";
+}
+
+// Wire up Profile button + modal
+document.getElementById("btnProfile")?.addEventListener("click", async () => {
+  try {
+    await loadProfile();
+    openProfileModal();
+  } catch (e) {
+    // If not logged in, bounce to admin login
+    window.location.href = "/portal/admin.html";
+  }
+});
+
+document.getElementById("btnCloseProfile")?.addEventListener("click", closeProfileModal);
+document.getElementById("profileModal")?.addEventListener("click", (e) => {
+  if (e.target?.id === "profileModal") closeProfileModal();
+});
+
+document.getElementById("btnShowChangePw")?.addEventListener("click", showChangePasswordBox);
+document.getElementById("btnChangePw")?.addEventListener("click", () => {
+  changePassword().catch(err => setPwMsg("", err.message));
+});
 async function api(path, { method = "GET", body = null } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
