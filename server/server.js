@@ -190,9 +190,9 @@ function getOrg(orgId) {
       users: [],
       audit: [],
       messages: {},
-      keyring: null,
       policies: defaultPolicies(),
       invites: {},
+      keyring: null
     };
   }
 
@@ -200,17 +200,19 @@ function getOrg(orgId) {
   if (!org.users) org.users = [];
   if (!org.audit) org.audit = [];
   if (!org.messages) org.messages = {};
+  if (!org.invites) org.invites = {};
   if (!org.policies) org.policies = defaultPolicies();
-  if (!org.invites) org.invites = {}; // important for older data.json files
-  if (!org.keyring) org.keyring = null;
 
   ensureKeyring(org);
-  saveData();
+
+  // IMPORTANT: do NOT persist on every getOrg() call automatically,
+  // persist only when you mutate state (we’ll call persistOrg() in key places).
   return org;
 }
 
-function audit(req, orgId, userId, action, details = {}) {
-  const org = getOrg(orgId); // audit implies org exists
+
+async function audit(req, orgId, userId, action, details = {}) {
+  const org = getOrg(orgId);
   if (!org) return;
 
   const entry = {
@@ -221,12 +223,13 @@ function audit(req, orgId, userId, action, details = {}) {
     action,
     ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "",
     ua: req.headers["user-agent"] || "",
-    ...details,
+    ...details
   };
 
   org.audit.unshift(entry);
   if (org.audit.length > 2000) org.audit.length = 2000;
-  saveData();
+
+  await persistOrg(orgId);
 }
 
 /* =========================================================
