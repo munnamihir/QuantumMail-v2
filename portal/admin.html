@@ -4,103 +4,329 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QuantumMail • Admin</title>
-  <link rel="stylesheet" href="/portal/ui.css"/>
+  <style>
+    :root{
+      --bg:#0b0f1a; --card:#12182a; --text:#e9eefc; --muted:#aab4d6;
+      --border:rgba(255,255,255,.10); --accent:#6ea8fe; --accent2:#2bd576;
+      --good:#2bd576; --bad:#ff5c77; --shadow: 0 18px 60px rgba(0,0,0,.35);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial; color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        var(--bg);
+    }
+    .container{ max-width: 1100px; margin: 0 auto; padding: 22px 16px 42px; }
+    .topbar{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom: 14px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:42px; height:42px; border-radius: 14px;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.95));
+      box-shadow: 0 14px 40px rgba(110,168,254,.20);
+      flex: 0 0 auto;
+    }
+    .brand h1{ margin:0; font-size: 18px; letter-spacing:.2px; line-height: 1.1; }
+    .brand p{ margin:3px 0 0; font-size: 12px; color: var(--muted); }
+
+    .rightHeader{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px; border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      max-width: 520px;
+      overflow:hidden; text-overflow: ellipsis;
+    }
+    .dot{
+      width:8px; height:8px; border-radius:999px;
+      background: rgba(255,255,255,.25);
+      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+    }
+    .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
+    .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
+
+    .nav{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    button, a.btn{
+      padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: .2px;
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    button.primary{
+      border: none;
+      color: #07101f;
+      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
+    }
+    button.secondary{ background: transparent; color: var(--text); border: 1px solid var(--border); }
+    button.danger{
+      border: none;
+      background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
+      color: #0b0f1a;
+    }
+    button:hover, a.btn:hover{ filter: brightness(1.06); }
+
+    .grid{ display:grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 980px){
+      .grid{ grid-template-columns: 1fr 1fr; align-items: start; }
+      .span2{ grid-column: 1 / -1; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card h3{ margin: 0 0 6px; font-size: 14px; letter-spacing:.2px; }
+    .muted{ color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .row{ display:flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .row > div{ flex: 1; min-width: 220px; }
+    label{
+      display:block; font-size: 11px; color: var(--muted);
+      margin: 6px 0 6px; font-weight: 700; letter-spacing: .15px;
+    }
+    input{
+      width:100%;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      outline: none;
+    }
+    input::placeholder{ color: rgba(170,180,214,.70); }
+    input:focus{
+      border-color: rgba(110,168,254,.60);
+      box-shadow: 0 0 0 4px rgba(110,168,254,.12);
+    }
+
+    .ok{ margin-top: 10px; color: var(--good); font-size: 12px; white-space: pre-wrap; }
+    .err{ margin-top: 10px; color: var(--bad); font-size: 12px; white-space: pre-wrap; }
+
+    .tableWrap{
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255,255,255,.03);
+    }
+    table{ width: 100%; border-collapse: collapse; }
+    thead th{
+      font-size: 11px;
+      color: rgba(170,180,214,.92);
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      background: rgba(255,255,255,.04);
+      padding: 10px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    tbody td{
+      padding: 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      vertical-align: top;
+      font-size: 13px;
+    }
+    tbody tr:hover{ background: rgba(255,255,255,.03); }
+
+    code{
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: rgba(233,238,252,.95);
+    }
+    .kbadge{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding: 2px 8px;
+      border-radius:999px;
+      font-size: 11px;
+      font-weight: 900;
+      background: rgba(255,92,119,.18);
+      border: 1px solid rgba(255,92,119,.35);
+      color: #ffb3c0;
+    }
+  </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <header class="top">
+  <div class="container">
+    <div class="topbar">
       <div class="brand">
         <div class="logo"></div>
         <div>
           <h1>QuantumMail • Admin</h1>
-          <p class="muted">Manage users + invites for your organization.</p>
+          <p>Users, keys, access, audit, analytics — enterprise-ready.</p>
         </div>
       </div>
 
-      <div class="actions">
-        <button id="btnLogout" class="secondary" type="button">Logout</button>
-      </div>
-    </header>
-
-    <main class="card">
-      <div class="row">
-        <div>
-          <label for="orgId">Org ID</label>
-          <input id="orgId" placeholder="org_acme"/>
-          <div class="help" id="orgStatus"></div>
+      <div class="rightHeader">
+        <!-- ✅ session pill (admin.js was expecting these ids) -->
+        <div class="pill" title="Session">
+          <span id="sessionDot" class="dot"></span>
+          <span id="who">Not logged in</span>
         </div>
-        <div>
-          <label for="username">Admin Username</label>
-          <input id="username" placeholder="admin"/>
+
+        <!-- ✅ NAV HUB: add ALL portal pages here -->
+        <div class="nav">
+          <a class="btn" href="/portal/admin.html" id="navAdmin">Admin</a>
+          <a class="btn" href="/portal/audit.html" id="navAudit">Audit</a>
+          <a class="btn" href="/portal/analytics.html" id="navAnalytics">Analytics</a>
+          <a class="btn" href="/portal/policies.html" id="navPolicies">Policies</a>
+          <a class="btn" href="/portal/alerts.html" id="navAlerts">
+            Alerts <span id="alertBadge" class="badge" style="display:none;">0</span>
+          </a>
+          <a class="btn" href="/portal/compose.html" id="navCompose">Compose</a>
+          <a class="btn" href="/portal/keygen.html" id="navKeygen">Keygen</a>
+          <a class="btn" href="/portal/decrypt.html" id="navDecrypt">Decrypt</a>
         </div>
-        <div>
-          <label for="password">Password</label>
-          <input id="password" type="password" placeholder="••••••••"/>
-        </div>
-      </div>
 
-      <div class="actions">
-        <button id="btnLogin" class="primary" type="button">Login</button>
-      </div>
-
-      <div id="authOk" class="ok"></div>
-      <div id="authErr" class="err"></div>
-
-      <hr style="opacity:.2; margin:16px 0;" />
-
-      <h2 style="margin:0 0 6px;">Users</h2>
-      <p class="muted" style="margin-top:0;">Create members/admins and manage public keys.</p>
-
-      <div class="row">
-        <div>
-          <label for="newUsername">New Username</label>
-          <input id="newUsername" placeholder="alice" />
-          <div class="help" id="newUserStatus"></div>
-        </div>
-        <div>
-          <label for="newPassword">New Password</label>
-          <input id="newPassword" type="password" placeholder="••••••••" />
-        </div>
-        <div>
-          <label for="newRole">Role</label>
-          <select id="newRole">
-            <option value="Member">Member</option>
-            <option value="Admin">Admin</option>
-          </select>
+        <div class="nav">
+          <button id="btnProfile" class="secondary" type="button">Profile</button>
+          <button id="btnLogoutTop" class="danger" type="button">Logout</button>
         </div>
       </div>
+    </div>
 
-      <div class="actions">
-        <button id="btnCreateUser" class="primary" type="button">Create User</button>
-        <button id="btnRefreshUsers" class="secondary" type="button">Refresh</button>
+    <div class="grid">
+      <!-- Create Admin -->
+      <div class="card">
+        <h3>1) Create Admin</h3>
+        <div class="muted">First-time setup only. Creates an <b>Admin</b> user for an org with custom credentials.</div>
+
+        <div class="row">
+          <div>
+            <label for="seedOrgId">Org Id</label>
+            <input id="seedOrgId" placeholder="org_demo" value="org_demo" />
+          </div>
+          <div>
+            <label for="seedUsername">Admin Username</label>
+            <input id="seedUsername" placeholder="admin" />
+          </div>
+          <div>
+            <label for="seedPassword">Admin Password</label>
+            <input id="seedPassword" type="password" placeholder="••••••••" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;">
+            <button id="btnCreateAdmin" class="primary">Create Admin</button>
+          </div>
+        </div>
+
+        <div id="seedOk" class="ok"></div>
+        <div id="seedErr" class="err"></div>
       </div>
 
-      <div id="usersOk" class="ok"></div>
-      <div id="usersErr" class="err"></div>
+      <!-- Login -->
+      <div class="card">
+        <h3>2) Login</h3>
+        <div class="muted">Logs in via <code>/auth/login</code>. Token is kept in <b>sessionStorage</b> so all admin pages reuse it.</div>
 
-      <div class="tableWrap" style="margin-top:12px;">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:28%;">User</th>
-              <th style="width:10%;">Role</th>
-              <th style="width:12%;">Status</th>
-              <th style="width:18%;">Key</th>
-              <th style="width:18%;">Last Login</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="usersTbody">
-            <tr><td colspan="6" class="muted">Login to load users…</td></tr>
-          </tbody>
-        </table>
+        <div class="row">
+          <div>
+            <label for="orgId">Org Id</label>
+            <input id="orgId" placeholder="org_demo" value="org_demo" />
+          </div>
+          <div>
+            <label for="username">Username</label>
+            <input id="username" placeholder="admin" />
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" placeholder="••••••••" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;">
+            <button id="btnLogin" class="primary">Login</button>
+          </div>
+          <div style="flex:0 0 auto;">
+            <button id="btnLogout" class="secondary">Logout</button>
+          </div>
+          <div class="kbadge"><span class="dot"></span> Token in sessionStorage</div>
+        </div>
+
+        <div id="authOk" class="ok"></div>
+        <div id="authErr" class="err"></div>
       </div>
-    </main>
 
-    <footer class="foot muted">© 2026 QuantumMail</footer>
+      <!-- Users -->
+      <div class="card span2">
+        <h3>3) Users & Key Health</h3>
+        <div class="muted">Create users, refresh list, remove users, and clear public keys (forces re-register on next login).</div>
+
+        <div class="row">
+          <div>
+            <label for="newUsername">New Username</label>
+            <input id="newUsername" placeholder="alice" />
+          </div>
+          <div>
+            <label for="newPassword">New Password</label>
+            <input id="newPassword" type="password" placeholder="••••••••" />
+          </div>
+          <div>
+            <label for="newRole">Role</label>
+            <input id="newRole" placeholder="Member or Admin" value="Member" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;"><button id="btnCreateUser" class="primary">Create User</button></div>
+          <div style="flex:0 0 auto;"><button id="btnRefreshUsers" class="secondary">Refresh</button></div>
+          <div class="kbadge">All actions are audited</div>
+        </div>
+
+        <div id="usersOk" class="ok"></div>
+        <div id="usersErr" class="err"></div>
+
+        <div class="tableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:28%;">User</th>
+                <th style="width:10%;">Role</th>
+                <th style="width:12%;">Status</th>
+                <th style="width:16%;">Key Health</th>
+                <th style="width:16%;">Last Login</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTbody">
+              <tr><td colspan="6" class="muted">Login to load users…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/portal/admin.js"></script>
   </div>
-
-  <script type="module" src="/portal/admin.js"></script>
 </body>
 </html>
