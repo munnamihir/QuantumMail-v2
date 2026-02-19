@@ -855,52 +855,256 @@ function withinDays(iso, days) {
 
 app.get("/admin/analytics", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
-  const days = Math.min(Math.max(parseInt(req.query.days || "30", 10) || 30, 1), 365);
-  const items = req.qm.org.audit.filter((a) => withinDays(a.at, days));
+  const org = req.qm.org;
 
-  const countByAction = {};
-  const userActivity = {};
-  const attachmentBytesPerDay = {};
+  const days = Math.min(Math.max(parseInt(req.query.days || "30", 10) || 30, 1), 365);
+  const items = (org.audit || []).filter((a) => withinDays(a.at, days));
+
+  // --- helpers (local) ---
+  const asDay = (iso) => String(iso || "").slice(0, 10); // YYYY-MM-DD
+  const safeParse = (iso) => {
+    const t = Date.parse(iso || "");
+    return Number.isNaN(t) ? null : t;
+  };
+  const daysSince = (iso) => {
+    const t = safeParse(iso);
+    if (!t) return null;
+    return Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
+  };
+
+  // --- counts and per-day series buckets ---
+  const countByAction = Object.create(null);
+  const perDay = Object.create(null); // day -> { encrypted, decrypts, denied, failedLogins, attachmentsBytes, attachmentsCount }
+
+  // --- user activity ---
+  const userActivity = Object.create(null); // userId -> stats
+  const activeUsersSet = new Set(); // anyone who did login/encrypt/decrypt in window
+  const activeLast7dSet = new Set(); // activity last 7 days regardless of `days`
+
+  // We’ll compute 7-day activity from full audit to support WAU-like even when days > 7
+  const auditAll = Array.isArray(org.audit) ? org.audit : [];
+  const since7d = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  for (const a of auditAll) {
+    const t = safeParse(a.at);
+    if (!t) continue;
+    if (t >= since7d && a.userId && (a.action === "login" || a.action === "encrypt_store" || a.action === "decrypt_payload")) {
+      activeLast7dSet.add(a.userId);
+    }
+  }
+
+  // --- attachment totals ---
+  let totalAttachmentBytes = 0;
+  let totalAttachmentCount = 0;
 
   for (const a of items) {
     countByAction[a.action] = (countByAction[a.action] || 0) + 1;
 
-    if (a.userId) {
-      if (!userActivity[a.userId]) userActivity[a.userId] = { userId: a.userId, decrypts: 0, encrypts: 0, denied: 0, logins: 0 };
-      if (a.action === "decrypt_payload") userActivity[a.userId].decrypts++;
-      if (a.action === "encrypt_store") userActivity[a.userId].encrypts++;
-      if (a.action === "decrypt_denied") userActivity[a.userId].denied++;
-      if (a.action === "login") userActivity[a.userId].logins++;
+    const day = asDay(a.at);
+    if (!perDay[day]) {
+      perDay[day] = {
+        day,
+        encrypted: 0,
+        decrypts: 0,
+        denied: 0,
+        failedLogins: 0,
+        attachmentsBytes: 0,
+        attachmentsCount: 0
+      };
     }
 
-    if (a.action === "encrypt_store" && a.attachmentsTotalBytes) {
-      const day = String(a.at).slice(0, 10);
-      attachmentBytesPerDay[day] = (attachmentBytesPerDay[day] || 0) + Number(a.attachmentsTotalBytes || 0);
+    // action buckets
+    if (a.action === "encrypt_store") perDay[day].encrypted++;
+    if (a.action === "decrypt_payload") perDay[day].decrypts++;
+    if (a.action === "decrypt_denied") perDay[day].denied++;
+    if (a.action === "login_failed") perDay[day].failedLogins++;
+
+    // attachments (only from encrypt_store)
+    if (a.action === "encrypt_store") {
+      const b = Number(a.attachmentsTotalBytes || 0);
+      const c = Number(a.attachmentCount || 0);
+      if (b > 0) {
+        perDay[day].attachmentsBytes += b;
+        totalAttachmentBytes += b;
+      }
+      if (c > 0) {
+        perDay[day].attachmentsCount += c;
+        totalAttachmentCount += c;
+      }
+    }
+
+    // user activity rollups (top users)
+    if (a.userId) {
+      if (!userActivity[a.userId]) {
+        userActivity[a.userId] = { userId: a.userId, encrypts: 0, decrypts: 0, denied: 0, logins: 0, failedLogins: 0 };
+      }
+      if (a.action === "encrypt_store") userActivity[a.userId].encrypts++;
+      if (a.action === "decrypt_payload") userActivity[a.userId].decrypts++;
+      if (a.action === "decrypt_denied") userActivity[a.userId].denied++;
+      if (a.action === "login") userActivity[a.userId].logins++;
+      if (a.action === "login_failed") userActivity[a.userId].failedLogins++;
+    }
+
+    // active users within requested window
+    if (a.userId && (a.action === "login" || a.action === "encrypt_store" || a.action === "decrypt_payload")) {
+      activeUsersSet.add(a.userId);
     }
   }
 
-  const topUsers = Object.values(userActivity)
-    .sort((x, y) => (y.decrypts + y.encrypts) - (x.decrypts + x.encrypts))
-    .slice(0, 10);
-
-  const series = [];
+  // --- build ordered time series for last N days (even if zero) ---
+  const activitySeries = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
     const day = d.toISOString().slice(0, 10);
-    series.push({ day, attachmentBytes: attachmentBytesPerDay[day] || 0 });
+    activitySeries.push(perDay[day] || {
+      day,
+      encrypted: 0,
+      decrypts: 0,
+      denied: 0,
+      failedLogins: 0,
+      attachmentsBytes: 0,
+      attachmentsCount: 0
+    });
   }
 
+  // --- key coverage / health ---
+  const users = Array.isArray(org.users) ? org.users : [];
+  const totalUsers = users.length;
+
+  const keyRegisteredUsers = users.filter(u => !!u.publicKeySpkiB64).length;
+  const keyCoveragePct = totalUsers ? Math.round((keyRegisteredUsers / totalUsers) * 100) : 0;
+
+  // stale key threshold (days) - configurable via query param, default 90
+  const staleKeyDays = Math.min(Math.max(parseInt(req.query.staleKeyDays || "90", 10) || 90, 7), 3650);
+
+  const missingKeys = [];
+  const staleKeys = [];
+
+  for (const u of users) {
+    const hasKey = !!u.publicKeySpkiB64;
+    if (!hasKey) {
+      missingKeys.push({
+        userId: u.userId,
+        username: u.username,
+        role: u.role || "Member",
+        lastLoginAt: u.lastLoginAt || null
+      });
+      continue;
+    }
+
+    const age = daysSince(u.publicKeyRegisteredAt);
+    if (age != null && age >= staleKeyDays) {
+      staleKeys.push({
+        userId: u.userId,
+        username: u.username,
+        role: u.role || "Member",
+        publicKeyRegisteredAt: u.publicKeyRegisteredAt || null,
+        keyAgeDays: age
+      });
+    }
+  }
+
+  // sort these lists to look nice
+  missingKeys.sort((a, b) => (safeParse(b.lastLoginAt) || 0) - (safeParse(a.lastLoginAt) || 0));
+  staleKeys.sort((a, b) => (b.keyAgeDays || 0) - (a.keyAgeDays || 0));
+
+  // --- active seats ---
+  const activeUsers = activeUsersSet.size;
+  const activeUsers7d = activeLast7dSet.size;
+
+  // --- invite hygiene ---
+  const invites = org.invites || {};
+  const invList = Object.values(invites);
+  let invitesActive = 0, invitesUsed = 0, invitesExpired = 0;
+
+  for (const inv of invList) {
+    const exp = safeParse(inv.expiresAt);
+    const isExpired = exp != null && Date.now() > exp;
+    const isUsed = !!inv.usedAt;
+
+    if (isUsed) invitesUsed++;
+    else if (isExpired) invitesExpired++;
+    else invitesActive++;
+  }
+
+  // --- admin actions (counts) ---
+  const adminActionKeys = [
+    "create_user",
+    "delete_user",
+    "clear_user_pubkey",
+    "policy_update",
+    "invite_generate",
+    "kek_rotate"
+  ];
+  const adminActions = {};
+  for (const k of adminActionKeys) adminActions[k] = countByAction[k] || 0;
+
+  // --- decrypt success rate ---
+  const decrypts = countByAction["decrypt_payload"] || 0;
+  const denied = countByAction["decrypt_denied"] || 0;
+  const decryptAttempts = decrypts + denied;
+  const decryptSuccessRate = decryptAttempts ? Math.round((decrypts / decryptAttempts) * 100) : 0;
+
+  // --- top users (enriched) ---
+  const userById = new Map(users.map(u => [u.userId, u]));
+  const topUsers = Object.values(userActivity)
+    .map(x => {
+      const u = userById.get(x.userId);
+      return {
+        userId: x.userId,
+        username: u?.username || null,
+        role: u?.role || "Member",
+        encrypts: x.encrypts,
+        decrypts: x.decrypts,
+        denied: x.denied,
+        logins: x.logins,
+        failedLogins: x.failedLogins,
+        score: (x.encrypts + x.decrypts)
+      };
+    })
+    .sort((a, b) => (b.score - a.score))
+    .slice(0, 10);
+
+  // --- response ---
   res.json({
     orgId,
     days,
     counts: {
       encryptedMessages: countByAction["encrypt_store"] || 0,
-      decrypts: countByAction["decrypt_payload"] || 0,
-      deniedDecrypts: countByAction["decrypt_denied"] || 0,
-      failedLogins: countByAction["login_failed"] || 0,
+      decrypts,
+      deniedDecrypts: denied,
+      failedLogins: countByAction["login_failed"] || 0
+    },
+    rates: {
+      decryptSuccessRatePct: decryptSuccessRate
+    },
+    seats: {
+      totalUsers,
+      activeUsers,
+      activeUsers7d,
+      keyRegisteredUsers,
+      keyCoveragePct
+    },
+    keyHealth: {
+      staleKeyDays,
+      missingKeysCount: missingKeys.length,
+      staleKeysCount: staleKeys.length,
+      missingKeys: missingKeys.slice(0, 50),
+      staleKeys: staleKeys.slice(0, 50)
+    },
+    invites: {
+      total: invList.length,
+      active: invitesActive,
+      used: invitesUsed,
+      expired: invitesExpired
+    },
+    adminActions,
+    totals: {
+      attachmentsBytes: totalAttachmentBytes,
+      attachmentsCount: totalAttachmentCount
     },
     topUsers,
-    attachmentSeries: series,
+    activitySeries
   });
 });
 
