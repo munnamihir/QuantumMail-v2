@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
+import { PostgresStore } from "./storage/postgresStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,26 @@ app.use(
 // preflight
 app.options("*", cors());
 app.use(express.json({ limit: "25mb" }));
+
+// ----------------------------
+// Persistence (Postgres JSONB)
+// ----------------------------
+const store = new PostgresStore();
+await store.init();
+
+// In-memory cache (optional). We’ll keep it so your existing code works.
+const DB = { orgs: await store.loadAllOrgs() };
+if (!DB.orgs) DB.orgs = {};
+
+// Save just one org at a time (fast + safer)
+async function persistOrg(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return;
+  const org = DB.orgs[oid];
+  if (!org) return;
+  await store.saveOrgState(oid, org);
+}
+
 
 /* =========================================================
    Paths + persistence
