@@ -32,12 +32,19 @@
     </div>
 
     <div class="card">
-      <div class="muted">KPIs + charts (Chart.js). Looks like a real SaaS dashboard.</div>
+      <div class="muted">Company-grade security + adoption analytics (no message content ever).</div>
+
       <div class="row">
         <label class="muted">Days</label>
         <input id="days" value="30" style="width:100px;">
+
+        <label class="muted">Stale Key Days</label>
+        <input id="staleKeyDays" value="90" style="width:110px;">
+        <span class="muted">(flags keys older than <span id="staleKeyDaysLabel">90</span>d)</span>
+
         <button id="btnRefresh" class="primary">Refresh</button>
       </div>
+
       <div id="err" class="err"></div>
 
       <div class="kpi">
@@ -45,18 +52,76 @@
         <div class="k"><div class="muted">Decrypts</div><b id="kDecrypts">—</b></div>
         <div class="k"><div class="muted">Denied Decrypts</div><b id="kDenied">—</b></div>
         <div class="k"><div class="muted">Failed Logins</div><b id="kFailed">—</b></div>
+
+        <div class="k"><div class="muted">Active Seats (period)</div><b id="kActiveSeats">—</b></div>
+        <div class="k"><div class="muted">Active Users (7d)</div><b id="kWAU">—</b></div>
+        <div class="k"><div class="muted">Key Coverage</div><b id="kKeyCoverage">—</b></div>
+        <div class="k"><div class="muted">Decrypt Success Rate</div><b id="kDecryptRate">—</b></div>
       </div>
     </div>
 
     <div class="grid">
       <div class="card">
-        <div class="muted">Core Activity</div>
+        <div class="muted">Core Activity (daily trend)</div>
         <canvas id="chartCore" height="140"></canvas>
       </div>
       <div class="card">
-        <div class="muted">Attachment Size Trend (bytes/day)</div>
+        <div class="muted">Attachment Trend (bytes/day)</div>
         <canvas id="chartAtt" height="140"></canvas>
       </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="muted">Invite Hygiene</div>
+        <div class="kpi">
+          <div class="k"><div class="muted">Active Invites</div><b id="kInvActive">—</b></div>
+          <div class="k"><div class="muted">Used Invites</div><b id="kInvUsed">—</b></div>
+          <div class="k"><div class="muted">Expired Invites</div><b id="kInvExpired">—</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="muted">Key Health</div>
+        <div class="kpi">
+          <div class="k"><div class="muted">Users Missing Keys</div><b id="kMissingKeys">—</b></div>
+          <div class="k"><div class="muted">Stale Keys</div><b id="kStaleKeys">—</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Users Missing Keys</div>
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Last Login</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyMissingKeys">
+          <tr><td colspan="4" class="muted">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="muted">Stale Keys</div>
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Key Registered</th>
+            <th>Key Age (days)</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyStaleKeys">
+          <tr><td colspan="4" class="muted">—</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="card">
@@ -64,7 +129,8 @@
       <table>
         <thead>
           <tr>
-            <th>UserId</th>
+            <th>User</th>
+            <th>Role</th>
             <th>Encrypts</th>
             <th>Decrypts</th>
             <th>Denied</th>
@@ -72,7 +138,7 @@
           </tr>
         </thead>
         <tbody id="tbodyUsers">
-          <tr><td colspan="5" class="muted">—</td></tr>
+          <tr><td colspan="6" class="muted">—</td></tr>
         </tbody>
       </table>
     </div>
