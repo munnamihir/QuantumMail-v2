@@ -10,7 +10,6 @@
 
   const whoEl = $("who");
   const guardMsg = $("guardMsg");
-  const guardCard = $("guardCard");
   const mainCard = $("mainCard");
 
   const statusSel = $("statusSel");
@@ -20,8 +19,12 @@
 
   const toastEl = $("toast");
 
-  const LS_TOKEN = "qm_token";
+  // Prefer sessionStorage (your portal uses sessionStorage)
+  const SS_SUPER = "qm_super_token";
+  const SS_TOKEN = "qm_token";
+  const LS_TOKEN = "qm_token";      // optional fallback
   const LS_BASE = "qm_api_base";
+  const SS_BASE = "qm_api_base";
 
   function toast(msg) {
     toastEl.textContent = msg;
@@ -35,8 +38,17 @@
   }
 
   function getToken() {
-    const t = String(tokenEl.value || "").trim();
-    return t;
+    return String(tokenEl.value || "").trim();
+  }
+
+  function setLocked(msg) {
+    mainCard.style.display = "none";
+    whoEl.textContent = msg || "Access denied";
+  }
+
+  function setUnlocked(user) {
+    mainCard.style.display = "block";
+    whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
   }
 
   async function api(path, { method = "GET", body } = {}) {
@@ -68,42 +80,6 @@
     return data;
   }
 
-  function setLocked(msg) {
-    mainCard.style.display = "none";
-    whoEl.textContent = msg || "Access denied";
-  }
-
-  function setUnlocked(user) {
-    mainCard.style.display = "block";
-    whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
-  }
-
-  async function checkAccess() {
-    guardMsg.textContent = "";
-    try {
-      const me = await api("/auth/me");
-      const user = me?.user;
-      if (!user) throw new Error("No user returned from /auth/me");
-
-      // must be SuperAdmin
-      if (user.role !== "SuperAdmin") {
-        setLocked("Not SuperAdmin");
-        guardMsg.textContent = "Blocked: role is not SuperAdmin.";
-        return false;
-      }
-
-      // We can’t know PLATFORM_ORG_ID in client without exposing it.
-      // Server will enforce platform org on /super/* routes anyway.
-      setUnlocked(user);
-      await loadList();
-      return true;
-    } catch (e) {
-      setLocked("Checking access failed");
-      guardMsg.textContent = `Access check failed: ${e.message}`;
-      return false;
-    }
-  }
-
   function statusTag(status) {
     const s = String(status || "").toLowerCase();
     if (s === "approved") return `<span class="tag tagGood">approved</span>`;
@@ -118,6 +94,33 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function renderPendingActions(id) {
+    return `
+      <div style="display:grid;gap:8px">
+        <div>
+          <label>Approve: orgId</label>
+          <input class="orgId" placeholder="ex: org_acme123" />
+        </div>
+        <div>
+          <label>Approve: first admin username</label>
+          <input class="adminUsername" placeholder="ex: admin" />
+        </div>
+        <button class="btn btnGood approveBtn" data-id="${esc(id)}">Approve + Create Setup Link</button>
+
+        <div class="hr"></div>
+
+        <div>
+          <label>Reject reason</label>
+          <input class="rejectReason" placeholder="ex: Need business email verification" />
+        </div>
+        <button class="btn btnBad rejectBtn" data-id="${esc(id)}">Reject</button>
+
+        <div class="small mono setupOut" style="word-break:break-all;display:none"></div>
+        <button class="btn btnGhost copyBtn" style="display:none">Copy Setup Link</button>
+      </div>
+    `;
   }
 
   async function loadList() {
@@ -174,38 +177,10 @@
       }).join("");
 
       wireRowButtons();
-
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="4" class="small">Failed: ${esc(e.message)}</td></tr>`;
       listMsg.textContent = `Error: ${e.message}`;
     }
-  }
-
-  function renderPendingActions(id) {
-    return `
-      <div style="display:grid;gap:8px">
-        <div>
-          <label>Approve: orgId</label>
-          <input class="orgId" placeholder="ex: org_acme123" />
-        </div>
-        <div>
-          <label>Approve: first admin username</label>
-          <input class="adminUsername" placeholder="ex: admin@acme" />
-        </div>
-        <button class="btn btnGood approveBtn" data-id="${esc(id)}">Approve + Create Setup Link</button>
-
-        <div class="hr"></div>
-
-        <div>
-          <label>Reject reason</label>
-          <input class="rejectReason" placeholder="ex: Need business email verification" />
-        </div>
-        <button class="btn btnBad rejectBtn" data-id="${esc(id)}">Reject</button>
-
-        <div class="small mono setupOut" style="word-break:break-all;display:none"></div>
-        <button class="btn btnGhost copyBtn" style="display:none">Copy Setup Link</button>
-      </div>
-    `;
   }
 
   function wireRowButtons() {
@@ -213,7 +188,6 @@
     rows.forEach((row) => {
       const approveBtn = row.querySelector(".approveBtn");
       const rejectBtn = row.querySelector(".rejectBtn");
-      const copyBtn = row.querySelector(".copyBtn");
 
       if (approveBtn) {
         approveBtn.addEventListener("click", async () => {
@@ -244,6 +218,7 @@
               outEl.style.display = "block";
               outEl.textContent = `Setup Link (expires ${expiresAt}):\n${setupLink}`;
             }
+
             if (copyEl) {
               copyEl.style.display = "inline-flex";
               copyEl.onclick = async () => {
@@ -256,8 +231,8 @@
               };
             }
 
-            toast("Approved");
-            await loadList();
+            // IMPORTANT: do NOT auto reload, otherwise output disappears
+            toast("Approved ✅ (copy setup link)");
           } catch (e) {
             toast(`Approve failed: ${e.message}`);
           } finally {
@@ -280,7 +255,7 @@
               body: { reason }
             });
             toast("Rejected");
-            await loadList();
+            await loadList(); // fine to reload on reject
           } catch (e) {
             toast(`Reject failed: ${e.message}`);
           } finally {
@@ -289,23 +264,63 @@
           }
         });
       }
-
-      if (copyBtn) {
-        copyBtn.addEventListener("click", () => {});
-      }
     });
+  }
+
+  async function checkAccess() {
+    guardMsg.textContent = "";
+    try {
+      const me = await api("/auth/me");
+      const user = me?.user;
+      if (!user) throw new Error("No user returned from /auth/me");
+
+      if (user.role !== "SuperAdmin") {
+        setLocked("Not SuperAdmin");
+        guardMsg.textContent = "Blocked: role is not SuperAdmin.";
+        return false;
+      }
+
+      setUnlocked(user);
+      await loadList();
+      return true;
+    } catch (e) {
+      setLocked("Checking access failed");
+      guardMsg.textContent = `Access check failed: ${e.message}`;
+      return false;
+    }
   }
 
   // buttons
   saveTokenBtn.addEventListener("click", () => {
-    localStorage.setItem(LS_TOKEN, getToken());
-    localStorage.setItem(LS_BASE, String(apiBaseEl.value || "").trim());
+    const t = getToken();
+    const b = String(apiBaseEl.value || "").trim();
+
+    // save to session (primary)
+    if (t) {
+      sessionStorage.setItem(SS_SUPER, t);
+      sessionStorage.setItem(SS_TOKEN, t); // optional: keep qm_token aligned
+    }
+    sessionStorage.setItem(SS_BASE, b);
+
+    // optional persistence
+    localStorage.setItem(LS_TOKEN, t || "");
+    localStorage.setItem(LS_BASE, b);
+
     toast("Saved token");
   });
 
   loadTokenBtn.addEventListener("click", () => {
-    const t = localStorage.getItem(LS_TOKEN) || "";
-    const b = localStorage.getItem(LS_BASE) || "";
+    const t =
+      sessionStorage.getItem(SS_SUPER) ||
+      sessionStorage.getItem(SS_TOKEN) ||
+      localStorage.getItem(LS_TOKEN) ||
+      "";
+
+    const b =
+      sessionStorage.getItem(SS_BASE) ||
+      localStorage.getItem(LS_BASE) ||
+      "";
+
     tokenEl.value = t;
     apiBaseEl.value = b;
     toast("Loaded saved token");
@@ -316,18 +331,38 @@
   statusSel.addEventListener("change", () => loadList());
 
   logoutBtn.addEventListener("click", () => {
+    // clear session
+    sessionStorage.removeItem(SS_SUPER);
+    sessionStorage.removeItem(SS_TOKEN);
+    sessionStorage.removeItem(SS_BASE);
+
+    // clear local
     localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_BASE);
+
     tokenEl.value = "";
-    toast("Logged out (token removed)");
+    toast("Logged out (token cleared)");
     setLocked("Logged out");
     mainCard.style.display = "none";
   });
 
   // init
   (function init() {
-    // auto-load token if present
-    tokenEl.value = localStorage.getItem(LS_TOKEN) || "";
-    apiBaseEl.value = localStorage.getItem(LS_BASE) || "";
+    // auto-load token from sessionStorage first
+    const t =
+      sessionStorage.getItem(SS_SUPER) ||
+      sessionStorage.getItem(SS_TOKEN) ||
+      localStorage.getItem(LS_TOKEN) ||
+      "";
+
+    const b =
+      sessionStorage.getItem(SS_BASE) ||
+      localStorage.getItem(LS_BASE) ||
+      "";
+
+    tokenEl.value = t;
+    apiBaseEl.value = b;
+
     checkAccess();
   })();
 })();
