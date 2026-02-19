@@ -1276,8 +1276,6 @@ app.get("/", (_req, res) => res.redirect("/portal/index.html"));
 /* =========================================================
    Start (Render compatible)
 ========================================================= */
-const PORT = Number(process.env.PORT);
-if (!PORT) {
-  throw new Error("PORT is not set. On Render, PORT is automatically provided.");
-}
-app.listen(PORT, "0.0.0.0", () => console.log(`QuantumMail server running on port ${PORT}`));
+const PORT = Number(process.env.PORT || "10000");
+app.listen(PORT, () => console.log(`QuantumMail server running on port ${PORT}`));
+
