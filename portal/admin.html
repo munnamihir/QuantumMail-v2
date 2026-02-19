@@ -185,27 +185,29 @@
       </div>
 
       <div class="rightHeader">
-        <!-- ✅ session pill (admin.js was expecting these ids) -->
+        <!-- Session pill always visible -->
         <div class="pill" title="Session">
           <span id="sessionDot" class="dot"></span>
           <span id="who">Not logged in</span>
         </div>
-
-        <!-- ✅ NAV HUB: add ALL portal pages here -->
-        <div class="nav">
-          <a class="btn" href="/portal/admin.html" id="navAdmin">Admin</a>
+      
+        <!-- ✅ HIDE THESE UNTIL LOGGED IN -->
+        <div class="nav" id="authedNav" style="display:none;">
           <a class="btn" href="/portal/audit.html" id="navAudit">Audit</a>
           <a class="btn" href="/portal/analytics.html" id="navAnalytics">Analytics</a>
+      
+          <!-- Generate Invite page -->
+          <a class="btn" href="/portal/invite.html" id="navInvite">Generate Invite</a>
+      
           <a class="btn" href="/portal/policies.html" id="navPolicies">Policies</a>
+      
           <a class="btn" href="/portal/alerts.html" id="navAlerts">
             Alerts <span id="alertBadge" class="badge" style="display:none;">0</span>
           </a>
-          <a class="btn" href="/portal/compose.html" id="navCompose">Compose</a>
-          <a class="btn" href="/portal/keygen.html" id="navKeygen">Keygen</a>
-          <a class="btn" href="/portal/decrypt.html" id="navDecrypt">Decrypt</a>
         </div>
-
-        <div class="nav">
+      
+        <!-- optional: keep Profile/Logout hidden until login too -->
+        <div class="nav" id="authedActions" style="display:none;">
           <button id="btnProfile" class="secondary" type="button">Profile</button>
           <button id="btnLogoutTop" class="danger" type="button">Logout</button>
         </div>
