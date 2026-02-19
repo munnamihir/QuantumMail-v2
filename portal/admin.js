@@ -28,6 +28,7 @@ function setSessionPill() {
     dot.classList.remove("good", "bad");
     if (token) dot.classList.add("good");
   }
+  setAuthedUI();
 }
 
 function setAuthedUI() {
