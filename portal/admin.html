@@ -328,6 +328,65 @@
       </div>
     </div>
 
+    <!-- Profile Modal -->
+<div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); padding:18px; z-index:50;">
+  <div style="max-width:520px; margin:8vh auto; background:rgba(18,24,42,.98); border:1px solid var(--border); border-radius:18px; box-shadow: var(--shadow); overflow:hidden;">
+    <div style="padding:14px 14px 10px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="font-weight:900; letter-spacing:.2px;">Profile</div>
+      <button id="btnCloseProfile" class="secondary" type="button">Close</button>
+    </div>
+    <div style="height:1px; background:rgba(255,255,255,.08);"></div>
+
+    <div style="padding:14px;">
+      <div class="muted">Signed in as</div>
+      <div id="profileMeta" style="margin-top:6px; font-weight:800;"></div>
+
+      <div style="margin-top:10px;" class="tableWrap">
+        <table>
+          <tbody>
+            <tr><td class="muted" style="width:35%;">Org Name</td><td id="profileOrgName">—</td></tr>
+            <tr><td class="muted">Org Id</td><td id="profileOrgId">—</td></tr>
+            <tr><td class="muted">Username</td><td id="profileUsername">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="btnShowChangePw" class="primary" type="button">Change Password</button>
+      </div>
+
+      <div id="pwBox" style="display:none; margin-top:12px;">
+        <div class="row">
+          <div>
+            <label for="curPw">Current Password</label>
+            <input id="curPw" type="password" placeholder="Current password" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="newPw">New Password</label>
+            <input id="newPw" type="password" placeholder="At least 12 characters" />
+          </div>
+          <div>
+            <label for="newPw2">Confirm New Password</label>
+            <input id="newPw2" type="password" placeholder="Re-type new password" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div style="flex:0 0 auto;">
+            <button id="btnChangePw" class="primary" type="button">Update Password</button>
+          </div>
+        </div>
+
+        <div id="pwOk" class="ok"></div>
+        <div id="pwErr" class="err"></div>
+      </div>
+    </div>
+  </div>
+</div>
+    
     <script type="module" src="/portal/admin.js"></script>
   </div>
 </body>
