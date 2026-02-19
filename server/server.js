@@ -1,11 +1,12 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import crypto from "crypto";
+//import fs from "fs";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
 import { PostgresStore } from "./storage/postgresStore.js";
+import { peekOrg, getOrg, saveOrg } from "./orgStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,23 +70,23 @@ async function persistOrg(orgId) {
    Paths + persistence
 ========================================================= */
 const portalDir = path.join(__dirname, "..", "portal");
-const dataPath = path.join(__dirname, "data.json");
+//const dataPath = path.join(__dirname, "data.json");
 
-function loadData() {
+/*function loadData() {
   try {
     if (!fs.existsSync(dataPath)) return { orgs: {} };
     return JSON.parse(fs.readFileSync(dataPath, "utf8"));
   } catch {
     return { orgs: {} };
   }
-}
+}*/
 
-const DB = loadData();
-if (!DB.orgs) DB.orgs = {};
+/*const DB = loadData();
+if (!DB.orgs) DB.orgs = {};*/
 
-function saveData() {
+/*function saveData() {
   fs.writeFileSync(dataPath, JSON.stringify(DB, null, 2), "utf8");
-}
+}*/
 
 /* =========================================================
    Helpers
