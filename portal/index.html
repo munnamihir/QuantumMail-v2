@@ -13,122 +13,107 @@
         <div class="logo"></div>
         <div>
           <h1>QuantumMail</h1>
-          <p class="muted">Envelope encryption for email — store encrypted, decrypt only with your key.</p>
+          <p class="muted">Request access → SuperAdmin approves → Admin sets up → Users join via invite.</p>
         </div>
       </div>
     </header>
 
     <main class="card">
       <div class="tabs">
-        <button id="tabSignup" class="tab active" type="button">Create account</button>
+        <button id="tabRequest" class="tab active" type="button">Request Org Access</button>
+        <button id="tabJoin" class="tab" type="button">Join Org</button>
         <button id="tabLogin" class="tab" type="button">Login</button>
       </div>
 
-      <!-- SIGNUP -->
-      <section id="signupPanel">
-        <h2>Create your account</h2>
-        <p class="muted">Choose how you want to sign up.</p>
+      <!-- REQUEST ORG -->
+      <section id="requestPanel">
+        <h2>Request an Organization</h2>
+        <p class="muted">Submit your org request. QuantumMail SuperAdmin will approve and send an Admin setup link.</p>
 
         <div class="row">
           <div>
-            <label for="suSignupType">Account type</label>
-            <div class="help">Individual creates a personal org. OrgType joins an existing org using a one-time invite code.</div>
-            <select id="suSignupType">
-              <option value="Individual">Individual</option>
-              <option value="OrgType">OrgType</option>
-            </select>
+            <label for="rqOrgName">Organization name</label>
+            <input id="rqOrgName" autocomplete="off" placeholder="Acme Corp"/>
           </div>
-
-          <div id="suIndividualModeWrap">
-            <label for="suIndividualMode">Individual setup</label>
-            <div class="help">Create a new org (you can be Admin) or join an existing org by Org ID.</div>
-            <select id="suIndividualMode">
-              <option value="create">Create my own org</option>
-              <option value="join">Join existing org</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- ORG ROW -->
-        <div class="row" id="suOrgRow" style="display:none;">
           <div>
-            <label for="suOrgId">Org ID</label>
-            <div class="help">Required for OrgType signup and Individual join.</div>
-            <input id="suOrgId" autocomplete="off"/>
-            <div class="help" id="suOrgStatus"></div>
+            <label for="rqRequesterName">Your name</label>
+            <input id="rqRequesterName" autocomplete="off" placeholder="Alice"/>
           </div>
         </div>
 
-        <!-- INVITE CODE -->
-        <div class="row" id="suInviteWrap" style="display:none;">
-          <div>
-            <label for="suInviteCode">Invite Code</label>
-            <div class="help">Ask your org admin for the one-time invite code.</div>
-            <input id="suInviteCode" autocomplete="off"/>
-          </div>
-        </div>
-
-        <!-- ADMIN INIT REDIRECT (for OrgType) -->
-        <div id="orgSetupRedirectWrap" style="display:none; margin-top:12px;">
-          <div class="help">If your org does not exist yet, an Admin must initialize it first.</div>
-          <button id="btnGoAdminSetup" class="secondary" type="button">Go to Admin Initialization</button>
-        </div>
-
-        <!-- USERNAME/PW -->
         <div class="row">
           <div>
-            <label for="suUsername">Username</label>
-            <div class="help">Pick a unique username in your org.</div>
-            <input id="suUsername" autocomplete="off"/>
-            <div class="help" id="suUserStatus"></div>
+            <label for="rqRequesterEmail">Your email</label>
+            <input id="rqRequesterEmail" autocomplete="off" placeholder="alice@acme.com"/>
           </div>
-
           <div>
-            <label for="suPassword">Password</label>
-            <div class="help">Minimum 8 characters.</div>
-            <input id="suPassword" type="password"/>
-          </div>
-        </div>
-
-        <!-- WANT ADMIN (individual create only) -->
-        <div class="row" id="suWantAdminRow">
-          <div>
-            <label for="suWantAdmin">Admin access</label>
-            <div class="help">Only relevant when you create a new org.</div>
-            <select id="suWantAdmin">
-              <option value="true">Yes — make me Admin</option>
-              <option value="false">No — Member only</option>
-            </select>
-          </div>
-
-          <div>
-            <label>What you’ll get</label>
-            <div class="help" id="suSummary" style="margin-top:6px;">—</div>
+            <label for="rqNotes">Notes (optional)</label>
+            <input id="rqNotes" autocomplete="off" placeholder="Gmail + Outlook, 50 users, compliance..."/>
           </div>
         </div>
 
         <div class="actions">
-          <button id="btnSignup" class="primary" type="button">Create account</button>
+          <button id="btnRequest" class="primary" type="button">Submit request</button>
         </div>
 
-        <div id="suOk" class="ok"></div>
-        <div id="suErr" class="err"></div>
+        <div id="rqOk" class="ok"></div>
+        <div id="rqErr" class="err"></div>
+      </section>
+
+      <!-- JOIN ORG (invite) -->
+      <section id="joinPanel" style="display:none;">
+        <h2>Join an existing org</h2>
+        <p class="muted">You need an Org ID + invite code from your Admin.</p>
+
+        <div class="row">
+          <div>
+            <label for="jnOrgId">Org ID</label>
+            <input id="jnOrgId" autocomplete="off" placeholder="org_acme"/>
+            <div class="help" id="jnOrgStatus"></div>
+          </div>
+
+          <div>
+            <label for="jnInviteCode">Invite Code</label>
+            <input id="jnInviteCode" autocomplete="off" placeholder="123-456"/>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="jnUsername">Username</label>
+            <input id="jnUsername" autocomplete="off" placeholder="alice"/>
+            <div class="help" id="jnUserStatus"></div>
+          </div>
+
+          <div>
+            <label for="jnPassword">Password</label>
+            <input id="jnPassword" type="password" placeholder="Minimum 12 recommended"/>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnJoin" class="primary" type="button">Create account (Join)</button>
+        </div>
+
+        <div id="jnOk" class="ok"></div>
+        <div id="jnErr" class="err"></div>
       </section>
 
       <!-- LOGIN -->
       <section id="loginPanel" style="display:none;">
         <h2>Login</h2>
-        <p class="muted">After login, you’ll be routed based on your role.</p>
+        <p class="muted">You’ll be routed based on your role.</p>
 
         <div class="row">
           <div>
             <label for="liOrgId">Org ID</label>
-            <input id="liOrgId" autocomplete="off"/>
+            <input id="liOrgId" autocomplete="off" placeholder="org_acme"/>
+            <div class="help" id="liOrgStatus"></div>
           </div>
 
           <div>
             <label for="liUsername">Username</label>
-            <input id="liUsername" autocomplete="off"/>
+            <input id="liUsername" autocomplete="off" placeholder="mihir"/>
           </div>
         </div>
 
