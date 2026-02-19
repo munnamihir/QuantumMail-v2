@@ -4,7 +4,9 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
-import { peekOrg, getOrg, saveOrg } from "./orgStore.js";
+
+import { pool } from "./db.js";                 // ✅ required (Neon/PG pool)
+import { peekOrg, getOrg, saveOrg } from "./orgStore.js";  // ✅ your JSONB org store
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,82 +16,18 @@ const app = express();
 /* =========================================================
    ENV (Render / Neon)
 ========================================================= */
-
-
-const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET;
-if (!BOOTSTRAP_SECRET || BOOTSTRAP_SECRET.length < 32) {
-  throw new Error("QM_BOOTSTRAP_SECRET is required and must be >= 32 chars.");
-}
-
-function requireBootstrap(req, res, next) {
-  const h = String(req.headers["x-qm-bootstrap"] || "");
-  if (!h) return res.status(401).json({ error: "Missing X-QM-Bootstrap header" });
-  if (!timingSafeEq(h, BOOTSTRAP_SECRET)) return res.status(403).json({ error: "Invalid bootstrap secret" });
-  next();
-}
-
-// POST /bootstrap/superadmin { username, password }
-app.post("/bootstrap/superadmin", requireBootstrap, async (req, res) => {
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  if (!username || !password || password.length < 12) {
-    return res.status(400).json({ error: "username + password (>=12 chars) required" });
-  }
-
-  const org = await getOrg(PLATFORM_ORG_ID);
-
-  const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-  if (exists) return res.status(409).json({ error: "User already exists" });
-
-  const userId = nanoid(10);
-  org.users.push({
-    userId,
-    username,
-    passwordHash: sha256(password), // upgrade later to scrypt/bcrypt if you want
-    role: "SuperAdmin",
-    status: "Active",
-    publicKeySpkiB64: null,
-    publicKeyRegisteredAt: null,
-    createdAt: nowIso(),
-    lastLoginAt: null
-  });
-
-  org.audit = org.audit || [];
-  org.audit.unshift({ id: nanoid(10), at: nowIso(), action: "bootstrap_superadmin", userId, username });
-  await saveOrg(PLATFORM_ORG_ID, org);
-
-  res.json({ ok: true, platformOrgId: PLATFORM_ORG_ID, userId, username });
-});
-
+const NODE_ENV = process.env.NODE_ENV || "development";
+const IS_PROD = NODE_ENV === "production";
 
 const PLATFORM_ORG_ID = process.env.QM_PLATFORM_ORG_ID;
 if (!PLATFORM_ORG_ID) throw new Error("QM_PLATFORM_ORG_ID is required.");
 
-function requireSuperAdmin(req, res, next) {
-  if (!req.qm?.user) return res.status(401).json({ error: "Unauthorized" });
-  // super admin must be inside platform org AND role must be SuperAdmin
-  if (req.qm.tokenPayload.orgId !== PLATFORM_ORG_ID) {
-    return res.status(403).json({ error: "Super admin only (platform org)" });
-  }
-  if (req.qm.user.role !== "SuperAdmin") {
-    return res.status(403).json({ error: "Super admin only" });
-  }
-  next();
-}
-
-
-const NODE_ENV = process.env.NODE_ENV || "development";
-const IS_PROD = NODE_ENV === "production";
-
 const TOKEN_SECRET = process.env.QM_TOKEN_SECRET;
-if (IS_PROD && (!TOKEN_SECRET || TOKEN_SECRET.length < 32)) {
-  throw new Error("QM_TOKEN_SECRET is required in production and must be >= 32 chars.");
+if (!TOKEN_SECRET || TOKEN_SECRET.length < 32) {
+  throw new Error("QM_TOKEN_SECRET is required and must be >= 32 chars.");
 }
 
-const EXTENSION_ID = process.env.QM_EXTENSION_ID;
-if (IS_PROD && !EXTENSION_ID) {
-  throw new Error("QM_EXTENSION_ID is required in production.");
-}
+const EXTENSION_ID = process.env.QM_EXTENSION_ID || ""; // optional in dev, recommended in prod
 
 const ALLOWED_WEB_ORIGINS = (process.env.QM_ALLOWED_WEB_ORIGINS || "")
   .split(",")
@@ -100,35 +38,8 @@ if (IS_PROD && ALLOWED_WEB_ORIGINS.length === 0) {
   throw new Error("QM_ALLOWED_WEB_ORIGINS is required in production (comma-separated).");
 }
 
-/* =========================================================
-   CORS (strict)
-========================================================= */
-function isAllowedOrigin(origin) {
-  if (!origin) return true; // curl/server-to-server
-
-  if (EXTENSION_ID && origin === `chrome-extension://${EXTENSION_ID}`) return true;
-  if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
-
-  return false;
-}
-
-app.use(cors({
-  origin: (origin, cb) => {
-    if (isAllowedOrigin(origin)) return cb(null, true);
-    return cb(new Error(`CORS blocked origin: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false
-}));
-
-app.options("*", cors());
-app.use(express.json({ limit: "25mb" }));
-
-/* =========================================================
-   Paths
-========================================================= */
-const portalDir = path.join(__dirname, "..", "portal");
+const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET || "";
+const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 
 /* =========================================================
    Helpers
@@ -146,10 +57,13 @@ function sha256(s) {
   return crypto.createHash("sha256").update(String(s)).digest("hex");
 }
 
+function sha256Hex(s) { return sha256(s); }
+
 function b64urlEncode(bufOrStr) {
   const buf = Buffer.isBuffer(bufOrStr) ? bufOrStr : Buffer.from(String(bufOrStr), "utf8");
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
+
 function b64urlDecodeToString(s) {
   const str = String(s || "");
   const pad = str.length % 4 === 0 ? "" : "=".repeat(4 - (str.length % 4));
@@ -159,6 +73,57 @@ function b64urlDecodeToString(s) {
 
 function bytesToB64(buf) { return Buffer.from(buf).toString("base64"); }
 function b64ToBytes(b64) { return Buffer.from(String(b64 || ""), "base64"); }
+
+function getPublicBase(req) {
+  const proto = req.headers["x-forwarded-proto"] || "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+function defaultPolicies() {
+  return {
+    forceAttachmentEncryption: false,
+    disablePassphraseMode: false,
+    enforceKeyRotationDays: 0,
+    requireReauthForDecrypt: true,
+  };
+}
+
+/* =========================================================
+   CORS (strict)
+========================================================= */
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // curl/server-to-server
+  if (EXTENSION_ID && origin === `chrome-extension://${EXTENSION_ID}`) return true;
+  if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
+  return false;
+}
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (isAllowedOrigin(origin)) return cb(null, true);
+    return cb(new Error(`CORS blocked origin: ${origin}`));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-QM-Bootstrap"],
+  credentials: false
+}));
+
+app.options("*", cors());
+app.use(express.json({ limit: "25mb" }));
+
+/* =========================================================
+   No-cache for portal + /m
+========================================================= */
+app.use((req, res, next) => {
+  if (req.path.startsWith("/portal") || req.path.startsWith("/m/")) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+  }
+  next();
+});
 
 /* =========================================================
    Token (minimal JWT-like HMAC-SHA256)
@@ -187,28 +152,84 @@ function verifyToken(token) {
 }
 
 /* =========================================================
-   Public base URL helper
+   Auth middleware (Postgres-backed org)
 ========================================================= */
-function getPublicBase(req) {
-  const proto = req.headers["x-forwarded-proto"] || "http";
-  const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return `${proto}://${host}`;
+async function requireAuth(req, res, next) {
+  try {
+    const auth = String(req.headers.authorization || "");
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    if (!m) return res.status(401).json({ error: "Missing Bearer token" });
+
+    const payload = verifyToken(m[1]);
+    if (!payload) return res.status(401).json({ error: "Invalid/expired token" });
+
+    const org = await getOrg(payload.orgId);
+    if (!org) return res.status(401).json({ error: "Unknown org" });
+
+    const user = (org.users || []).find((u) => u.userId === payload.userId);
+    if (!user) return res.status(401).json({ error: "Unknown user" });
+
+    if (String(user.status || "Active").toLowerCase() === "disabled") {
+      return res.status(403).json({ error: "User disabled" });
+    }
+
+    req.qm = { tokenPayload: payload, org, user };
+    next();
+  } catch {
+    return res.status(500).json({ error: "Auth middleware error" });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.qm?.user) return res.status(401).json({ error: "Unauthorized" });
+  if (req.qm.user.role !== "Admin") return res.status(403).json({ error: "Admin only" });
+  next();
+}
+
+function requireSuperAdmin(req, res, next) {
+  if (!req.qm?.user) return res.status(401).json({ error: "Unauthorized" });
+  if (req.qm.tokenPayload.orgId !== PLATFORM_ORG_ID) {
+    return res.status(403).json({ error: "Super admin only (platform org)" });
+  }
+  if (req.qm.user.role !== "SuperAdmin") {
+    return res.status(403).json({ error: "Super admin only" });
+  }
+  next();
 }
 
 /* =========================================================
-   Default policies
+   Bootstrap protection (header secret)
 ========================================================= */
-function defaultPolicies() {
-  return {
-    forceAttachmentEncryption: false,
-    disablePassphraseMode: false,
-    enforceKeyRotationDays: 0,
-    requireReauthForDecrypt: true,
-  };
+function requireBootstrapSecret(req, res, next) {
+  if (!BOOTSTRAP_ENABLED) {
+    return res.status(503).json({ error: "Bootstrap disabled (QM_BOOTSTRAP_SECRET not set or <32)" });
+  }
+  const provided = String(req.headers["x-qm-bootstrap"] || "");
+  if (!provided) return res.status(401).json({ error: "Missing X-QM-Bootstrap header" });
+  if (!timingSafeEq(provided, BOOTSTRAP_SECRET)) return res.status(403).json({ error: "Bootstrap denied" });
+  next();
+}
+
+// rate limit only bootstrap routes
+const RATE = new Map(); // ip -> {count, resetAt}
+function rateLimitBootstrap(req, res, next) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const limit = 10;
+
+  const cur = RATE.get(ip);
+  if (!cur || now > cur.resetAt) {
+    RATE.set(ip, { count: 1, resetAt: now + windowMs });
+    return next();
+  }
+  cur.count++;
+  if (cur.count > limit) return res.status(429).json({ error: "Too many bootstrap attempts" });
+  next();
 }
 
 /* =========================================================
-   Audit (Postgres durable)
+   Audit (durable via saveOrg)
 ========================================================= */
 async function audit(req, orgId, userId, action, details = {}) {
   const org = await getOrg(orgId);
@@ -267,7 +288,6 @@ function openWithKek(kekBytes, sealed) {
 
 function ensureKeyring(org) {
   org.keyring = org.keyring || null;
-
   if (!org.keyring) {
     const kek = randomKey32();
     org.keyring = {
@@ -311,52 +331,44 @@ function genInviteCode() {
 }
 
 /* =========================================================
-   Auth middleware (Postgres-backed org)
+   DB bootstrap (tables)
 ========================================================= */
-async function requireAuth(req, res, next) {
-  try {
-    const auth = String(req.headers.authorization || "");
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (!m) return res.status(401).json({ error: "Missing Bearer token" });
+async function ensureTables() {
+  await pool.query(`
+    create table if not exists qm_org_requests (
+      id text primary key,
+      org_name text not null,
+      requester_name text not null,
+      requester_email text not null,
+      notes text,
+      status text not null default 'pending', -- pending|approved|rejected
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      reviewed_by_user_id text,
+      reviewed_at timestamptz,
+      reject_reason text,
+      approved_org_id text,
+      approved_admin_user_id text
+    );
+  `);
 
-    const payload = verifyToken(m[1]);
-    if (!payload) return res.status(401).json({ error: "Invalid/expired token" });
+  await pool.query(`
+    create table if not exists qm_setup_tokens (
+      id text primary key,
+      org_id text not null,
+      user_id text not null,
+      token_hash text not null,
+      purpose text not null,
+      expires_at timestamptz not null,
+      used_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+  `);
 
-    const org = await getOrg(payload.orgId);
-    if (!org) return res.status(401).json({ error: "Unknown org" });
-
-    const user = (org.users || []).find((u) => u.userId === payload.userId);
-    if (!user) return res.status(401).json({ error: "Unknown user" });
-
-    if (String(user.status || "Active").toLowerCase() === "disabled") {
-      return res.status(403).json({ error: "User disabled" });
-    }
-
-    req.qm = { tokenPayload: payload, org, user };
-    next();
-  } catch (e) {
-    return res.status(500).json({ error: "Auth middleware error" });
-  }
+  await pool.query(`create index if not exists idx_qm_setup_tokens_org_hash on qm_setup_tokens(org_id, token_hash);`);
+  await pool.query(`create index if not exists idx_qm_org_requests_status on qm_org_requests(status, created_at);`);
 }
-
-function requireAdmin(req, res, next) {
-  if (!req.qm?.user) return res.status(401).json({ error: "Unauthorized" });
-  if (req.qm.user.role !== "Admin") return res.status(403).json({ error: "Admin only" });
-  next();
-}
-
-/* =========================================================
-   No-cache for portal + /m
-========================================================= */
-app.use((req, res, next) => {
-  if (req.path.startsWith("/portal") || req.path.startsWith("/m/")) {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("Surrogate-Control", "no-store");
-  }
-  next();
-});
+await ensureTables();
 
 /* =========================================================
    ORG: check + check-username (peek-only)
@@ -370,14 +382,7 @@ app.get("/org/check", async (req, res) => {
   const userCount = exists ? (org.users?.length || 0) : 0;
   const hasAdmin = exists ? !!(org.users || []).find((u) => u.role === "Admin") : false;
 
-  res.json({
-    ok: true,
-    orgId,
-    exists,
-    initialized: exists && userCount > 0 && hasAdmin,
-    userCount,
-    hasAdmin,
-  });
+  res.json({ ok: true, orgId, exists, initialized: exists && userCount > 0 && hasAdmin, userCount, hasAdmin });
 });
 
 app.get("/org/check-username", async (req, res) => {
@@ -386,221 +391,108 @@ app.get("/org/check-username", async (req, res) => {
   if (!orgId || !username) return res.status(400).json({ error: "orgId and username required" });
 
   const org = await peekOrg(orgId);
-  if (!org) {
-    return res.json({ ok: true, orgId, username, orgExists: false, available: false, reason: "org_not_found" });
-  }
+  if (!org) return res.json({ ok: true, orgId, username, orgExists: false, available: false, reason: "org_not_found" });
 
   const taken = !!(org.users || []).find((u) => String(u.username || "").toLowerCase() === username.toLowerCase());
   res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
 });
 
-// =========================================================
-// BOOTSTRAP: seed admin (ALLOWED IN PROD, but protected)
-// POST /dev/seed-admin
-// Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
-// Body: { orgId, username, password }
-// =========================================================
-
-const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET;
-if (!BOOTSTRAP_SECRET || BOOTSTRAP_SECRET.length < 32) {
-  console.warn("WARNING: QM_BOOTSTRAP_SECRET is missing/weak. /dev/seed-admin will be disabled.");
-}
-
-// simple strict limiter for this endpoint only
-const SEED_RATE = new Map(); // ip -> {count, resetAt}
-function seedRateLimit(req, res, next) {
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
-  const now = Date.now();
-  const windowMs = 15 * 60 * 1000; // 15 min
-  const limit = 10;
-
-  const cur = SEED_RATE.get(ip);
-  if (!cur || now > cur.resetAt) {
-    SEED_RATE.set(ip, { count: 1, resetAt: now + windowMs });
-    return next();
-  }
-  cur.count++;
-  if (cur.count > limit) return res.status(429).json({ error: "Too many bootstrap attempts" });
-  next();
-}
-
-function requireBootstrapSecret(req, res, next) {
-  if (!BOOTSTRAP_SECRET || BOOTSTRAP_SECRET.length < 32) {
-    return res.status(503).json({ error: "Bootstrap disabled (QM_BOOTSTRAP_SECRET not set)" });
-  }
-  const provided = String(req.headers["x-qm-bootstrap"] || "");
-  if (!provided) return res.status(401).json({ error: "Missing X-QM-Bootstrap header" });
-
-  // timing safe compare
-  const a = Buffer.from(provided);
-  const b = Buffer.from(BOOTSTRAP_SECRET);
-  if (a.length !== b.length) return res.status(403).json({ error: "Bootstrap denied" });
-  if (!crypto.timingSafeEqual(a, b)) return res.status(403).json({ error: "Bootstrap denied" });
-
-  next();
-}
-
-function sha256Hex(s) {
-  return crypto.createHash("sha256").update(String(s)).digest("hex");
-}
-
-function makeSetupToken() {
-  // URL-safe token
-  return crypto.randomBytes(32).toString("base64url");
-}
-
-// POST /super/org-requests/:id/approve
-// body: { orgId, adminUsername }
-app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, async (req, res) => {
-  const requestId = String(req.params.id || "").trim();
-  const orgId = String(req.body?.orgId || "").trim();
-  const adminUsername = String(req.body?.adminUsername || "").trim();
-
-  if (!requestId || !orgId || !adminUsername) {
-    return res.status(400).json({ error: "requestId, orgId, adminUsername required" });
+/* =========================================================
+   BOOTSTRAP: create first SuperAdmin in PLATFORM org
+   POST /bootstrap/superadmin
+   Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
+   Body: { username, password } (>=12)
+========================================================= */
+app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, async (req, res) => {
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
+  if (!username || !password || password.length < 12) {
+    return res.status(400).json({ error: "username + password (>=12 chars) required" });
   }
 
-  // load request
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
-  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
-  const reqRow = r1.rows[0];
-  if (reqRow.status !== "pending") return res.status(409).json({ error: "Request is not pending" });
+  const org = await getOrg(PLATFORM_ORG_ID);
+  org.users = org.users || [];
+  org.audit = org.audit || [];
+  org.policies = org.policies || defaultPolicies();
 
-  // create org
-  const org = await getOrg(orgId);
+  const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  if (exists) return res.status(409).json({ error: "User already exists" });
 
-  // prevent duplicate first admin username
-  const taken = (org.users || []).some(u => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
-  if (taken) return res.status(409).json({ error: "adminUsername already exists in org" });
-
-  // create first admin with PendingSetup (no password yet)
-  const adminUserId = nanoid(10);
+  const userId = nanoid(10);
   org.users.push({
-    userId: adminUserId,
-    username: adminUsername,
-    passwordHash: null,
-    role: "Admin",
-    status: "PendingSetup",
+    userId,
+    username,
+    passwordHash: sha256(password),
+    role: "SuperAdmin",
+    status: "Active",
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
     lastLoginAt: null
   });
 
-  // write org
-  await saveOrg(orgId, org);
+  org.audit.unshift({ id: nanoid(10), at: nowIso(), action: "bootstrap_superadmin", userId, username });
+  await saveOrg(PLATFORM_ORG_ID, org);
 
-  // create setup token
-  const rawToken = makeSetupToken();
-  const tokenHash = sha256Hex(rawToken);
-  const tokenId = nanoid(12);
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-
-  await pool.query(
-    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
-     values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
-    [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
-  );
-
-  // mark request approved
-  await pool.query(
-    `update qm_org_requests
-       set status='approved',
-           updated_at=now(),
-           reviewed_by_user_id=$2,
-           reviewed_at=now(),
-           approved_org_id=$3,
-           approved_admin_user_id=$4
-     where id=$1`,
-    [requestId, req.qm.user.userId, orgId, adminUserId]
-  );
-
-  // setup link (served by your portal)
-  const base = getPublicBase(req);
-  const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
-
-  res.json({ ok: true, orgId, adminUserId, adminUsername, setupLink, expiresAt: expiresAt.toISOString() });
+  res.json({ ok: true, platformOrgId: PLATFORM_ORG_ID, userId, username });
 });
 
-// POST /auth/setup-admin { orgId, token, newPassword }
-app.post("/auth/setup-admin", async (req, res) => {
+/* =========================================================
+   BOOTSTRAP: seed first Admin for an org (allowed in prod, protected)
+   POST /dev/seed-admin
+   Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
+   Body: { orgId, username, password } (>=12)
+========================================================= */
+app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
-  const token = String(req.body?.token || "").trim();
-  const newPassword = String(req.body?.newPassword || "");
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
 
-  if (!orgId || !token || !newPassword) return res.status(400).json({ error: "orgId, token, newPassword required" });
-  if (newPassword.length < 12) return res.status(400).json({ error: "Password must be >= 12 characters" });
+  if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
+  if (password.length < 12) return res.status(400).json({ error: "Password must be at least 12 characters" });
 
-  const tokenHash = sha256Hex(token);
-
-  const { rows } = await pool.query(
-    `select * from qm_setup_tokens
-      where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'`,
-    [orgId, tokenHash]
-  );
-  if (!rows.length) return res.status(403).json({ error: "Invalid token" });
-
-  const t = rows[0];
-  if (t.used_at) return res.status(403).json({ error: "Token already used" });
-  if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
+  const existing = await peekOrg(orgId);
+  if (existing) {
+    const admins = (existing.users || []).filter(u => u.role === "Admin");
+    if (admins.length > 0) {
+      return res.status(403).json({ error: "Org already initialized. Use invites or an existing admin." });
+    }
+  }
 
   const org = await getOrg(orgId);
-  const u = (org.users || []).find(x => x.userId === t.user_id);
-  if (!u) return res.status(404).json({ error: "User not found" });
+  org.users = org.users || [];
+  org.audit = org.audit || [];
+  org.policies = org.policies || defaultPolicies();
+  ensureKeyring(org);
 
-  // activate user
-  u.passwordHash = sha256(newPassword); // upgrade later to scrypt/bcrypt if you want
-  u.status = "Active";
+  const taken = org.users.some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+  if (taken) return res.status(409).json({ error: "Username already exists" });
+
+  const newAdmin = {
+    userId: nanoid(10),
+    username,
+    passwordHash: sha256(password),
+    role: "Admin",
+    status: "Active",
+    publicKeySpkiB64: null,
+    publicKeyRegisteredAt: null,
+    createdAt: nowIso(),
+    lastLoginAt: null
+  };
+
+  org.users.push(newAdmin);
+  org.audit.unshift({ id: nanoid(10), at: nowIso(), orgId, userId: newAdmin.userId, action: "bootstrap_seed_admin", username });
+  if (org.audit.length > 2000) org.audit.length = 2000;
 
   await saveOrg(orgId, org);
-
-  await pool.query(`update qm_setup_tokens set used_at=now() where id=$1`, [t.id]);
-
-  res.json({ ok: true });
+  res.json({ ok: true, orgId, userId: newAdmin.userId, username });
 });
 
-
-// POST /super/org-requests/:id/reject { reason }
-app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async (req, res) => {
-  const requestId = String(req.params.id || "").trim();
-  const reason = String(req.body?.reason || "").trim();
-
-  if (!requestId) return res.status(400).json({ error: "requestId required" });
-
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
-  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
-  if (r1.rows[0].status !== "pending") return res.status(409).json({ error: "Request is not pending" });
-
-  await pool.query(
-    `update qm_org_requests
-       set status='rejected',
-           updated_at=now(),
-           reviewed_by_user_id=$2,
-           reviewed_at=now(),
-           reject_reason=$3
-     where id=$1`,
-    [requestId, req.qm.user.userId, reason || null]
-  );
-
-  res.json({ ok: true });
-});
-
-
-// GET /super/org-requests?status=pending|approved|rejected
-app.get("/super/org-requests", requireAuth, requireSuperAdmin, async (req, res) => {
-  const status = String(req.query.status || "pending").trim().toLowerCase();
-  const allowed = new Set(["pending", "approved", "rejected"]);
-  const s = allowed.has(status) ? status : "pending";
-
-  const { rows } = await pool.query(
-    `select * from qm_org_requests where status = $1 order by created_at desc limit 200`,
-    [s]
-  );
-
-  res.json({ ok: true, status: s, items: rows });
-});
-
-
+/* =========================================================
+   PUBLIC: org request
+   POST /public/org-requests
+   Body: { orgName, requesterName, requesterEmail, notes? }
+========================================================= */
 app.post("/public/org-requests", async (req, res) => {
   const orgName = String(req.body?.orgName || "").trim();
   const requesterName = String(req.body?.requesterName || "").trim();
@@ -621,191 +513,28 @@ app.post("/public/org-requests", async (req, res) => {
   res.json({ ok: true, requestId: id });
 });
 
-app.post("/dev/seed-admin", seedRateLimit, requireBootstrapSecret, async (req, res) => {
-  try {
-    const orgId = String(req.body?.orgId || "").trim();
-    const username = String(req.body?.username || "").trim();
-    const password = String(req.body?.password || "");
-
-    if (!orgId || !username || !password) {
-      return res.status(400).json({ error: "orgId, username, password required" });
-    }
-    if (password.length < 12) {
-      return res.status(400).json({ error: "Password must be at least 12 characters" });
-    }
-
-    // peek first (do not create)
-    const existing = await peekOrg(orgId);
-
-    // If org exists AND already has an Admin -> BLOCK
-    if (existing) {
-      const admins = (existing.users || []).filter(u => u.role === "Admin");
-      if (admins.length > 0) {
-        return res.status(403).json({ error: "Org already initialized. Use invites or an existing admin." });
-      }
-    }
-
-    // create-or-get, now safe because either org is new OR has no admin
-    const org = await getOrg(orgId);
-
-    // username uniqueness check
-    const taken = (org.users || []).some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
-    if (taken) return res.status(409).json({ error: "Username already exists" });
-
-    // IMPORTANT: use your secure password hashing (scrypt) if you added it
-    // If you still use sha256, keep it for now, but scrypt is strongly recommended.
-    const passwordHash = hashPassword ? hashPassword(password) : sha256(password);
-
-    const newAdmin = {
-      userId: nanoid(10),
-      username,
-      passwordHash,
-      role: "Admin",
-      status: "Active",
-      publicKeySpkiB64: null,
-      publicKeyRegisteredAt: null,
-      createdAt: nowIso(),
-      lastLoginAt: null
-    };
-
-    org.users = org.users || [];
-    org.users.push(newAdmin);
-
-    org.audit = org.audit || [];
-    org.audit.unshift({
-      id: nanoid(10),
-      at: nowIso(),
-      orgId,
-      userId: newAdmin.userId,
-      action: "bootstrap_seed_admin",
-      ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "",
-      ua: req.headers["user-agent"] || "",
-      username: newAdmin.username
-    });
-    if (org.audit.length > 2000) org.audit.length = 2000;
-
-    await saveOrg(orgId, org);
-
-    return res.json({ ok: true, orgId, userId: newAdmin.userId, username });
-  } catch (e) {
-    return res.status(500).json({ error: e?.message || "seed-admin failed" });
-  }
-});
-
 /* =========================================================
-   AUTH: signup
-========================================================= */
-app.post("/auth/signup", async (req, res) => {
-  const signupType = String(req.body?.signupType || "Individual");
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  let orgId = String(req.body?.orgId || "").trim();
-  const inviteCode = String(req.body?.inviteCode || "").trim();
-  const wantAdmin = !!req.body?.wantAdmin;
-
-  if (!username || !password) return res.status(400).json({ error: "username and password required" });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
-
-  if (signupType === "Individual") {
-    if (!orgId) orgId = `org_${nanoid(8)}`;
-
-    const org = await getOrg(orgId);
-    const exists = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-    if (exists) return res.status(409).json({ error: "Username already exists" });
-
-    const role = wantAdmin ? "Admin" : "Member";
-
-    const newUser = {
-      userId: nanoid(10),
-      username,
-      passwordHash: sha256(password),
-      role,
-      status: "Active",
-      publicKeySpkiB64: null,
-      publicKeyRegisteredAt: null,
-      createdAt: nowIso(),
-      lastLoginAt: null,
-    };
-
-    org.users.push(newUser);
-    ensureKeyring(org);
-
-    await audit(req, orgId, newUser.userId, "signup", { username, role, signupType });
-    await saveOrg(orgId, org);
-
-    return res.json({ ok: true, orgId, role });
-  }
-
-  if (signupType === "OrgType") {
-    if (!orgId) return res.status(400).json({ error: "orgId required for OrgType signup" });
-    if (!inviteCode) return res.status(400).json({ error: "inviteCode required for OrgType signup" });
-
-    const org = await getOrg(orgId);
-
-    const inv = org.invites?.[inviteCode];
-    if (!inv) return res.status(403).json({ error: "Invalid invite code" });
-    if (inv.usedAt) return res.status(403).json({ error: "Invite code already used" });
-
-    const hasAdmin = !!(org.users || []).find((u) => u.role === "Admin");
-    if (!hasAdmin) return res.status(400).json({ error: "Organization not initialized yet. Admin must initialize first." });
-
-    const exp = Date.parse(inv.expiresAt || "");
-    if (!Number.isNaN(exp) && Date.now() > exp) return res.status(403).json({ error: "Invite code expired" });
-
-    const exists = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-    if (exists) return res.status(409).json({ error: "Username already exists" });
-
-    const role = inv.role === "Admin" ? "Admin" : "Member";
-
-    const newUser = {
-      userId: nanoid(10),
-      username,
-      passwordHash: sha256(password),
-      role,
-      status: "Active",
-      publicKeySpkiB64: null,
-      publicKeyRegisteredAt: null,
-      createdAt: nowIso(),
-      lastLoginAt: null,
-    };
-
-    org.users.push(newUser);
-    inv.usedAt = nowIso();
-    inv.usedByUserId = newUser.userId;
-
-    await audit(req, orgId, newUser.userId, "signup", { username, role, signupType, inviteCode });
-    await saveOrg(orgId, org);
-
-    return res.json({ ok: true, orgId, role });
-  }
-
-  return res.status(400).json({ error: "Invalid signupType" });
-});
-
-/* =========================================================
-   AUTH: login / me / change-password
+   AUTH: login / me / change-password / setup-admin
 ========================================================= */
 app.post("/auth/login", async (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const username = String(req.body?.username || "").trim();
   const password = String(req.body?.password || "");
-
   if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
 
   const org = await getOrg(orgId);
   const user = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-
   if (!user) {
     await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
     return res.status(401).json({ error: "Invalid creds" });
   }
 
-   if (String(user.status || "Active") === "PendingSetup") {
-  return res.status(403).json({ error: "Account pending setup. Use setup link." });
-}
+  if (String(user.status || "Active") === "PendingSetup") {
+    return res.status(403).json({ error: "Account pending setup. Use setup link." });
+  }
 
   const ph = sha256(password);
-  if (!timingSafeEq(ph, user.passwordHash)) {
+  if (!user.passwordHash || !timingSafeEq(ph, user.passwordHash)) {
     await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" });
     return res.status(401).json({ error: "Invalid creds" });
   }
@@ -843,16 +572,7 @@ app.post("/auth/login", async (req, res) => {
 
 app.get("/auth/me", requireAuth, (req, res) => {
   const { user } = req.qm;
-  res.json({
-    ok: true,
-    user: {
-      userId: user.userId,
-      orgId: req.qm.tokenPayload.orgId,
-      username: user.username,
-      role: user.role,
-      status: user.status || "Active",
-    },
-  });
+  res.json({ ok: true, user: { userId: user.userId, orgId: req.qm.tokenPayload.orgId, username: user.username, role: user.role, status: user.status || "Active" } });
 });
 
 app.post("/auth/change-password", requireAuth, async (req, res) => {
@@ -861,25 +581,56 @@ app.post("/auth/change-password", requireAuth, async (req, res) => {
 
   const currentPassword = String(req.body?.currentPassword || "");
   const newPassword = String(req.body?.newPassword || "");
-
   if (!currentPassword || !newPassword) return res.status(400).json({ error: "currentPassword and newPassword required" });
-  if (newPassword.length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
+  if (newPassword.length < 12) return res.status(400).json({ error: "New password must be at least 12 characters" });
 
   const curHash = sha256(currentPassword);
-  if (!timingSafeEq(curHash, user.passwordHash)) {
+  if (!user.passwordHash || !timingSafeEq(curHash, user.passwordHash)) {
     await audit(req, orgId, user.userId, "change_password_failed", { reason: "bad_current_password" });
     return res.status(401).json({ error: "Current password is incorrect" });
   }
 
   const nextHash = sha256(newPassword);
-  if (timingSafeEq(nextHash, user.passwordHash)) {
-    return res.status(400).json({ error: "New password must be different" });
-  }
+  if (timingSafeEq(nextHash, user.passwordHash)) return res.status(400).json({ error: "New password must be different" });
 
   user.passwordHash = nextHash;
-
   await audit(req, orgId, user.userId, "change_password", { username: user.username, role: user.role });
   await saveOrg(orgId, org);
+
+  res.json({ ok: true });
+});
+
+// POST /auth/setup-admin { orgId, token, newPassword }
+app.post("/auth/setup-admin", async (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const token = String(req.body?.token || "").trim();
+  const newPassword = String(req.body?.newPassword || "");
+
+  if (!orgId || !token || !newPassword) return res.status(400).json({ error: "orgId, token, newPassword required" });
+  if (newPassword.length < 12) return res.status(400).json({ error: "Password must be >= 12 characters" });
+
+  const tokenHash = sha256Hex(token);
+
+  const { rows } = await pool.query(
+    `select * from qm_setup_tokens
+      where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'`,
+    [orgId, tokenHash]
+  );
+  if (!rows.length) return res.status(403).json({ error: "Invalid token" });
+
+  const t = rows[0];
+  if (t.used_at) return res.status(403).json({ error: "Token already used" });
+  if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
+
+  const org = await getOrg(orgId);
+  const u = (org.users || []).find(x => x.userId === t.user_id);
+  if (!u) return res.status(404).json({ error: "User not found" });
+
+  u.passwordHash = sha256(newPassword);
+  u.status = "Active";
+
+  await saveOrg(orgId, org);
+  await pool.query(`update qm_setup_tokens set used_at=now() where id=$1`, [t.id]);
 
   res.json({ ok: true });
 });
@@ -899,23 +650,6 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
 
   await audit(req, orgId, user.userId, "pubkey_register", { username: user.username });
   await saveOrg(orgId, org);
-
-  res.json({ ok: true });
-});
-
-app.post("/pubkey_register", requireAuth, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user } = req.qm;
-
-  const publicKeySpkiB64 = String(req.body?.publicKeySpkiB64 || "").trim();
-  if (!publicKeySpkiB64) return res.status(400).json({ error: "publicKeySpkiB64 required" });
-
-  user.publicKeySpkiB64 = publicKeySpkiB64;
-  user.publicKeyRegisteredAt = nowIso();
-
-  await audit(req, orgId, user.userId, "pubkey_register", { username: user.username });
-  await saveOrg(orgId, org);
-
   res.json({ ok: true });
 });
 
@@ -946,8 +680,10 @@ app.post("/admin/invites/generate", requireAuth, requireAdmin, async (req, res) 
   let code;
   for (let i = 0; i < 5; i++) {
     code = genInviteCode();
-    if (!org.invites[code]) break;
+    if (!org.invites?.[code]) break;
   }
+
+  org.invites = org.invites || {};
   if (!code || org.invites[code]) return res.status(500).json({ error: "Could not generate code" });
 
   const createdAt = nowIso();
@@ -963,9 +699,7 @@ app.post("/admin/invites/generate", requireAuth, requireAdmin, async (req, res) 
 
 app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
   const { org } = req.qm;
-  const items = Object.values(org.invites || {})
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 50);
+  const items = Object.values(org.invites || {}).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 50);
   res.json({ items });
 });
 
@@ -984,135 +718,118 @@ app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
   });
 });
 
-app.post("/admin/users", requireAuth, requireAdmin, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user: admin } = req.qm;
+/* =========================================================
+   SUPERADMIN: queue list / approve / reject
+========================================================= */
+function makeSetupToken() {
+  return crypto.randomBytes(32).toString("base64url"); // url-safe
+}
 
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  const role = String(req.body?.role || "Member").trim() || "Member";
+app.get("/super/org-requests", requireAuth, requireSuperAdmin, async (req, res) => {
+  const status = String(req.query.status || "pending").trim().toLowerCase();
+  const allowed = new Set(["pending", "approved", "rejected"]);
+  const s = allowed.has(status) ? status : "pending";
 
-  if (!username || !password) return res.status(400).json({ error: "username/password required" });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  const { rows } = await pool.query(
+    `select * from qm_org_requests where status = $1 order by created_at desc limit 200`,
+    [s]
+  );
 
-  const exists = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-  if (exists) return res.status(409).json({ error: "Username already exists" });
-
-  const newUser = {
-    userId: nanoid(10),
-    username,
-    passwordHash: sha256(password),
-    role: role === "Admin" ? "Admin" : "Member",
-    status: "Active",
-    publicKeySpkiB64: null,
-    publicKeyRegisteredAt: null,
-    createdAt: nowIso(),
-    lastLoginAt: null,
-  };
-
-  org.users.push(newUser);
-
-  await audit(req, orgId, admin.userId, "create_user", { createdUserId: newUser.userId, username: newUser.username, role: newUser.role });
-  await saveOrg(orgId, org);
-
-  res.json({ ok: true, userId: newUser.userId });
+  res.json({ ok: true, status: s, items: rows });
 });
 
-app.delete("/admin/users/:userId", requireAuth, requireAdmin, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user: admin } = req.qm;
+app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+  const reason = String(req.body?.reason || "").trim();
 
-  const targetId = String(req.params.userId || "").trim();
-  if (!targetId) return res.status(400).json({ error: "userId required" });
-  if (targetId === admin.userId) return res.status(400).json({ error: "You cannot delete your own admin account." });
+  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
+  if (r1.rows[0].status !== "pending") return res.status(409).json({ error: "Request is not pending" });
 
-  const idx = (org.users || []).findIndex((u) => u.userId === targetId);
-  if (idx < 0) return res.status(404).json({ error: "User not found" });
-
-  // cleanup wrapped keys from stored messages
-  for (const mid of Object.keys(org.messages || {})) {
-    try {
-      const rec = org.messages[mid];
-      const kv = String(rec.kekVersion || org.keyring?.active || "1");
-      const kk = getKekByVersion(org, kv);
-      if (!kk) continue;
-
-      const msg = openWithKek(kk.kekBytes, rec.sealed);
-      if (msg?.wrappedKeys && msg.wrappedKeys[targetId]) {
-        delete msg.wrappedKeys[targetId];
-        rec.sealed = sealWithKek(kk.kekBytes, msg);
-      }
-    } catch {}
-  }
-
-  const removed = org.users.splice(idx, 1)[0];
-
-  await audit(req, orgId, admin.userId, "delete_user", { deletedUserId: targetId, username: removed.username });
-  await saveOrg(orgId, org);
-
-  res.json({ ok: true, deletedUserId: targetId });
-});
-
-app.post("/admin/users/:userId/clear-key", requireAuth, requireAdmin, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user: admin } = req.qm;
-
-  const targetId = String(req.params.userId || "").trim();
-  if (!targetId) return res.status(400).json({ error: "userId required" });
-
-  const u = (org.users || []).find((x) => x.userId === targetId);
-  if (!u) return res.status(404).json({ error: "User not found" });
-
-  u.publicKeySpkiB64 = null;
-  u.publicKeyRegisteredAt = null;
-
-  await audit(req, orgId, admin.userId, "clear_user_pubkey", { targetUserId: targetId, username: u.username });
-  await saveOrg(orgId, org);
+  await pool.query(
+    `update qm_org_requests
+       set status='rejected',
+           updated_at=now(),
+           reviewed_by_user_id=$2,
+           reviewed_at=now(),
+           reject_reason=$3
+     where id=$1`,
+    [requestId, req.qm.user.userId, reason || null]
+  );
 
   res.json({ ok: true });
 });
 
-/* =========================================================
-   ADMIN: audit / policies / keys / alerts / analytics
-   (keep your existing analytics route body — no 5173 change needed)
-========================================================= */
-app.get("/admin/audit", requireAuth, requireAdmin, (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const limit = Math.min(parseInt(req.query.limit || "200", 10) || 200, 2000);
-  const items = (req.qm.org.audit || []).slice(0, limit);
-  res.json({ orgId, items });
-});
+// Approve: create org + create first admin (PendingSetup) + create setup token + return setupLink
+app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+  const orgId = String(req.body?.orgId || "").trim();
+  const adminUsername = String(req.body?.adminUsername || "").trim();
 
-app.get("/admin/policies", requireAuth, requireAdmin, (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  res.json({ orgId, policies: req.qm.org.policies || defaultPolicies() });
-});
+  if (!requestId || !orgId || !adminUsername) {
+    return res.status(400).json({ error: "requestId, orgId, adminUsername required" });
+  }
 
-app.post("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user: admin } = req.qm;
+  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
+  const reqRow = r1.rows[0];
+  if (reqRow.status !== "pending") return res.status(409).json({ error: "Request is not pending" });
 
-  const p = req.body || {};
-  const cur = org.policies || defaultPolicies();
+  const org = await getOrg(orgId);
+  org.users = org.users || [];
+  org.audit = org.audit || [];
+  org.policies = org.policies || defaultPolicies();
+  ensureKeyring(org);
 
-  org.policies = {
-    forceAttachmentEncryption: !!p.forceAttachmentEncryption,
-    disablePassphraseMode: !!p.disablePassphraseMode,
-    enforceKeyRotationDays: Math.max(0, parseInt(p.enforceKeyRotationDays || cur.enforceKeyRotationDays || 0, 10) || 0),
-    requireReauthForDecrypt: !!p.requireReauthForDecrypt,
-  };
+  const taken = org.users.some(u => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
+  if (taken) return res.status(409).json({ error: "adminUsername already exists in org" });
 
-  await audit(req, orgId, admin.userId, "policy_update", { policies: org.policies });
+  const adminUserId = nanoid(10);
+  org.users.push({
+    userId: adminUserId,
+    username: adminUsername,
+    passwordHash: null,
+    role: "Admin",
+    status: "PendingSetup",
+    publicKeySpkiB64: null,
+    publicKeyRegisteredAt: null,
+    createdAt: nowIso(),
+    lastLoginAt: null
+  });
+
   await saveOrg(orgId, org);
 
-  res.json({ ok: true, policies: org.policies });
+  const rawToken = makeSetupToken();
+  const tokenHash = sha256Hex(rawToken);
+  const tokenId = nanoid(12);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+  await pool.query(
+    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
+    [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
+  );
+
+  await pool.query(
+    `update qm_org_requests
+       set status='approved',
+           updated_at=now(),
+           reviewed_by_user_id=$2,
+           reviewed_at=now(),
+           approved_org_id=$3,
+           approved_admin_user_id=$4
+     where id=$1`,
+    [requestId, req.qm.user.userId, orgId, adminUserId]
+  );
+
+  const base = getPublicBase(req);
+  const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
+
+  res.json({ ok: true, orgId, adminUserId, adminUsername, setupLink, expiresAt: expiresAt.toISOString() });
 });
 
-// keep your existing /admin/analytics body as you posted (it’s fine)
-// keep your existing /admin/alerts, /admin/keys, /admin/keys/rotate (but replace saveData with saveOrg)
-
 /* =========================================================
-   MESSAGES: create + inbox + fetch (replace saveData with saveOrg)
+   MESSAGES: create + inbox + fetch (durable in org JSON)
 ========================================================= */
 app.post("/api/messages", requireAuth, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
@@ -1125,32 +842,16 @@ app.post("/api/messages", requireAuth, async (req, res) => {
 
   const pol = org.policies || defaultPolicies();
   if (pol.forceAttachmentEncryption) {
-    if (payload.attachments != null && !Array.isArray(payload.attachments)) {
-      return res.status(400).json({ error: "attachments must be an array" });
-    }
+    if (payload.attachments != null && !Array.isArray(payload.attachments)) return res.status(400).json({ error: "attachments must be an array" });
     const arr = Array.isArray(payload.attachments) ? payload.attachments : [];
-    for (const a of arr) {
-      if (!a || !a.iv || !a.ciphertext) {
-        return res.status(400).json({ error: "attachments must include iv + ciphertext for each file" });
-      }
-    }
+    for (const a of arr) if (!a || !a.iv || !a.ciphertext) return res.status(400).json({ error: "attachments must include iv + ciphertext for each file" });
   }
 
   const id = nanoid(10);
   const createdAt = nowIso();
+  ensureKeyring(org);
 
-  const { version, kekBytes, meta } = getActiveKek(org);
-
-  const rotateDays = Number(pol.enforceKeyRotationDays || 0);
-  if (rotateDays > 0) {
-    const activated = Date.parse(meta?.activatedAt || meta?.createdAt || "");
-    if (!Number.isNaN(activated)) {
-      const ageDays = Math.floor((Date.now() - activated) / (24 * 60 * 60 * 1000));
-      if (ageDays >= rotateDays) {
-        await audit(req, orgId, user.userId, "risk_key_rotation_due", { ageDays, rotateDays, activeKeyVersion: version });
-      }
-    }
-  }
+  const { version, kekBytes } = getActiveKek(org);
 
   const attachmentsArr = Array.isArray(payload.attachments) ? payload.attachments : [];
   const attachmentsTotalBytes = attachmentsArr.reduce((sum, a) => sum + Number(a?.size || 0), 0);
@@ -1191,12 +892,7 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 
   const items = [];
   const ids = Object.keys(org.messages || {});
-
-  ids.sort((a, b) => {
-    const aa = Date.parse(org.messages[a]?.createdAt || "") || 0;
-    const bb = Date.parse(org.messages[b]?.createdAt || "") || 0;
-    return bb - aa;
-  });
+  ids.sort((a, b) => (Date.parse(org.messages[b]?.createdAt || "") || 0) - (Date.parse(org.messages[a]?.createdAt || "") || 0));
 
   for (const id of ids) {
     const rec = org.messages[id];
@@ -1208,22 +904,12 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 
     let msg;
     try { msg = openWithKek(kk.kekBytes, rec.sealed); } catch { continue; }
-
     if (!msg?.wrappedKeys?.[user.userId]) continue;
 
     const attCount = Array.isArray(msg.attachments) ? msg.attachments.length : 0;
-    const attBytes = Array.isArray(msg.attachments)
-      ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0)
-      : 0;
+    const attBytes = Array.isArray(msg.attachments) ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0) : 0;
 
-    items.push({
-      id,
-      createdAt: rec.createdAt,
-      from: rec.createdByUsername || null,
-      fromUserId: rec.createdByUserId || null,
-      attachmentCount: attCount,
-      attachmentsTotalBytes: attBytes,
-    });
+    items.push({ id, createdAt: rec.createdAt, from: rec.createdByUsername || null, fromUserId: rec.createdByUserId || null, attachmentCount: attCount, attachmentsTotalBytes: attBytes });
   }
 
   res.json({ items });
@@ -1268,7 +954,10 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
 /* =========================================================
    Portal static + routes
 ========================================================= */
+const portalDir = path.join(__dirname, "..", "portal");
+
 app.use("/portal", express.static(portalDir, { extensions: ["html"], etag: false, maxAge: 0 }));
+
 app.get("/m/:id", (_req, res) => res.sendFile(path.join(portalDir, "decrypt.html")));
 app.get("/portal/m/:id", (req, res) => res.redirect(`/m/${req.params.id}`));
 app.get("/", (_req, res) => res.redirect("/portal/index.html"));
@@ -1278,4 +967,3 @@ app.get("/", (_req, res) => res.redirect("/portal/index.html"));
 ========================================================= */
 const PORT = Number(process.env.PORT || "10000");
 app.listen(PORT, () => console.log(`QuantumMail server running on port ${PORT}`));
-
