@@ -330,43 +330,121 @@ app.get("/org/check-username", async (req, res) => {
   res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
 });
 
-/* =========================================================
-   DEV: seed admin (disable in prod)
-========================================================= */
-app.post("/dev/seed-admin", async (req, res) => {
-  if (IS_PROD) return res.status(403).json({ error: "Disabled in production" });
+// =========================================================
+// BOOTSTRAP: seed admin (ALLOWED IN PROD, but protected)
+// POST /dev/seed-admin
+// Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
+// Body: { orgId, username, password }
+// =========================================================
 
-  const orgId = String(req.body?.orgId || "").trim();
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
+const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET;
+if (!BOOTSTRAP_SECRET || BOOTSTRAP_SECRET.length < 32) {
+  console.warn("WARNING: QM_BOOTSTRAP_SECRET is missing/weak. /dev/seed-admin will be disabled.");
+}
 
-  if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+// simple strict limiter for this endpoint only
+const SEED_RATE = new Map(); // ip -> {count, resetAt}
+function seedRateLimit(req, res, next) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15 min
+  const limit = 10;
 
-  const org = await getOrg(orgId);
+  const cur = SEED_RATE.get(ip);
+  if (!cur || now > cur.resetAt) {
+    SEED_RATE.set(ip, { count: 1, resetAt: now + windowMs });
+    return next();
+  }
+  cur.count++;
+  if (cur.count > limit) return res.status(429).json({ error: "Too many bootstrap attempts" });
+  next();
+}
 
-  const exists = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-  if (exists) return res.status(409).json({ error: "Username already exists" });
+function requireBootstrapSecret(req, res, next) {
+  if (!BOOTSTRAP_SECRET || BOOTSTRAP_SECRET.length < 32) {
+    return res.status(503).json({ error: "Bootstrap disabled (QM_BOOTSTRAP_SECRET not set)" });
+  }
+  const provided = String(req.headers["x-qm-bootstrap"] || "");
+  if (!provided) return res.status(401).json({ error: "Missing X-QM-Bootstrap header" });
 
-  const newAdmin = {
-    userId: nanoid(10),
-    username,
-    passwordHash: sha256(password),
-    role: "Admin",
-    status: "Active",
-    publicKeySpkiB64: null,
-    publicKeyRegisteredAt: null,
-    createdAt: nowIso(),
-    lastLoginAt: null,
-  };
+  // timing safe compare
+  const a = Buffer.from(provided);
+  const b = Buffer.from(BOOTSTRAP_SECRET);
+  if (a.length !== b.length) return res.status(403).json({ error: "Bootstrap denied" });
+  if (!crypto.timingSafeEqual(a, b)) return res.status(403).json({ error: "Bootstrap denied" });
 
-  org.users.push(newAdmin);
-  ensureKeyring(org);
+  next();
+}
 
-  await audit(req, orgId, newAdmin.userId, "create_admin", { username });
-  await saveOrg(orgId, org);
+app.post("/dev/seed-admin", seedRateLimit, requireBootstrapSecret, async (req, res) => {
+  try {
+    const orgId = String(req.body?.orgId || "").trim();
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
 
-  res.json({ ok: true, orgId, userId: newAdmin.userId, username });
+    if (!orgId || !username || !password) {
+      return res.status(400).json({ error: "orgId, username, password required" });
+    }
+    if (password.length < 12) {
+      return res.status(400).json({ error: "Password must be at least 12 characters" });
+    }
+
+    // peek first (do not create)
+    const existing = await peekOrg(orgId);
+
+    // If org exists AND already has an Admin -> BLOCK
+    if (existing) {
+      const admins = (existing.users || []).filter(u => u.role === "Admin");
+      if (admins.length > 0) {
+        return res.status(403).json({ error: "Org already initialized. Use invites or an existing admin." });
+      }
+    }
+
+    // create-or-get, now safe because either org is new OR has no admin
+    const org = await getOrg(orgId);
+
+    // username uniqueness check
+    const taken = (org.users || []).some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+    if (taken) return res.status(409).json({ error: "Username already exists" });
+
+    // IMPORTANT: use your secure password hashing (scrypt) if you added it
+    // If you still use sha256, keep it for now, but scrypt is strongly recommended.
+    const passwordHash = hashPassword ? hashPassword(password) : sha256(password);
+
+    const newAdmin = {
+      userId: nanoid(10),
+      username,
+      passwordHash,
+      role: "Admin",
+      status: "Active",
+      publicKeySpkiB64: null,
+      publicKeyRegisteredAt: null,
+      createdAt: nowIso(),
+      lastLoginAt: null
+    };
+
+    org.users = org.users || [];
+    org.users.push(newAdmin);
+
+    org.audit = org.audit || [];
+    org.audit.unshift({
+      id: nanoid(10),
+      at: nowIso(),
+      orgId,
+      userId: newAdmin.userId,
+      action: "bootstrap_seed_admin",
+      ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "",
+      ua: req.headers["user-agent"] || "",
+      username: newAdmin.username
+    });
+    if (org.audit.length > 2000) org.audit.length = 2000;
+
+    await saveOrg(orgId, org);
+
+    return res.json({ ok: true, orgId, userId: newAdmin.userId, username });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || "seed-admin failed" });
+  }
 });
 
 /* =========================================================
