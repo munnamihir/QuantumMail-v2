@@ -22,8 +22,7 @@ if (IS_PROD && (!TOKEN_SECRET || TOKEN_SECRET.length < 32)) {
   throw new Error("QM_TOKEN_SECRET is required in production and must be >= 32 chars.");
 }
 
-// optional (recommended)
-const QM_EXTENSION_ID = process.env.QM_EXTENSION_ID || "";
+const QM_EXTENSION_ID = (process.env.QM_EXTENSION_ID || "").trim();
 if (IS_PROD && !QM_EXTENSION_ID) {
   throw new Error("QM_EXTENSION_ID is required in production (your Chrome extension id).");
 }
@@ -34,15 +33,26 @@ const ALLOWED_WEB_ORIGINS = (process.env.QM_ALLOWED_WEB_ORIGINS || "")
   .filter(Boolean);
 
 /* =========================================================
+   Basic security headers (no extra deps)
+========================================================= */
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  // Portal uses inline scripts? if not, you can tighten CSP.
+  // Keep minimal CSP to avoid breaking your portal.
+  res.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self' https: chrome-extension:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';");
+  next();
+});
+
+/* =========================================================
    CORS (strict)
 ========================================================= */
 function isAllowedOrigin(origin) {
   if (!origin) return true; // curl/server-to-server
 
-  // Allow chrome extension origin only if configured
   if (QM_EXTENSION_ID && origin === `chrome-extension://${QM_EXTENSION_ID}`) return true;
 
-  // Allow configured web origins only (no hardcoded)
   if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
 
   return false;
@@ -58,7 +68,12 @@ app.use(cors({
   credentials: false
 }));
 
-app.options("*", cors());
+// Safe preflight handler (Express-friendly)
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json({ limit: "25mb" }));
 
 /* =========================================================
@@ -87,6 +102,10 @@ function saveData() {
    Helpers
 ========================================================= */
 function nowIso() { return new Date().toISOString(); }
+
+function normalizeUsername(u) {
+  return String(u || "").trim();
+}
 
 function timingSafeEq(a, b) {
   const aa = Buffer.from(String(a));
@@ -117,7 +136,7 @@ function getPublicBase(req) {
 ========================================================= */
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(password, salt, 64); // 64 bytes derived key
+  const key = crypto.scryptSync(password, salt, 64);
   return `scrypt$${salt.toString("base64")}$${key.toString("base64")}`;
 }
 
@@ -148,6 +167,7 @@ function signToken(payload) {
 
 function verifyToken(token) {
   if (!TOKEN_SECRET) return null;
+
   const parts = String(token || "").split(".");
   if (parts.length !== 3) return null;
   const [h, p, s] = parts;
@@ -156,7 +176,13 @@ function verifyToken(token) {
   const expected = b64urlEncode(sig);
   if (!timingSafeEq(expected, s)) return null;
 
-  const payload = JSON.parse(b64urlDecodeToString(p));
+  let payload;
+  try {
+    payload = JSON.parse(b64urlDecodeToString(p));
+  } catch {
+    return null;
+  }
+
   if (payload.exp && Date.now() > payload.exp * 1000) return null;
   return payload;
 }
@@ -198,7 +224,7 @@ function ensureKeyring(org) {
   }
 }
 
-function getOrg(orgId) {
+function getOrgCreateIfMissing(orgId) {
   const oid = String(orgId || "").trim();
   if (!oid) return null;
 
@@ -229,7 +255,7 @@ function getOrg(orgId) {
    Audit
 ========================================================= */
 function audit(req, orgId, userId, action, details = {}) {
-  const org = getOrg(orgId);
+  const org = getOrgCreateIfMissing(orgId);
   if (!org) return;
 
   const entry = {
@@ -308,16 +334,17 @@ function requireAuth(req, res, next) {
   const payload = verifyToken(m[1]);
   if (!payload) return res.status(401).json({ error: "Invalid/expired token" });
 
-  const org = getOrg(payload.orgId);
+  const org = peekOrg(payload.orgId);
   if (!org) return res.status(401).json({ error: "Unknown org" });
 
-  const user = org.users.find(u => u.userId === payload.userId);
+  const user = (org.users || []).find(u => u.userId === payload.userId);
   if (!user) return res.status(401).json({ error: "Unknown user" });
 
   if (String(user.status || "Active").toLowerCase() === "disabled") {
     return res.status(403).json({ error: "User disabled" });
   }
 
+  // attach live objects
   req.qm = { tokenPayload: payload, org, user };
   next();
 }
@@ -331,7 +358,7 @@ function requireAdmin(req, res, next) {
 /* =========================================================
    Simple rate limiter (in-memory)
 ========================================================= */
-const RATE = new Map(); // key -> { count, resetAt }
+const RATE = new Map();
 function rateLimit({ keyFn, limit, windowMs }) {
   return (req, res, next) => {
     const key = keyFn(req);
@@ -344,10 +371,7 @@ function rateLimit({ keyFn, limit, windowMs }) {
     }
 
     cur.count++;
-    if (cur.count > limit) {
-      return res.status(429).json({ error: "Too many requests. Try again later." });
-    }
-
+    if (cur.count > limit) return res.status(429).json({ error: "Too many requests. Try again later." });
     next();
   };
 }
@@ -388,7 +412,7 @@ app.get("/org/check", (req, res) => {
 
 app.get("/org/check-username", (req, res) => {
   const orgId = String(req.query.orgId || "").trim();
-  const username = String(req.query.username || "").trim();
+  const username = normalizeUsername(req.query.username);
   if (!orgId || !username) return res.status(400).json({ error: "orgId and username required" });
 
   const org = peekOrg(orgId);
@@ -405,13 +429,14 @@ app.post("/dev/seed-admin", (req, res) => {
   if (IS_PROD) return res.status(403).json({ error: "Disabled in production" });
 
   const orgId = String(req.body?.orgId || "").trim();
-  const username = String(req.body?.username || "").trim();
+  const username = normalizeUsername(req.body?.username);
   const password = String(req.body?.password || "");
 
   if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
-  const org = getOrg(orgId);
+  const org = getOrgCreateIfMissing(orgId);
+
   const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
   if (exists) return res.status(409).json({ error: "Username already exists" });
 
@@ -430,6 +455,7 @@ app.post("/dev/seed-admin", (req, res) => {
   org.users.push(admin);
   audit(req, orgId, admin.userId, "create_admin", { username });
   saveData();
+
   res.json({ ok: true, orgId, userId: admin.userId, username });
 });
 
@@ -438,20 +464,21 @@ app.post("/dev/seed-admin", (req, res) => {
 ========================================================= */
 app.post("/auth/signup", authLimiter, (req, res) => {
   const signupType = String(req.body?.signupType || "Individual");
-  const username = String(req.body?.username || "").trim();
+  const username = normalizeUsername(req.body?.username);
   const password = String(req.body?.password || "");
   let orgId = String(req.body?.orgId || "").trim();
   const inviteCode = String(req.body?.inviteCode || "").trim();
   const wantAdmin = !!req.body?.wantAdmin;
 
   if (!username || !password) return res.status(400).json({ error: "username and password required" });
+  if (username.length > 80) return res.status(400).json({ error: "Username too long" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
+  // Individual: can create org if missing
   if (signupType === "Individual") {
     if (!orgId) orgId = `org_${nanoid(10)}`;
 
-    const org = getOrg(orgId);
-
+    const org = getOrgCreateIfMissing(orgId);
     const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
     if (exists) return res.status(409).json({ error: "Username already exists" });
 
@@ -474,11 +501,13 @@ app.post("/auth/signup", authLimiter, (req, res) => {
     return res.json({ ok: true, orgId, role });
   }
 
+  // OrgType: must NOT auto-create org
   if (signupType === "OrgType") {
     if (!orgId) return res.status(400).json({ error: "orgId required for OrgType signup" });
-    if (!inviteCode) return res.status(400).json({ error: "inviteCode required for OrgType signup" });
+    if (!inviteCode) return res.status(400).json({ error: "inviteCode required" });
 
-    const org = getOrg(orgId);
+    const org = peekOrg(orgId);
+    if (!org) return res.status(404).json({ error: "Organization not found" });
 
     const hasAdmin = !!(org.users || []).find(u => u.role === "Admin");
     if (!hasAdmin) return res.status(400).json({ error: "Organization not initialized yet. Admin must initialize first." });
@@ -490,11 +519,10 @@ app.post("/auth/signup", authLimiter, (req, res) => {
     const exp = Date.parse(inv.expiresAt || "");
     if (!Number.isNaN(exp) && Date.now() > exp) return res.status(403).json({ error: "Invite code expired" });
 
-    const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
-    if (exists) return res.status(409).json({ error: "Username already exists" });
+    const taken = !!(org.users || []).find(u => u.username.toLowerCase() === username.toLowerCase());
+    if (taken) return res.status(409).json({ error: "Username already exists" });
 
     const role = inv.role === "Admin" ? "Admin" : "Member";
-
     const newUser = {
       userId: nanoid(10),
       username,
@@ -524,14 +552,19 @@ app.post("/auth/signup", authLimiter, (req, res) => {
 ========================================================= */
 app.post("/auth/login", authLimiter, (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
-  const username = String(req.body?.username || "").trim();
+  const username = normalizeUsername(req.body?.username);
   const password = String(req.body?.password || "");
 
   if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
 
-  const org = getOrg(orgId);
-  const user = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  // IMPORTANT: do NOT create org on login
+  const org = peekOrg(orgId);
+  if (!org) {
+    audit(req, orgId, null, "login_failed", { username, reason: "unknown_org" });
+    return res.status(401).json({ error: "Invalid creds" });
+  }
 
+  const user = (org.users || []).find(u => u.username.toLowerCase() === username.toLowerCase());
   if (!user) {
     audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
     return res.status(401).json({ error: "Invalid creds" });
@@ -602,7 +635,6 @@ app.post("/auth/change-password", requireAuth, (req, res) => {
     return res.status(401).json({ error: "Current password is incorrect" });
   }
 
-  // prevent same password reuse (best-effort)
   if (verifyPassword(newPassword, user.passwordHash)) {
     return res.status(400).json({ error: "New password must be different" });
   }
@@ -650,7 +682,7 @@ app.post("/pubkey_register", requireAuth, (req, res) => {
 app.get("/org/users", requireAuth, (req, res) => {
   const { org } = req.qm;
   res.json({
-    users: org.users.map(u => ({
+    users: (org.users || []).map(u => ({
       userId: u.userId,
       username: u.username,
       role: u.role,
@@ -662,12 +694,12 @@ app.get("/org/users", requireAuth, (req, res) => {
 });
 
 /* =========================================================
-   ADMIN: invites + users (keeping your existing endpoints)
+   ADMIN: invites + users
 ========================================================= */
 function genInviteCode() {
   const n = crypto.randomInt(0, 1000000);
   const s = String(n).padStart(6, "0");
-  return `${s.slice(0,3)}-${s.slice(3)}`;
+  return `${s.slice(0, 3)}-${s.slice(3)}`;
 }
 
 app.post("/admin/invites/generate", requireAuth, requireAdmin, (req, res) => {
@@ -697,7 +729,7 @@ app.post("/admin/invites/generate", requireAuth, requireAdmin, (req, res) => {
 app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
   const { org } = req.qm;
   const items = Object.values(org.invites || {})
-    .sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .slice(0, 50);
   res.json({ items });
 });
@@ -705,7 +737,7 @@ app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
 app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
   const { org } = req.qm;
   res.json({
-    users: org.users.map(u => ({
+    users: (org.users || []).map(u => ({
       userId: u.userId,
       username: u.username,
       role: u.role,
@@ -721,14 +753,14 @@ app.post("/admin/users", requireAuth, requireAdmin, (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user: admin } = req.qm;
 
-  const username = String(req.body?.username || "").trim();
+  const username = normalizeUsername(req.body?.username);
   const password = String(req.body?.password || "");
   const role = String(req.body?.role || "Member").trim() || "Member";
 
   if (!username || !password) return res.status(400).json({ error: "username/password required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
-  const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  const exists = (org.users || []).find(u => u.username.toLowerCase() === username.toLowerCase());
   if (exists) return res.status(409).json({ error: "Username already exists" });
 
   const newUser = {
@@ -758,7 +790,7 @@ app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
   if (!targetId) return res.status(400).json({ error: "userId required" });
   if (targetId === admin.userId) return res.status(400).json({ error: "You cannot delete your own admin account." });
 
-  const idx = org.users.findIndex(u => u.userId === targetId);
+  const idx = (org.users || []).findIndex(u => u.userId === targetId);
   if (idx < 0) return res.status(404).json({ error: "User not found" });
 
   // cleanup wrapped keys
@@ -779,6 +811,7 @@ app.delete("/admin/users/:userId", requireAuth, requireAdmin, (req, res) => {
   const removed = org.users.splice(idx, 1)[0];
   audit(req, orgId, admin.userId, "delete_user", { deletedUserId: targetId, username: removed.username });
   saveData();
+
   res.json({ ok: true, deletedUserId: targetId });
 });
 
@@ -789,11 +822,12 @@ app.post("/admin/users/:userId/clear-key", requireAuth, requireAdmin, (req, res)
   const targetId = String(req.params.userId || "").trim();
   if (!targetId) return res.status(400).json({ error: "userId required" });
 
-  const u = org.users.find(x => x.userId === targetId);
+  const u = (org.users || []).find(x => x.userId === targetId);
   if (!u) return res.status(404).json({ error: "User not found" });
 
   u.publicKeySpkiB64 = null;
   u.publicKeyRegisteredAt = null;
+
   audit(req, orgId, admin.userId, "clear_user_pubkey", { targetUserId: targetId, username: u.username });
   saveData();
 
@@ -854,7 +888,7 @@ app.get("/api/inbox", requireAuth, (req, res) => {
   const { org, user } = req.qm;
 
   const ids = Object.keys(org.messages || {});
-  ids.sort((a,b) => (Date.parse(org.messages[b]?.createdAt || "") || 0) - (Date.parse(org.messages[a]?.createdAt || "") || 0));
+  ids.sort((a, b) => (Date.parse(org.messages[b]?.createdAt || "") || 0) - (Date.parse(org.messages[a]?.createdAt || "") || 0));
 
   const items = [];
 
@@ -872,7 +906,9 @@ app.get("/api/inbox", requireAuth, (req, res) => {
     if (!msg?.wrappedKeys?.[user.userId]) continue;
 
     const attCount = Array.isArray(msg.attachments) ? msg.attachments.length : 0;
-    const attBytes = Array.isArray(msg.attachments) ? msg.attachments.reduce((s,a)=> s + Number(a?.size||0), 0) : 0;
+    const attBytes = Array.isArray(msg.attachments)
+      ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0)
+      : 0;
 
     items.push({
       id,
