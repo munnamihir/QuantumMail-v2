@@ -13,7 +13,7 @@
         <div class="logo"></div>
         <div>
           <h1>QuantumMail</h1>
-          <p class="muted">Encrypt email into a secure link. Decrypt only with your key.</p>
+          <p class="muted">Envelope encryption for email — store encrypted, decrypt only with your key.</p>
         </div>
       </div>
     </header>
@@ -32,7 +32,7 @@
         <div class="row">
           <div>
             <label for="suSignupType">Account type</label>
-            <div class="help">Individual creates a personal org (or joins one). OrgType joins a company org using a one-time code.</div>
+            <div class="help">Individual creates a personal org. OrgType joins an existing org using a one-time invite code.</div>
             <select id="suSignupType">
               <option value="Individual">Individual</option>
               <option value="OrgType">OrgType</option>
@@ -41,7 +41,7 @@
 
           <div id="suIndividualModeWrap">
             <label for="suIndividualMode">Individual setup</label>
-            <div class="help">Create a new org (you’ll be Admin) or join an existing org by Org ID.</div>
+            <div class="help">Create a new org (you can be Admin) or join an existing org by Org ID.</div>
             <select id="suIndividualMode">
               <option value="create">Create my own org</option>
               <option value="join">Join existing org</option>
@@ -53,48 +53,48 @@
         <div class="row" id="suOrgRow" style="display:none;">
           <div>
             <label for="suOrgId">Org ID</label>
-            <div class="help">The organization identifier (example: org_demo).</div>
-            <input id="suOrgId" placeholder="org_demo" />
+            <div class="help">Required for OrgType signup and Individual join.</div>
+            <input id="suOrgId" autocomplete="off"/>
             <div class="help" id="suOrgStatus"></div>
           </div>
         </div>
 
-        <!-- INVITE ROW -->
+        <!-- INVITE CODE -->
         <div class="row" id="suInviteWrap" style="display:none;">
           <div>
-            <label for="suInviteCode">One-time join code</label>
-            <div class="help">Get this code from your Admin’s “Generate Invite” page.</div>
-            <input id="suInviteCode" placeholder="7H2K9Q" />
+            <label for="suInviteCode">Invite Code</label>
+            <div class="help">Ask your org admin for the one-time invite code.</div>
+            <input id="suInviteCode" autocomplete="off"/>
           </div>
         </div>
 
-        <!-- ORG SETUP REDIRECT -->
+        <!-- ADMIN INIT REDIRECT (for OrgType) -->
         <div id="orgSetupRedirectWrap" style="display:none; margin-top:12px;">
-          <div class="help">
-            If this organization hasn’t been created yet, initialize it as Admin first.
-          </div>
-          <button id="btnGoAdminSetup" class="secondary" type="button">Initialize Organization as Admin</button>
+          <div class="help">If your org does not exist yet, an Admin must initialize it first.</div>
+          <button id="btnGoAdminSetup" class="secondary" type="button">Go to Admin Initialization</button>
         </div>
 
+        <!-- USERNAME/PW -->
         <div class="row">
           <div>
             <label for="suUsername">Username</label>
             <div class="help">Pick a unique username in your org.</div>
-            <input id="suUsername" placeholder="mihir" />
+            <input id="suUsername" autocomplete="off"/>
             <div class="help" id="suUserStatus"></div>
           </div>
 
           <div>
             <label for="suPassword">Password</label>
             <div class="help">Minimum 8 characters.</div>
-            <input id="suPassword" type="password" placeholder="••••••••"/>
+            <input id="suPassword" type="password"/>
           </div>
         </div>
 
+        <!-- WANT ADMIN (individual create only) -->
         <div class="row" id="suWantAdminRow">
           <div>
             <label for="suWantAdmin">Admin access</label>
-            <div class="help">If you create your own org, you’ll be Admin and can also use Inbox.</div>
+            <div class="help">Only relevant when you create a new org.</div>
             <select id="suWantAdmin">
               <option value="true">Yes — make me Admin</option>
               <option value="false">No — Member only</option>
@@ -118,28 +118,24 @@
       <!-- LOGIN -->
       <section id="loginPanel" style="display:none;">
         <h2>Login</h2>
-        <p class="muted">After login, you’ll see encrypted messages available for you.</p>
+        <p class="muted">After login, you’ll be routed based on your role.</p>
 
         <div class="row">
           <div>
             <label for="liOrgId">Org ID</label>
-            <div class="help">Your organization identifier.</div>
-            <input id="liOrgId" placeholder="org_demo"/>
-            <div class="help" id="liOrgStatus"></div>
+            <input id="liOrgId" autocomplete="off"/>
           </div>
+
           <div>
             <label for="liUsername">Username</label>
-            <div class="help">Your username in the org.</div>
-            <input id="liUsername" placeholder="mihir"/>
-            <div class="help" id="liUserStatus"></div>
+            <input id="liUsername" autocomplete="off"/>
           </div>
         </div>
 
         <div class="row">
           <div>
             <label for="liPassword">Password</label>
-            <div class="help">Your account password.</div>
-            <input id="liPassword" type="password" placeholder="••••••••"/>
+            <input id="liPassword" type="password"/>
           </div>
         </div>
 
