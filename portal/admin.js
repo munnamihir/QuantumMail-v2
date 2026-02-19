@@ -107,10 +107,9 @@ async function login() {
 }
 
 function logout() {
-  token = "";
   sessionUser = null;
   sessionStorage.removeItem("qm_admin_token");
-
+  token = "";
   ok("authOk", "Logged out.");
   err("authErr", "");
   setSessionPill();
