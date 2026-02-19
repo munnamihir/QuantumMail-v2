@@ -30,6 +30,16 @@ function setSessionPill() {
   }
 }
 
+function setAuthedUI() {
+  const authedNav = document.getElementById("authedNav");
+  const authedActions = document.getElementById("authedActions");
+
+  const isAuthed = Boolean(token);
+
+  if (authedNav) authedNav.style.display = isAuthed ? "" : "none";
+  if (authedActions) authedActions.style.display = isAuthed ? "" : "none";
+}
+
 async function api(path, { method = "GET", body = null } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
