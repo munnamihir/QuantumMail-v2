@@ -76,6 +76,9 @@ function setPwMsg(okMsg, errMsg) {
   if (errEl) errEl.textContent = errMsg || "";
 }
 
+const profileBtn = document.getElementById("btnProfile");
+if (profileBtn) profileBtn.style.display = getAdminToken() ? "" : "none";
+
 async function loadProfile() {
   setPwMsg("", "");
   const me = await apiWithAdmin("/auth/me");
