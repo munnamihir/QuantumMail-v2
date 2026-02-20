@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QuantumMail • Admin</title>
+
   <style>
     :root{
       --bg:#0b0f1a; --card:#12182a; --text:#e9eefc; --muted:#aab4d6;
@@ -30,7 +31,7 @@
     .brand h1{ margin:0; font-size: 18px; letter-spacing:.2px; line-height: 1.1; }
     .brand p{ margin:3px 0 0; font-size: 12px; color: var(--muted); }
 
-    .rightHeader{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+    .rightHeader{ display:flex; flex-direction:column; gap:8px; align-items:flex-end; min-width: 320px; }
     .pill{
       display:inline-flex; align-items:center; gap:8px;
       padding: 8px 10px; border-radius: 999px;
@@ -142,13 +143,6 @@
     }
     tbody tr:hover{ background: rgba(255,255,255,.03); }
 
-    code{
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.08);
-      padding: 2px 6px;
-      border-radius: 8px;
-      color: rgba(233,238,252,.95);
-    }
     .kbadge{
       display:inline-flex; align-items:center; gap:8px;
       padding: 4px 10px;
@@ -172,21 +166,34 @@
     }
   </style>
 
+  <!-- ✅ Auth guard + load admin.js only AFTER auth is confirmed -->
   <script type="module">
-  import { requireAuth, logout } from "./guard.js";
+    import { requireAuth, logout } from "./guard.js";
 
-  (async () => {
-    const user = await requireAuth({ role: "Admin" }); 
-    if (!user) return;
+    (async () => {
+      const user = await requireAuth({ role: "Admin" }); // Admin or SuperAdmin allowed in guard.js
+      if (!user) return;
 
-    const who = document.getElementById("who");
-    if (who) who.textContent = `${user.username} (${user.role})`;
+      // Fill session pill + top identity
+      const who = document.getElementById("whoText");
+      const dot = document.getElementById("sessionDot");
+      if (who) who.textContent = `${user.username} (${user.role})`;
+      if (dot) dot.classList.add("good");
 
-    const btn = document.getElementById("btnLogout");
-    if (btn) btn.addEventListener("click", logout);
-  })();
-</script>
-  
+      // Show nav/buttons that were previously hidden
+      const nav = document.getElementById("authedNav");
+      const actions = document.getElementById("authedActions");
+      if (nav) nav.style.display = "";
+      if (actions) actions.style.display = "";
+
+      // Wire logout buttons
+      document.getElementById("btnLogoutTop")?.addEventListener("click", logout);
+      document.getElementById("btnLogout")?.addEventListener("click", logout);
+
+      // ✅ IMPORTANT: load your existing admin logic AFTER auth
+      await import("./admin.js");
+    })();
+  </script>
 </head>
 
 <body>
@@ -199,31 +206,27 @@
           <p>Users, keys, access, audit, analytics — enterprise-ready.</p>
         </div>
       </div>
-      <div id="who"></div>
-      <button id="btnLogout">Logout</button>
+
       <div class="rightHeader">
-        <!-- Session pill always visible -->
+        <!-- Session pill -->
         <div class="pill" title="Session">
           <span id="sessionDot" class="dot"></span>
-          <span id="who">Not logged in</span>
+          <!-- ✅ unique ID (you had duplicate id="who" before) -->
+          <span id="whoText">Checking session…</span>
         </div>
-      
-        <!-- ✅ HIDE THESE UNTIL LOGGED IN -->
+
+        <!-- Nav (hidden until authed) -->
         <div class="nav" id="authedNav" style="display:none;">
           <a class="btn" href="/portal/audit.html" id="navAudit">Audit</a>
           <a class="btn" href="/portal/analytics.html" id="navAnalytics">Analytics</a>
-      
-          <!-- Generate Invite page -->
           <a class="btn" href="/portal/invites.html" id="navInvite">Generate Invite</a>
-      
           <a class="btn" href="/portal/policies.html" id="navPolicies">Policies</a>
-      
           <a class="btn" href="/portal/alerts.html" id="navAlerts">
             Alerts <span id="alertBadge" class="badge" style="display:none;">0</span>
           </a>
         </div>
-      
-        <!-- optional: keep Profile/Logout hidden until login too -->
+
+        <!-- Actions (hidden until authed) -->
         <div class="nav" id="authedActions" style="display:none;">
           <button id="btnProfile" class="secondary" type="button">Profile</button>
           <button id="btnLogoutTop" class="danger" type="button">Logout</button>
@@ -262,7 +265,6 @@
         <div id="seedErr" class="err"></div>
       </div>
 
-      
       <!-- Users -->
       <div class="card span2">
         <h3>3) Users & Key Health</h3>
@@ -287,6 +289,11 @@
           <div style="flex:0 0 auto;"><button id="btnCreateUser" class="primary">Create User</button></div>
           <div style="flex:0 0 auto;"><button id="btnRefreshUsers" class="secondary">Refresh</button></div>
           <div class="kbadge">All actions are audited</div>
+
+          <!-- optional extra logout near actions -->
+          <div style="margin-left:auto; flex:0 0 auto;">
+            <button id="btnLogout" class="danger" type="button">Logout</button>
+          </div>
         </div>
 
         <div id="usersOk" class="ok"></div>
@@ -305,7 +312,7 @@
               </tr>
             </thead>
             <tbody id="usersTbody">
-              <tr><td colspan="6" class="muted">Login to load users…</td></tr>
+              <tr><td colspan="6" class="muted">Loading users…</td></tr>
             </tbody>
           </table>
         </div>
@@ -313,65 +320,65 @@
     </div>
 
     <!-- Profile Modal -->
-<div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); padding:18px; z-index:50;">
-  <div style="max-width:520px; margin:8vh auto; background:rgba(18,24,42,.98); border:1px solid var(--border); border-radius:18px; box-shadow: var(--shadow); overflow:hidden;">
-    <div style="padding:14px 14px 10px; display:flex; justify-content:space-between; align-items:center;">
-      <div style="font-weight:900; letter-spacing:.2px;">Profile</div>
-      <button id="btnCloseProfile" class="secondary" type="button">Close</button>
+    <div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); padding:18px; z-index:50;">
+      <div style="max-width:520px; margin:8vh auto; background:rgba(18,24,42,.98); border:1px solid var(--border); border-radius:18px; box-shadow: var(--shadow); overflow:hidden;">
+        <div style="padding:14px 14px 10px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-weight:900; letter-spacing:.2px;">Profile</div>
+          <button id="btnCloseProfile" class="secondary" type="button">Close</button>
+        </div>
+        <div style="height:1px; background:rgba(255,255,255,.08);"></div>
+
+        <div style="padding:14px;">
+          <div class="muted">Signed in as</div>
+          <div id="profileMeta" style="margin-top:6px; font-weight:800;"></div>
+
+          <div style="margin-top:10px;" class="tableWrap">
+            <table>
+              <tbody>
+                <tr><td class="muted" style="width:35%;">Org Name</td><td id="profileOrgName">—</td></tr>
+                <tr><td class="muted">Org Id</td><td id="profileOrgId">—</td></tr>
+                <tr><td class="muted">Username</td><td id="profileUsername">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="btnShowChangePw" class="primary" type="button">Change Password</button>
+          </div>
+
+          <div id="pwBox" style="display:none; margin-top:12px;">
+            <div class="row">
+              <div>
+                <label for="curPw">Current Password</label>
+                <input id="curPw" type="password" placeholder="Current password" />
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label for="newPw">New Password</label>
+                <input id="newPw" type="password" placeholder="At least 12 characters" />
+              </div>
+              <div>
+                <label for="newPw2">Confirm New Password</label>
+                <input id="newPw2" type="password" placeholder="Re-type new password" />
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:10px;">
+              <div style="flex:0 0 auto;">
+                <button id="btnChangePw" class="primary" type="button">Update Password</button>
+              </div>
+            </div>
+
+            <div id="pwOk" class="ok"></div>
+            <div id="pwErr" class="err"></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div style="height:1px; background:rgba(255,255,255,.08);"></div>
 
-    <div style="padding:14px;">
-      <div class="muted">Signed in as</div>
-      <div id="profileMeta" style="margin-top:6px; font-weight:800;"></div>
-
-      <div style="margin-top:10px;" class="tableWrap">
-        <table>
-          <tbody>
-            <tr><td class="muted" style="width:35%;">Org Name</td><td id="profileOrgName">—</td></tr>
-            <tr><td class="muted">Org Id</td><td id="profileOrgId">—</td></tr>
-            <tr><td class="muted">Username</td><td id="profileUsername">—</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="btnShowChangePw" class="primary" type="button">Change Password</button>
-      </div>
-
-      <div id="pwBox" style="display:none; margin-top:12px;">
-        <div class="row">
-          <div>
-            <label for="curPw">Current Password</label>
-            <input id="curPw" type="password" placeholder="Current password" />
-          </div>
-        </div>
-
-        <div class="row">
-          <div>
-            <label for="newPw">New Password</label>
-            <input id="newPw" type="password" placeholder="At least 12 characters" />
-          </div>
-          <div>
-            <label for="newPw2">Confirm New Password</label>
-            <input id="newPw2" type="password" placeholder="Re-type new password" />
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <div style="flex:0 0 auto;">
-            <button id="btnChangePw" class="primary" type="button">Update Password</button>
-          </div>
-        </div>
-
-        <div id="pwOk" class="ok"></div>
-        <div id="pwErr" class="err"></div>
-      </div>
-    </div>
-  </div>
-</div>
-    
-    <script type="module" src="/portal/admin.js"></script>
+    <!-- ❌ DO NOT load admin.js here anymore (we import it after auth in the guard script) -->
   </div>
 </body>
 </html>
