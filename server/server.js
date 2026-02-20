@@ -1,12 +1,14 @@
+// server/server.js
 import express from "express";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
+import nodemailer from "nodemailer";
 
-import { pool } from "./db.js";                 // ✅ required (Neon/PG pool)
-import { peekOrg, getOrg, saveOrg } from "./orgStore.js";  // ✅ your JSONB org store
+import { pool } from "./db.js"; // Neon/PG pool
+import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,7 +33,7 @@ const EXTENSION_ID = process.env.QM_EXTENSION_ID || ""; // optional in dev, reco
 
 const ALLOWED_WEB_ORIGINS = (process.env.QM_ALLOWED_WEB_ORIGINS || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 if (IS_PROD && ALLOWED_WEB_ORIGINS.length === 0) {
@@ -42,9 +44,49 @@ const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET || "";
 const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 
 /* =========================================================
+   EMAIL (SMTP)
+========================================================= */
+const SMTP_HOST = process.env.QM_SMTP_HOST || "";
+const SMTP_PORT = parseInt(process.env.QM_SMTP_PORT || "587", 10);
+const SMTP_USER = process.env.QM_SMTP_USER || "";
+const SMTP_PASS = process.env.QM_SMTP_PASS || "";
+const FROM_EMAIL = process.env.QM_FROM_EMAIL || "";
+const FROM_NAME = process.env.QM_FROM_NAME || "QuantumMail";
+
+const EMAIL_ENABLED = !!(SMTP_HOST && SMTP_USER && SMTP_PASS && FROM_EMAIL);
+
+const mailer = EMAIL_ENABLED
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    })
+  : null;
+
+async function sendEmail({ to, subject, html, text }) {
+  if (!EMAIL_ENABLED || !mailer) {
+    console.warn("EMAIL DISABLED (missing SMTP env). Would have sent:", { to, subject });
+    return { ok: false, skipped: true };
+  }
+
+  await mailer.sendMail({
+    from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    to,
+    subject,
+    text: text || undefined,
+    html: html || undefined,
+  });
+
+  return { ok: true };
+}
+
+/* =========================================================
    Helpers
 ========================================================= */
-function nowIso() { return new Date().toISOString(); }
+function nowIso() {
+  return new Date().toISOString();
+}
 
 function timingSafeEq(a, b) {
   const aa = Buffer.from(String(a));
@@ -57,7 +99,9 @@ function sha256(s) {
   return crypto.createHash("sha256").update(String(s)).digest("hex");
 }
 
-function sha256Hex(s) { return sha256(s); }
+function sha256Hex(s) {
+  return sha256(s);
+}
 
 function b64urlEncode(bufOrStr) {
   const buf = Buffer.isBuffer(bufOrStr) ? bufOrStr : Buffer.from(String(bufOrStr), "utf8");
@@ -71,8 +115,12 @@ function b64urlDecodeToString(s) {
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
-function bytesToB64(buf) { return Buffer.from(buf).toString("base64"); }
-function b64ToBytes(b64) { return Buffer.from(String(b64 || ""), "base64"); }
+function bytesToB64(buf) {
+  return Buffer.from(buf).toString("base64");
+}
+function b64ToBytes(b64) {
+  return Buffer.from(String(b64 || ""), "base64");
+}
 
 function getPublicBase(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
@@ -90,6 +138,19 @@ function defaultPolicies() {
 }
 
 /* =========================================================
+   OTP helpers (email verification)
+========================================================= */
+function genOtp6() {
+  const n = crypto.randomInt(0, 1000000);
+  return String(n).padStart(6, "0");
+}
+
+function otpHash(code) {
+  // HMAC with TOKEN_SECRET so OTP isn't reversible if DB leaked
+  return crypto.createHmac("sha256", TOKEN_SECRET).update(String(code)).digest("hex");
+}
+
+/* =========================================================
    CORS (strict)
 ========================================================= */
 function isAllowedOrigin(origin) {
@@ -99,15 +160,17 @@ function isAllowedOrigin(origin) {
   return false;
 }
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (isAllowedOrigin(origin)) return cb(null, true);
-    return cb(new Error(`CORS blocked origin: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-QM-Bootstrap"],
-  credentials: false
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (isAllowedOrigin(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-QM-Bootstrap"],
+    credentials: false,
+  })
+);
 
 app.options("*", cors());
 app.use(express.json({ limit: "25mb" }));
@@ -175,37 +238,9 @@ async function requireAuth(req, res, next) {
 
     req.qm = { tokenPayload: payload, org, user };
     next();
-  } catch {
-    async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (body) headers["Content-Type"] = "application/json";
-
-  const url = `${serverBase}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  // Read raw once (works even if server returns HTML/text on error)
-  const ct = res.headers.get("content-type") || "";
-  const raw = await res.text();
-
-  let data = {};
-  try {
-    data = ct.includes("application/json") ? JSON.parse(raw || "{}") : { raw };
-  } catch {
-    data = { raw };
-  }
-
-  if (!res.ok) {
-    console.error("API ERROR:", { url, status: res.status, data, raw });
-    throw new Error(data?.error || data?.message || `HTTP ${res.status}: ${String(raw).slice(0, 200)}`);
-  }
-
-  return data;
-}
+  } catch (e) {
+    console.error("requireAuth failed:", e);
+    return res.status(401).json({ error: "Unauthorized" });
   }
 }
 
@@ -272,7 +307,7 @@ async function audit(req, orgId, userId, action, details = {}) {
     action,
     ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "",
     ua: req.headers["user-agent"] || "",
-    ...details
+    ...details,
   };
 
   org.audit = Array.isArray(org.audit) ? org.audit : [];
@@ -285,7 +320,9 @@ async function audit(req, orgId, userId, action, details = {}) {
 /* =========================================================
    KEK keyring (server-side at-rest encryption)
 ========================================================= */
-function randomKey32() { return crypto.randomBytes(32); }
+function randomKey32() {
+  return crypto.randomBytes(32);
+}
 
 function sealWithKek(kekBytes, obj) {
   const iv = crypto.randomBytes(12);
@@ -396,13 +433,27 @@ async function ensureTables() {
 
   await pool.query(`create index if not exists idx_qm_setup_tokens_org_hash on qm_setup_tokens(org_id, token_hash);`);
   await pool.query(`create index if not exists idx_qm_org_requests_status on qm_org_requests(status, created_at);`);
+
+  // ---- columns for email verification / context
+  await pool.query(`alter table qm_setup_tokens add column if not exists email text;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists org_name text;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists admin_username text;`);
+
+  await pool.query(`alter table qm_setup_tokens add column if not exists email_verified_at timestamptz;`);
+
+  await pool.query(`alter table qm_setup_tokens add column if not exists otp_hash text;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists otp_expires_at timestamptz;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists otp_sent_at timestamptz;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists otp_attempts int not null default 0;`);
+  await pool.query(`alter table qm_setup_tokens add column if not exists otp_last_attempt_at timestamptz;`);
 }
+
 await ensureTables();
 
-// =========================================================
-// AUTH: signup via invite code (Member/Admin)
-// POST /auth/signup { orgId, inviteCode, username, password }
-// =========================================================
+/* =========================================================
+   AUTH: signup via invite code (Member/Admin)
+   POST /auth/signup { orgId, inviteCode, username, password }
+========================================================= */
 app.post("/auth/signup", async (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const inviteCode = String(req.body?.inviteCode || "").trim();
@@ -429,7 +480,7 @@ app.post("/auth/signup", async (req, res) => {
   if (inv.usedAt) return res.status(403).json({ error: "Invite already used" });
   if (Date.parse(inv.expiresAt || "") < Date.now()) return res.status(403).json({ error: "Invite expired" });
 
-  const taken = org.users.some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+  const taken = org.users.some((u) => String(u.username || "").toLowerCase() === username.toLowerCase());
   if (taken) return res.status(409).json({ error: "Username already exists" });
 
   const userId = nanoid(10);
@@ -444,7 +495,7 @@ app.post("/auth/signup", async (req, res) => {
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   });
 
   inv.usedAt = nowIso();
@@ -456,11 +507,10 @@ app.post("/auth/signup", async (req, res) => {
   res.json({ ok: true, orgId, userId, username, role });
 });
 
-
-// =========================================================
-// ORG: get my org info (for Profile UI)
-// GET /org/me
-// =========================================================
+/* =========================================================
+   ORG: get my org info (for Profile UI)
+   GET /org/me
+========================================================= */
 app.get("/org/me", requireAuth, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = await getOrg(orgId);
@@ -469,22 +519,19 @@ app.get("/org/me", requireAuth, async (req, res) => {
     ok: true,
     org: {
       orgId,
-      orgName: org.orgName || org.name || orgId, // fallback
-    }
+      orgName: org.orgName || org.name || orgId,
+    },
   });
 });
 
-// =========================================================
-// ADMIN: SECURITY ALERTS
-// GET /admin/alerts?minutes=60
-// =========================================================
+/* =========================================================
+   ADMIN: SECURITY ALERTS
+   GET /admin/alerts?minutes=60
+========================================================= */
 app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
 
-  const minutes = Math.min(
-    Math.max(parseInt(req.query.minutes || "60", 10) || 60, 1),
-    7 * 24 * 60
-  );
+  const minutes = Math.min(Math.max(parseInt(req.query.minutes || "60", 10) || 60, 1), 7 * 24 * 60);
 
   const org = await getOrg(orgId);
   const since = Date.now() - minutes * 60 * 1000;
@@ -501,7 +548,7 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "LOGIN_FAILED",
         severity: "high",
         at: a.at,
-        message: `Failed login for ${a.username || "unknown"} from ${a.ip || "unknown ip"}`
+        message: `Failed login for ${a.username || "unknown"} from ${a.ip || "unknown ip"}`,
       });
     }
 
@@ -510,7 +557,7 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "DECRYPT_DENIED",
         severity: "critical",
         at: a.at,
-        message: `Unauthorized decrypt attempt (msgId=${a.msgId || "?"})`
+        message: `Unauthorized decrypt attempt (msgId=${a.msgId || "?"})`,
       });
     }
 
@@ -519,42 +566,38 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "KEY_CLEARED",
         severity: "medium",
         at: a.at,
-        message: `Public key cleared for userId=${a.targetUserId || "?"}`
+        message: `Public key cleared for userId=${a.targetUserId || "?"}`,
       });
     }
   }
 
   const summary = {
-    denied: alerts.filter(x => x.code === "DECRYPT_DENIED").length,
-    failedLogins: alerts.filter(x => x.code === "LOGIN_FAILED").length
+    denied: alerts.filter((x) => x.code === "DECRYPT_DENIED").length,
+    failedLogins: alerts.filter((x) => x.code === "LOGIN_FAILED").length,
   };
 
   res.json({ ok: true, orgId, minutes, summary, alerts: alerts.slice(0, 200) });
 });
 
-
-// =========================================================
-// ADMIN: AUDIT
-// GET /admin/audit?limit=200
-// =========================================================
+/* =========================================================
+   ADMIN: AUDIT
+   GET /admin/audit?limit=200
+========================================================= */
 app.get("/admin/audit", requireAuth, requireAdmin, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = await getOrg(orgId);
 
-  const limit = Math.min(
-    Math.max(parseInt(req.query.limit || "200", 10) || 200, 10),
-    2000
-  );
+  const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10) || 200, 10), 2000);
 
   const items = Array.isArray(org.audit) ? org.audit.slice(0, limit) : [];
   res.json({ ok: true, orgId, items });
 });
 
-// =========================================================
-// ADMIN: POLICIES
-// GET /admin/policies
-// POST/PUT /admin/policies
-// =========================================================
+/* =========================================================
+   ADMIN: POLICIES
+   GET /admin/policies
+   POST/PUT /admin/policies
+========================================================= */
 app.get("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = await getOrg(orgId);
@@ -581,16 +624,15 @@ app.post("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
   res.json({ ok: true, orgId, policies: org.policies });
 });
 
-// optional: PUT alias
 app.put("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
   req.method = "POST";
   return app._router.handle(req, res);
 });
 
-// =========================================================
-// ADMIN: ANALYTICS
-// GET /admin/analytics?days=7
-// =========================================================
+/* =========================================================
+   ADMIN: ANALYTICS
+   GET /admin/analytics?days=7
+========================================================= */
 app.get("/admin/analytics", requireAuth, requireAdmin, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = await getOrg(orgId);
@@ -604,7 +646,10 @@ app.get("/admin/analytics", requireAuth, requireAdmin, async (req, res) => {
   const usersTotal = Array.isArray(org.users) ? org.users.length : 0;
   const messagesTotal = Object.keys(messages).length;
 
-  let encryptStore = 0, decryptPayload = 0, loginFailed = 0, decryptDenied = 0;
+  let encryptStore = 0,
+    decryptPayload = 0,
+    loginFailed = 0,
+    decryptDenied = 0;
 
   for (const a of auditItems) {
     const at = Date.parse(a.at || "");
@@ -626,8 +671,8 @@ app.get("/admin/analytics", requireAuth, requireAdmin, async (req, res) => {
       encryptStoreLastNDays: encryptStore,
       decryptPayloadLastNDays: decryptPayload,
       loginFailedLastNDays: loginFailed,
-      decryptDeniedLastNDays: decryptDenied
-    }
+      decryptDeniedLastNDays: decryptDenied,
+    },
   });
 });
 
@@ -640,7 +685,7 @@ app.get("/org/check", async (req, res) => {
 
   const org = await peekOrg(orgId);
   const exists = !!org;
-  const userCount = exists ? (org.users?.length || 0) : 0;
+  const userCount = exists ? org.users?.length || 0 : 0;
   const hasAdmin = exists ? !!(org.users || []).find((u) => u.role === "Admin") : false;
 
   res.json({ ok: true, orgId, exists, initialized: exists && userCount > 0 && hasAdmin, userCount, hasAdmin });
@@ -661,8 +706,6 @@ app.get("/org/check-username", async (req, res) => {
 /* =========================================================
    BOOTSTRAP: create first SuperAdmin in PLATFORM org
    POST /bootstrap/superadmin
-   Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
-   Body: { username, password } (>=12)
 ========================================================= */
 app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, async (req, res) => {
   const username = String(req.body?.username || "").trim();
@@ -676,7 +719,7 @@ app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, as
   org.audit = org.audit || [];
   org.policies = org.policies || defaultPolicies();
 
-  const exists = org.users.find(u => u.username.toLowerCase() === username.toLowerCase());
+  const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
   if (exists) return res.status(409).json({ error: "User already exists" });
 
   const userId = nanoid(10);
@@ -689,7 +732,7 @@ app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, as
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   });
 
   org.audit.unshift({ id: nanoid(10), at: nowIso(), action: "bootstrap_superadmin", userId, username });
@@ -699,10 +742,8 @@ app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, as
 });
 
 /* =========================================================
-   BOOTSTRAP: seed first Admin for an org (allowed in prod, protected)
+   BOOTSTRAP: seed first Admin for an org
    POST /dev/seed-admin
-   Headers: X-QM-Bootstrap: <QM_BOOTSTRAP_SECRET>
-   Body: { orgId, username, password } (>=12)
 ========================================================= */
 app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
@@ -714,7 +755,7 @@ app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (r
 
   const existing = await peekOrg(orgId);
   if (existing) {
-    const admins = (existing.users || []).filter(u => u.role === "Admin");
+    const admins = (existing.users || []).filter((u) => u.role === "Admin");
     if (admins.length > 0) {
       return res.status(403).json({ error: "Org already initialized. Use invites or an existing admin." });
     }
@@ -726,7 +767,7 @@ app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (r
   org.policies = org.policies || defaultPolicies();
   ensureKeyring(org);
 
-  const taken = org.users.some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+  const taken = org.users.some((u) => String(u.username || "").toLowerCase() === username.toLowerCase());
   if (taken) return res.status(409).json({ error: "Username already exists" });
 
   const newAdmin = {
@@ -738,7 +779,7 @@ app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (r
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   };
 
   org.users.push(newAdmin);
@@ -752,7 +793,6 @@ app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (r
 /* =========================================================
    PUBLIC: org request
    POST /public/org-requests
-   Body: { orgName, requesterName, requesterEmail, notes? }
 ========================================================= */
 app.post("/public/org-requests", async (req, res) => {
   const orgName = String(req.body?.orgName || "").trim();
@@ -791,13 +831,14 @@ app.post("/auth/login", async (req, res) => {
     try {
       org = await getOrg(orgId);
     } catch (e) {
-      // getOrg can throw (DB/network/json parse)
       console.error("LOGIN getOrg failed:", { orgId, err: e?.message || e });
       return res.status(503).json({ error: "Org store unavailable. Try again." });
     }
 
     if (!org || !Array.isArray(org.users)) {
-      try { await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" }); } catch {}
+      try {
+        await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" });
+      } catch {}
       return res.status(401).json({ error: "Invalid creds" });
     }
 
@@ -805,7 +846,9 @@ app.post("/auth/login", async (req, res) => {
     const user = (org.users || []).find((u) => String(u.username || "").toLowerCase() === unameLower);
 
     if (!user) {
-      try { await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" }); } catch {}
+      try {
+        await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
+      } catch {}
       return res.status(401).json({ error: "Invalid creds" });
     }
 
@@ -823,7 +866,9 @@ app.post("/auth/login", async (req, res) => {
     }
 
     if (!okPassword) {
-      try { await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" }); } catch {}
+      try {
+        await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" });
+      } catch {}
       return res.status(401).json({ error: "Invalid creds" });
     }
 
@@ -835,12 +880,14 @@ app.post("/auth/login", async (req, res) => {
       role: user.role,
       username: user.username,
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60
+      exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
     };
 
     const token = signToken(payload);
 
-    try { await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role }); } catch {}
+    try {
+      await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role });
+    } catch {}
 
     try {
       await saveOrg(orgId, org);
@@ -859,11 +906,10 @@ app.post("/auth/login", async (req, res) => {
         status: user.status || "Active",
         hasPublicKey: !!user.publicKeySpkiB64,
         lastLoginAt: user.lastLoginAt,
-        publicKeyRegisteredAt: user.publicKeyRegisteredAt
-      }
+        publicKeyRegisteredAt: user.publicKeyRegisteredAt,
+      },
     });
   } catch (e) {
-    // ✅ Never HTML. Always JSON.
     console.error("LOGIN handler crashed:", e);
     return res.status(500).json({ error: "Internal Server Error", detail: String(e?.message || e) });
   }
@@ -871,7 +917,16 @@ app.post("/auth/login", async (req, res) => {
 
 app.get("/auth/me", requireAuth, (req, res) => {
   const { user } = req.qm;
-  res.json({ ok: true, user: { userId: user.userId, orgId: req.qm.tokenPayload.orgId, username: user.username, role: user.role, status: user.status || "Active" } });
+  res.json({
+    ok: true,
+    user: {
+      userId: user.userId,
+      orgId: req.qm.tokenPayload.orgId,
+      username: user.username,
+      role: user.role,
+      status: user.status || "Active",
+    },
+  });
 });
 
 app.post("/auth/change-password", requireAuth, async (req, res) => {
@@ -899,7 +954,175 @@ app.post("/auth/change-password", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /auth/setup-admin { orgId, token, newPassword }
+/* =========================================================
+   SETUP ADMIN (NEW FLOW)
+   1) GET  /public/setup-admin-info?orgId&token
+   2) POST /auth/setup-admin/send-code { orgId, token }
+   3) POST /auth/setup-admin/verify-code { orgId, token, code }
+   4) POST /auth/setup-admin { orgId, token, newPassword }  (requires verified)
+========================================================= */
+
+// GET setup context for UI (prefill email + show verified)
+app.get("/public/setup-admin-info", async (req, res) => {
+  const orgId = String(req.query.orgId || "").trim();
+  const token = String(req.query.token || "").trim();
+  if (!orgId || !token) return res.status(400).json({ error: "orgId and token required" });
+
+  const tokenHash = sha256Hex(token);
+
+  const { rows } = await pool.query(
+    `select org_id, user_id, email, org_name, admin_username, expires_at, used_at, email_verified_at
+       from qm_setup_tokens
+      where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
+      limit 1`,
+    [orgId, tokenHash]
+  );
+  if (!rows.length) return res.status(403).json({ error: "Invalid token" });
+
+  const t = rows[0];
+  if (t.used_at) return res.status(403).json({ error: "Token already used" });
+  if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
+
+  return res.json({
+    ok: true,
+    orgId: t.org_id,
+    email: t.email || "",
+    orgName: t.org_name || "",
+    adminUsername: t.admin_username || "",
+    emailVerified: !!t.email_verified_at,
+    expiresAt: t.expires_at,
+  });
+});
+
+// POST send verification code to email
+app.post("/auth/setup-admin/send-code", async (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const token = String(req.body?.token || "").trim();
+  if (!orgId || !token) return res.status(400).json({ error: "orgId and token required" });
+
+  const tokenHash = sha256Hex(token);
+
+  const { rows } = await pool.query(
+    `select * from qm_setup_tokens
+      where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
+      limit 1`,
+    [orgId, tokenHash]
+  );
+  if (!rows.length) return res.status(403).json({ error: "Invalid token" });
+
+  const t = rows[0];
+  if (t.used_at) return res.status(403).json({ error: "Token already used" });
+  if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
+
+  const email = String(t.email || "").trim();
+  if (!email) return res.status(400).json({ error: "Missing email for this setup token" });
+
+  if (t.email_verified_at) return res.json({ ok: true, alreadyVerified: true });
+
+  // throttle resend (30 seconds)
+  if (t.otp_sent_at && Date.parse(t.otp_sent_at) > Date.now() - 30 * 1000) {
+    return res.status(429).json({ error: "Please wait before requesting another code." });
+  }
+
+  const code = genOtp6();
+  const codeHash = otpHash(code);
+  const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await pool.query(
+    `update qm_setup_tokens
+        set otp_hash=$3,
+            otp_expires_at=$4,
+            otp_sent_at=now(),
+            otp_attempts=0,
+            otp_last_attempt_at=null
+      where id=$1 and org_id=$2`,
+    [t.id, orgId, codeHash, otpExpiresAt.toISOString()]
+  );
+
+  const subject = `QuantumMail Admin Setup Code (${code})`;
+  const text = `Your QuantumMail verification code is ${code}. It expires in 10 minutes.`;
+  const html = `
+    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
+      <h2 style="margin:0 0 8px 0">QuantumMail Verification</h2>
+      <p style="margin:0 0 10px 0">Use this code to verify your email for admin setup:</p>
+      <div style="font-size:28px;font-weight:800;letter-spacing:2px;margin:10px 0">${code}</div>
+      <p style="color:#6b7280;margin:10px 0 0 0">Expires in 10 minutes.</p>
+    </div>
+  `;
+
+  try {
+    await sendEmail({ to: email, subject, text, html });
+  } catch (e) {
+    console.error("send-code email failed:", e);
+    return res.status(500).json({ error: "Failed to send email. Try again." });
+  }
+
+  return res.json({ ok: true });
+});
+
+// POST verify code
+app.post("/auth/setup-admin/verify-code", async (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const token = String(req.body?.token || "").trim();
+  const code = String(req.body?.code || "").trim();
+
+  if (!orgId || !token || !code) return res.status(400).json({ error: "orgId, token, code required" });
+  if (!/^\d{6}$/.test(code)) return res.status(400).json({ error: "Invalid code format" });
+
+  const tokenHash = sha256Hex(token);
+
+  const { rows } = await pool.query(
+    `select * from qm_setup_tokens
+      where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
+      limit 1`,
+    [orgId, tokenHash]
+  );
+  if (!rows.length) return res.status(403).json({ error: "Invalid token" });
+
+  const t = rows[0];
+  if (t.used_at) return res.status(403).json({ error: "Token already used" });
+  if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
+
+  if (t.email_verified_at) return res.json({ ok: true, alreadyVerified: true });
+
+  if (t.otp_attempts >= 8) {
+    return res.status(429).json({ error: "Too many attempts. Request a new code." });
+  }
+
+  if (!t.otp_hash || !t.otp_expires_at) {
+    return res.status(400).json({ error: "No code requested yet. Click Send Code." });
+  }
+
+  if (Date.parse(t.otp_expires_at) < Date.now()) {
+    return res.status(403).json({ error: "Code expired. Request a new code." });
+  }
+
+  const incomingHash = otpHash(code);
+  const ok = timingSafeEq(incomingHash, t.otp_hash);
+
+  await pool.query(
+    `update qm_setup_tokens
+        set otp_attempts = otp_attempts + 1,
+            otp_last_attempt_at = now()
+      where id=$1`,
+    [t.id]
+  );
+
+  if (!ok) return res.status(403).json({ error: "Incorrect code" });
+
+  await pool.query(
+    `update qm_setup_tokens
+        set email_verified_at=now(),
+            otp_hash=null,
+            otp_expires_at=null
+      where id=$1`,
+    [t.id]
+  );
+
+  return res.json({ ok: true });
+});
+
+// POST /auth/setup-admin { orgId, token, newPassword }  (now requires verified email)
 app.post("/auth/setup-admin", async (req, res) => {
   const orgId = String(req.body?.orgId || "").trim();
   const token = String(req.body?.token || "").trim();
@@ -921,8 +1144,13 @@ app.post("/auth/setup-admin", async (req, res) => {
   if (t.used_at) return res.status(403).json({ error: "Token already used" });
   if (Date.parse(t.expires_at) < Date.now()) return res.status(403).json({ error: "Token expired" });
 
+  // ✅ NEW: must verify email before activation
+  if (!t.email_verified_at) {
+    return res.status(403).json({ error: "Email not verified. Please verify first." });
+  }
+
   const org = await getOrg(orgId);
-  const u = (org.users || []).find(x => x.userId === t.user_id);
+  const u = (org.users || []).find((x) => x.userId === t.user_id);
   if (!u) return res.status(404).json({ error: "User not found" });
 
   u.passwordHash = sha256(newPassword);
@@ -953,7 +1181,7 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
 });
 
 app.get("/org/users", requireAuth, (req, res) => {
-  const { org } = req.qm;
+  const { org, user } = req.qm;
   res.json({
     users: (org.users || []).map((u) => ({
       userId: u.userId,
@@ -962,6 +1190,7 @@ app.get("/org/users", requireAuth, (req, res) => {
       status: u.status || "Active",
       publicKeySpkiB64: u.publicKeySpkiB64 || null,
       hasPublicKey: !!u.publicKeySpkiB64,
+      isMe: u.userId === user.userId,
     })),
   });
 });
@@ -1018,7 +1247,7 @@ app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
 });
 
 /* =========================================================
-   SUPERADMIN: queue list / approve / reject
+   SUPERADMIN: queue list / approve / reject (NEW: auto-email)
 ========================================================= */
 function makeSetupToken() {
   return crypto.randomBytes(32).toString("base64url"); // url-safe
@@ -1029,10 +1258,7 @@ app.get("/super/org-requests", requireAuth, requireSuperAdmin, async (req, res) 
   const allowed = new Set(["pending", "approved", "rejected"]);
   const s = allowed.has(status) ? status : "pending";
 
-  const { rows } = await pool.query(
-    `select * from qm_org_requests where status = $1 order by created_at desc limit 200`,
-    [s]
-  );
+  const { rows } = await pool.query(`select * from qm_org_requests where status = $1 order by created_at desc limit 200`, [s]);
 
   res.json({ ok: true, status: s, items: rows });
 });
@@ -1056,10 +1282,34 @@ app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async
     [requestId, req.qm.user.userId, reason || null]
   );
 
+  // ✅ NEW: email requester on rejection (don’t fail API if email fails)
+  try {
+    const row = r1.rows[0];
+    const to = String(row.requester_email || "").trim();
+    const orgName = String(row.org_name || "").trim();
+    if (to) {
+      const subject = `QuantumMail Org Request Rejected: ${orgName}`;
+      const text = `Your request for ${orgName} was rejected.${reason ? ` Reason: ${reason}` : ""}`;
+      const html = `
+        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
+          <h2 style="margin:0 0 8px 0">Organization Request Update</h2>
+          <p style="margin:0 0 10px 0">
+            Your QuantumMail organization request for <b>${orgName}</b> was rejected.
+          </p>
+          ${reason ? `<p style="margin:0 0 10px 0"><b>Reason:</b> ${reason}</p>` : ""}
+          <p style="color:#6b7280;margin:12px 0 0 0">Reply to this email if you need help.</p>
+        </div>
+      `;
+      await sendEmail({ to, subject, text, html });
+    }
+  } catch (e) {
+    console.error("Reject email failed:", e);
+  }
+
   res.json({ ok: true });
 });
 
-// Approve: create org + create first admin (PendingSetup) + create setup token + return setupLink
+// Approve: create org + create first admin (PendingSetup) + create setup token + return setupLink + email it
 app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, async (req, res) => {
   const requestId = String(req.params.id || "").trim();
   const orgId = String(req.body?.orgId || "").trim();
@@ -1080,7 +1330,7 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   org.policies = org.policies || defaultPolicies();
   ensureKeyring(org);
 
-  const taken = org.users.some(u => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
+  const taken = org.users.some((u) => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
   if (taken) return res.status(409).json({ error: "adminUsername already exists in org" });
 
   const adminUserId = nanoid(10);
@@ -1093,7 +1343,7 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null
+    lastLoginAt: null,
   });
 
   await saveOrg(orgId, org);
@@ -1101,12 +1351,22 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   const rawToken = makeSetupToken();
   const tokenHash = sha256Hex(rawToken);
   const tokenId = nanoid(12);
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+  // ✅ NEW: store email + orgName + adminUsername with the setup token
   await pool.query(
-    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
-     values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
-    [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
+    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)`,
+    [
+      tokenId,
+      orgId,
+      adminUserId,
+      tokenHash,
+      expiresAt.toISOString(),
+      String(reqRow.requester_email || "").trim(),
+      String(reqRow.org_name || "").trim(),
+      adminUsername,
+    ]
   );
 
   await pool.query(
@@ -1124,7 +1384,44 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   const base = getPublicBase(req);
   const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
 
-  res.json({ ok: true, orgId, adminUserId, adminUsername, setupLink, expiresAt: expiresAt.toISOString() });
+  // ✅ NEW: email requester on approval (don’t fail API if email fails)
+  let emailedTo = null;
+  try {
+    const to = String(reqRow.requester_email || "").trim();
+    const orgName = String(reqRow.org_name || "").trim();
+    emailedTo = to || null;
+
+    if (to) {
+      const subject = `QuantumMail Setup Link: ${orgName} (${orgId})`;
+      const text = `Your org is approved.\nOrgName: ${orgName}\nOrgId: ${orgId}\nAdminUsername: ${adminUsername}\nSetup: ${setupLink}\nExpires: ${expiresAt.toISOString()}`;
+      const html = `
+        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
+          <h2 style="margin:0 0 8px 0">Your QuantumMail Org is Approved ✅</h2>
+          <p style="margin:0 0 10px 0">
+            <b>Org Name:</b> ${orgName}<br/>
+            <b>Org ID:</b> ${orgId}<br/>
+            <b>Admin Username:</b> ${adminUsername}
+          </p>
+          <p style="margin:0 0 10px 0">
+            Click this secure setup link to verify your email and activate your admin account:
+          </p>
+          <p style="margin:0 0 10px 0">
+            <a href="${setupLink}" style="display:inline-block;padding:10px 14px;border-radius:12px;background:#2bd576;color:#07101f;font-weight:800;text-decoration:none">
+              Open Admin Setup
+            </a>
+          </p>
+          <div style="color:#6b7280;font-size:12px">
+            This link expires at ${expiresAt.toISOString()}.
+          </div>
+        </div>
+      `;
+      await sendEmail({ to, subject, text, html });
+    }
+  } catch (e) {
+    console.error("Approve email failed:", e);
+  }
+
+  res.json({ ok: true, orgId, adminUserId, adminUsername, setupLink, expiresAt: expiresAt.toISOString(), emailedTo });
 });
 
 /* =========================================================
@@ -1202,13 +1499,24 @@ app.get("/api/inbox", requireAuth, (req, res) => {
     if (!kk) continue;
 
     let msg;
-    try { msg = openWithKek(kk.kekBytes, rec.sealed); } catch { continue; }
+    try {
+      msg = openWithKek(kk.kekBytes, rec.sealed);
+    } catch {
+      continue;
+    }
     if (!msg?.wrappedKeys?.[user.userId]) continue;
 
     const attCount = Array.isArray(msg.attachments) ? msg.attachments.length : 0;
     const attBytes = Array.isArray(msg.attachments) ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0) : 0;
 
-    items.push({ id, createdAt: rec.createdAt, from: rec.createdByUsername || null, fromUserId: rec.createdByUserId || null, attachmentCount: attCount, attachmentsTotalBytes: attBytes });
+    items.push({
+      id,
+      createdAt: rec.createdAt,
+      from: rec.createdByUsername || null,
+      fromUserId: rec.createdByUserId || null,
+      attachmentCount: attCount,
+      attachmentsTotalBytes: attBytes,
+    });
   }
 
   res.json({ items });
@@ -1227,8 +1535,11 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
   if (!kk) return res.status(500).json({ error: "Missing KEK for stored message" });
 
   let msg;
-  try { msg = openWithKek(kk.kekBytes, rec.sealed); }
-  catch { return res.status(500).json({ error: "Failed to open message record (bad KEK)" }); }
+  try {
+    msg = openWithKek(kk.kekBytes, rec.sealed);
+  } catch {
+    return res.status(500).json({ error: "Failed to open message record (bad KEK)" });
+  }
 
   const wrappedDek = msg.wrappedKeys?.[user.userId];
   if (!wrappedDek) {
