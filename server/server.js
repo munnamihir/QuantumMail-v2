@@ -371,6 +371,64 @@ async function ensureTables() {
 await ensureTables();
 
 // =========================================================
+// AUTH: signup via invite code (Member/Admin)
+// POST /auth/signup { orgId, inviteCode, username, password }
+// =========================================================
+app.post("/auth/signup", async (req, res) => {
+  const orgId = String(req.body?.orgId || "").trim();
+  const inviteCode = String(req.body?.inviteCode || "").trim();
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "");
+
+  if (!orgId || !inviteCode || !username || !password) {
+    return res.status(400).json({ error: "orgId, inviteCode, username, password required" });
+  }
+  if (password.length < 12) {
+    return res.status(400).json({ error: "Password must be at least 12 characters" });
+  }
+
+  const org = await getOrg(orgId);
+  org.users = org.users || [];
+  org.audit = org.audit || [];
+  org.invites = org.invites || {};
+  org.policies = org.policies || defaultPolicies();
+  ensureKeyring(org);
+
+  const inv = org.invites[inviteCode];
+  if (!inv) return res.status(403).json({ error: "Invalid invite code" });
+
+  if (inv.usedAt) return res.status(403).json({ error: "Invite already used" });
+  if (Date.parse(inv.expiresAt || "") < Date.now()) return res.status(403).json({ error: "Invite expired" });
+
+  const taken = org.users.some(u => String(u.username || "").toLowerCase() === username.toLowerCase());
+  if (taken) return res.status(409).json({ error: "Username already exists" });
+
+  const userId = nanoid(10);
+  const role = inv.role === "Admin" ? "Admin" : "Member";
+
+  org.users.push({
+    userId,
+    username,
+    passwordHash: sha256(password),
+    role,
+    status: "Active",
+    publicKeySpkiB64: null,
+    publicKeyRegisteredAt: null,
+    createdAt: nowIso(),
+    lastLoginAt: null
+  });
+
+  inv.usedAt = nowIso();
+  inv.usedByUserId = userId;
+
+  await audit(req, orgId, userId, "signup_via_invite", { username, role, inviteCode });
+  await saveOrg(orgId, org);
+
+  res.json({ ok: true, orgId, userId, username, role });
+});
+
+
+// =========================================================
 // ORG: get my org info (for Profile UI)
 // GET /org/me
 // =========================================================
