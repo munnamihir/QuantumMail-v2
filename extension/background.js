@@ -71,33 +71,30 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
       body: body ? JSON.stringify(body) : undefined
     });
   } catch (e) {
-    throw new Error(`Network error calling ${path}: ${e?.message || e}`);
+    throw new Error(`[NET] ${method} ${path} -> ${e?.message || e}`);
   }
 
-  const parsed = await readBodySmart(res);
+  const ct = String(res.headers.get("content-type") || "");
+  let payload = null;
+
+  if (ct.includes("application/json")) {
+    payload = await res.json().catch(() => null);
+  } else {
+    payload = await res.text().catch(() => "");
+  }
 
   if (!res.ok) {
-    // Try to extract error meaningfully
-    const jsonErr =
-      parsed.kind === "json"
-        ? (parsed.data?.error || parsed.data?.message || null)
-        : null;
+    const msg =
+      (payload && typeof payload === "object" && (payload.error || payload.message)) ||
+      (typeof payload === "string" ? payload.slice(0, 220) : "") ||
+      `Request failed (${res.status})`;
 
-    const textErr =
-      parsed.kind === "text"
-        ? shortenText(parsed.data, 280)
-        : null;
-
-    const msg = jsonErr || textErr || `Request failed (${res.status})`;
-    throw new Error(msg);
+    throw new Error(`[HTTP ${res.status}] ${method} ${path} -> ${msg}`);
   }
 
-  // Always return JSON object if possible
-  if (parsed.kind === "json") return parsed.data;
-
-  // If server returned non-json but ok, return text wrapper
-  return { ok: true, raw: parsed.data };
+  return payload && typeof payload === "object" ? payload : { ok: true, raw: payload };
 }
+
 
 /* =========================
    Chrome tab messaging
