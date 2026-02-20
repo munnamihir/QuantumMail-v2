@@ -6,8 +6,15 @@ export const DEFAULTS = {
   user: null
 };
 
+// ✅ FIX: accept "quantummail.onrender.com" and turn into "https://quantummail.onrender.com"
 export function normalizeBase(url) {
-  return String(url || "").replace(/\/+$/, "");
+  let s = String(url || "").trim();
+
+  // add scheme if missing
+  if (s && !/^https?:\/\//i.test(s)) s = "https://" + s;
+
+  // strip trailing slashes
+  return s.replace(/\/+$/, "");
 }
 
 export async function getSession() {
@@ -24,13 +31,6 @@ export async function setSession(patch) {
 
 export async function clearSession() {
   return setSession({ ...DEFAULTS });
-}
-
-export function parseRecipients(input) {
-  return String(input || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 // ---------- Base64 helpers ----------
@@ -118,11 +118,6 @@ export async function importPublicSpkiB64(publicKeySpkiB64) {
   );
 }
 
-/**
- * Register user's public key with server so others can wrap DEKs for them.
- * Server endpoint (new): POST /org/register-key
- * Back-compat endpoint: POST /pubkey_register (optional alias)
- */
 export async function ensureKeypairAndRegister(serverBase, token) {
   const { publicKey } = await getOrCreateRsaKeypair();
   const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
@@ -137,19 +132,26 @@ export async function ensureKeypairAndRegister(serverBase, token) {
       body: JSON.stringify({ publicKeySpkiB64 })
     });
 
-    const data = await res.json().catch(() => ({}));
-    return { res, data };
+    const raw = await res.text().catch(() => "");
+    let data = {};
+    try {
+      data = (res.headers.get("content-type") || "").includes("application/json")
+        ? JSON.parse(raw || "{}")
+        : { raw };
+    } catch {
+      data = { raw };
+    }
+
+    return { res, data, raw };
   }
 
-  // 1) Preferred endpoint
   let out = await tryRegister("/org/register-key");
   if (out.res.ok) return;
 
-  // 2) Back-compat alias
   out = await tryRegister("/pubkey_register");
   if (out.res.ok) return;
 
-  throw new Error(out.data?.error || `pubkey_register failed (${out.res.status})`);
+  throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);
 }
 
 // AES-GCM envelope encryption
