@@ -1,13 +1,33 @@
 // portal/admin.js
 const $ = (id) => document.getElementById(id);
 
-let token = "";
-let sessionUser = null;
+/* =========================================================
+   Storage (ONE source of truth)
+========================================================= */
+function getToken() {
+  return localStorage.getItem("qm_token") || "";
+}
+function getUser() {
+  try { return JSON.parse(localStorage.getItem("qm_user") || "null"); }
+  catch { return null; }
+}
+function clearSession() {
+  localStorage.removeItem("qm_token");
+  localStorage.removeItem("qm_user");
+  localStorage.removeItem("qm_role");
+  localStorage.removeItem("qm_orgId");
+  localStorage.removeItem("qm_username");
 
-function readTokenFromStorage() {
-  return sessionStorage.getItem("qm_admin_token") || "";
+  // cleanup old stuff you used earlier
+  sessionStorage.removeItem("qm_admin_token");
+  sessionStorage.removeItem("qm_super_token");
+  sessionStorage.removeItem("qm_token");
+  sessionStorage.removeItem("qm_user");
 }
 
+/* =========================================================
+   UI helpers
+========================================================= */
 function setText(id, msg) {
   const el = $(id);
   if (el) el.textContent = msg || "";
@@ -15,144 +35,61 @@ function setText(id, msg) {
 function ok(id, msg) { setText(id, msg); }
 function err(id, msg) { setText(id, msg); }
 
-
-
-function setSessionPill() {
-  const who = $("who");
+function setDot(state /* "good"|"bad"|null */) {
   const dot = $("sessionDot");
-
-  if (who) {
-    who.textContent = token && sessionUser
-      ? `${sessionUser.username}@${sessionUser.orgId} (${sessionUser.role})`
-      : "Not logged in";
-  }
-  if (dot) {
-    dot.classList.remove("good", "bad");
-    if (token) dot.classList.add("good");
-  }
-  setAuthedUI();
+  if (!dot) return;
+  dot.classList.remove("good", "bad");
+  if (state === "good") dot.classList.add("good");
+  if (state === "bad") dot.classList.add("bad");
 }
 
-function setAuthedUI() {
-  const authedNav = document.getElementById("authedNav");
-  const authedActions = document.getElementById("authedActions");
-
-  const isAuthed = Boolean(token);
-
+function setAuthedUI(isAuthed) {
+  const authedNav = $("authedNav");
+  const authedActions = $("authedActions");
   if (authedNav) authedNav.style.display = isAuthed ? "" : "none";
   if (authedActions) authedActions.style.display = isAuthed ? "" : "none";
 }
 
+function setSessionPill() {
+  const token = getToken();
+  const user = getUser();
+  const who = $("whoText");
 
-function getAdminToken() {
-  return sessionStorage.getItem("qm_admin_token") || "";
-}
-
-async function apiWithAdmin(path, { method="GET", body=null } = {}) {
-  const t = getAdminToken();
-  if (!t) throw new Error("Not logged in.");
-  const headers = { Authorization: `Bearer ${t}` };
-  if (body) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-  return data;
-}
-
-function openProfileModal() {
-  const m = document.getElementById("profileModal");
-  if (m) m.style.display = "";
-}
-function closeProfileModal() {
-  const m = document.getElementById("profileModal");
-  if (m) m.style.display = "none";
-}
-
-function setPwMsg(okMsg, errMsg) {
-  const okEl = document.getElementById("pwOk");
-  const errEl = document.getElementById("pwErr");
-  if (okEl) okEl.textContent = okMsg || "";
-  if (errEl) errEl.textContent = errMsg || "";
-}
-
-const profileBtn = document.getElementById("btnProfile");
-if (profileBtn) profileBtn.style.display = getAdminToken() ? "" : "none";
-
-async function loadProfile() {
-  setPwMsg("", "");
-  const me = await apiWithAdmin("/auth/me");
-  const org = await apiWithAdmin("/org/me");
-
-  const user = me?.user;
-  const orgInfo = org?.org;
-
-  document.getElementById("profileMeta").textContent =
-    user ? `${user.username}@${user.orgId} • ${user.role}` : "—";
-
-  document.getElementById("profileOrgName").textContent = orgInfo?.orgName || "—";
-  document.getElementById("profileOrgId").textContent = user?.orgId || orgInfo?.orgId || "—";
-  document.getElementById("profileUsername").textContent = user?.username || "—";
-}
-
-function showChangePasswordBox() {
-  document.getElementById("pwBox").style.display = "";
-  document.getElementById("curPw").value = "";
-  document.getElementById("newPw").value = "";
-  document.getElementById("newPw2").value = "";
-  setPwMsg("", "");
-}
-
-async function changePassword() {
-  setPwMsg("", "");
-
-  const currentPassword = String(document.getElementById("curPw").value || "");
-  const newPassword = String(document.getElementById("newPw").value || "");
-  const confirm = String(document.getElementById("newPw2").value || "");
-
-  if (!currentPassword || !newPassword) return setPwMsg("", "Current and new password are required.");
-  if (newPassword.length < 12) return setPwMsg("", "New password must be at least 12 characters.");
-  if (newPassword !== confirm) return setPwMsg("", "Confirmation does not match.");
-
-  await apiWithAdmin("/auth/change-password", { method:"POST", body:{ currentPassword, newPassword } });
-
-  setPwMsg("Password updated ✅", "");
-  document.getElementById("curPw").value = "";
-  document.getElementById("newPw").value = "";
-  document.getElementById("newPw2").value = "";
-}
-
-// Wire up Profile button + modal
-document.getElementById("btnProfile")?.addEventListener("click", async () => {
-  try {
-    await loadProfile();
-    openProfileModal();
-  } catch (e) {
-    // If not logged in, bounce to admin login
-    window.location.href = "/portal/admin.html";
+  const isAuthed = Boolean(token && user?.username);
+  if (who) {
+    who.textContent = isAuthed
+      ? `${user.username}@${user.orgId} (${user.role})`
+      : "Not logged in";
   }
-});
 
-document.getElementById("btnCloseProfile")?.addEventListener("click", closeProfileModal);
-document.getElementById("profileModal")?.addEventListener("click", (e) => {
-  if (e.target?.id === "profileModal") closeProfileModal();
-});
+  setDot(isAuthed ? "good" : null);
+  setAuthedUI(isAuthed);
+}
 
-document.getElementById("btnShowChangePw")?.addEventListener("click", showChangePasswordBox);
-document.getElementById("btnChangePw")?.addEventListener("click", () => {
-  changePassword().catch(err => setPwMsg("", err.message));
-});
+/* =========================================================
+   API
+========================================================= */
 async function api(path, { method = "GET", body = null } = {}) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const token = getToken();
+  if (!token) throw new Error("Not logged in.");
+
+  const headers = { Authorization: `Bearer ${token}` };
   if (body) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
 
+/* =========================================================
+   Formatting
+========================================================= */
 function fmtIso(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -165,70 +102,18 @@ function daysOld(iso) {
   if (Number.isNaN(t)) return null;
   return Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
 }
-
-async function createAdmin() {
-  ok("seedOk", ""); err("seedErr", "");
-  const orgId = String($("seedOrgId")?.value || "").trim();
-  const username = String($("seedUsername")?.value || "").trim();
-  const password = String($("seedPassword")?.value || "");
-
-  if (!orgId || !username || !password) {
-    err("seedErr", "Org Id, Admin Username, and Admin Password are required.");
-    return;
-  }
-  const out = await api("/dev/seed-admin", { method: "POST", body: { orgId, username, password } });
-  ok("seedOk", `Admin created ✅\nOrg: ${out.orgId}\nUsername: ${username}`);
-}
-
-async function login() {
-  ok("authOk", ""); err("authErr", "");
-
-  const orgId = String($("orgId")?.value || "").trim();
-  const username = String($("username")?.value || "").trim();
-  const password = String($("password")?.value || "");
-
-  if (!orgId || !username || !password) {
-    err("authErr", "Org Id, Username, and Password are required.");
-    return;
-  }
-
-  const out = await api("/auth/login", { method: "POST", body: { orgId, username, password } });
-
-  token = out.token;
-  sessionUser = out.user;
-
-  // ✅ store so ALL admin pages can reuse the login
-  sessionStorage.setItem("qm_admin_token", token);
-
-  ok("authOk", "Logged in ✅");
-  setSessionPill();
-
-  await refreshUsers();
-  await refreshAlertsBadge();
-}
-
-function logout() {
-  sessionUser = null;
-  sessionStorage.removeItem("qm_admin_token");
-  token = "";
-  ok("authOk", "Logged out.");
-  err("authErr", "");
-  setSessionPill();
-
-  const tbody = $("usersTbody");
-  if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="muted">Login to load users…</td></tr>`;
-
-  const badge = $("alertBadge");
-  if (badge) badge.style.display = "none";
-}
-
 function escapeHtml(s) {
   return String(s || "")
     .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
-function escapeAttr(s) { return escapeHtml(s).replaceAll("`", "&#096;"); }
+function escapeAttr(s) {
+  return escapeHtml(s).replaceAll("`", "&#096;");
+}
 
+/* =========================================================
+   Users table
+========================================================= */
 function renderUsers(users) {
   const tbody = $("usersTbody");
   if (!tbody) return;
@@ -267,7 +152,6 @@ function renderUsers(users) {
 
       try {
         ok("usersOk", ""); err("usersErr", "");
-        if (!token) throw new Error("Login required.");
 
         if (action === "removeUser") {
           await api(`/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
@@ -288,20 +172,21 @@ function renderUsers(users) {
 
 async function refreshUsers() {
   ok("usersOk", ""); err("usersErr", "");
-  if (!token) { err("usersErr", "Login required to load users."); return; }
   const out = await api("/admin/users");
   renderUsers(out.users || []);
 }
 
 async function createUser() {
   ok("usersOk", ""); err("usersErr", "");
-  if (!token) { err("usersErr", "Login required."); return; }
 
   const username = String($("newUsername")?.value || "").trim();
   const password = String($("newPassword")?.value || "");
   const role = String($("newRole")?.value || "Member").trim() || "Member";
 
-  if (!username || !password) { err("usersErr", "New Username and New Password are required."); return; }
+  if (!username || !password) {
+    err("usersErr", "New Username and New Password are required.");
+    return;
+  }
 
   await api("/admin/users", { method: "POST", body: { username, password, role } });
   ok("usersOk", `User created ✅ (${username})`);
@@ -311,14 +196,17 @@ async function createUser() {
   await refreshUsers();
 }
 
+/* =========================================================
+   Alerts badge
+========================================================= */
 async function refreshAlertsBadge() {
   const badge = $("alertBadge");
   if (!badge) return;
-  if (!token) { badge.style.display = "none"; return; }
 
   try {
     const out = await api("/admin/alerts?minutes=60");
     const count = Array.isArray(out.alerts) ? out.alerts.length : 0;
+
     if (count > 0) {
       badge.textContent = String(count);
       badge.style.display = "";
@@ -330,21 +218,116 @@ async function refreshAlertsBadge() {
   }
 }
 
-// Wire up
-$("btnCreateAdmin")?.addEventListener("click", () => createAdmin().catch(e => err("seedErr", e.message)));
-$("btnLogin")?.addEventListener("click", () => login().catch(e => err("authErr", e.message)));
-$("btnLogout")?.addEventListener("click", logout);
-$("btnLogoutTop")?.addEventListener("click", logout);
+/* =========================================================
+   Profile modal
+========================================================= */
+function openProfileModal() {
+  const m = $("profileModal");
+  if (m) m.style.display = "";
+}
+function closeProfileModal() {
+  const m = $("profileModal");
+  if (m) m.style.display = "none";
+}
+function setPwMsg(okMsg, errMsg) {
+  setText("pwOk", okMsg || "");
+  setText("pwErr", errMsg || "");
+}
 
+async function loadProfile() {
+  setPwMsg("", "");
+  const me = await api("/auth/me");
+  const org = await api("/org/me");
+
+  const user = me?.user;
+  const orgInfo = org?.org;
+
+  $("profileMeta").textContent =
+    user ? `${user.username}@${user.orgId} • ${user.role}` : "—";
+
+  $("profileOrgName").textContent = orgInfo?.orgName || "—";
+  $("profileOrgId").textContent = user?.orgId || orgInfo?.orgId || "—";
+  $("profileUsername").textContent = user?.username || "—";
+}
+
+function showChangePasswordBox() {
+  $("pwBox").style.display = "";
+  $("curPw").value = "";
+  $("newPw").value = "";
+  $("newPw2").value = "";
+  setPwMsg("", "");
+}
+
+async function changePassword() {
+  setPwMsg("", "");
+
+  const currentPassword = String($("curPw").value || "");
+  const newPassword = String($("newPw").value || "");
+  const confirm = String($("newPw2").value || "");
+
+  if (!currentPassword || !newPassword) return setPwMsg("", "Current and new password are required.");
+  if (newPassword.length < 12) return setPwMsg("", "New password must be at least 12 characters.");
+  if (newPassword !== confirm) return setPwMsg("", "Confirmation does not match.");
+
+  await api("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
+
+  setPwMsg("Password updated ✅", "");
+  $("curPw").value = "";
+  $("newPw").value = "";
+  $("newPw2").value = "";
+}
+
+/* =========================================================
+   Logout
+========================================================= */
+function doLogout() {
+  clearSession();
+  setSessionPill();
+
+  // reset table + badge
+  const tbody = $("usersTbody");
+  if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="muted">Login to load users…</td></tr>`;
+  const badge = $("alertBadge");
+  if (badge) badge.style.display = "none";
+
+  // bounce to index login
+  window.location.href = "/portal/index.html";
+}
+
+/* =========================================================
+   Wiring + boot
+========================================================= */
 $("btnCreateUser")?.addEventListener("click", () => createUser().catch(e => err("usersErr", e.message)));
 $("btnRefreshUsers")?.addEventListener("click", () => refreshUsers().catch(e => err("usersErr", e.message)));
 
-// Boot: restore token so other pages can share session
-(function boot() {
-  token = readTokenFromStorage();
-  setSessionPill();
-  if (token) {
-    refreshUsers().catch(() => {});
-    refreshAlertsBadge().catch(() => {});
+$("btnLogout")?.addEventListener("click", doLogout);
+$("btnLogoutTop")?.addEventListener("click", doLogout);
+
+$("btnProfile")?.addEventListener("click", async () => {
+  try {
+    await loadProfile();
+    openProfileModal();
+  } catch (e) {
+    window.location.href = "/portal/index.html";
   }
+});
+
+$("btnCloseProfile")?.addEventListener("click", closeProfileModal);
+$("profileModal")?.addEventListener("click", (e) => {
+  if (e.target?.id === "profileModal") closeProfileModal();
+});
+$("btnShowChangePw")?.addEventListener("click", showChangePasswordBox);
+$("btnChangePw")?.addEventListener("click", () => changePassword().catch(e => setPwMsg("", e.message)));
+
+(function boot() {
+  setSessionPill();
+
+  // If not logged in, bounce to login
+  if (!getToken() || !getUser()) {
+    window.location.href = "/portal/index.html";
+    return;
+  }
+
+  refreshUsers().catch(e => err("usersErr", e.message));
+  refreshAlertsBadge().catch(() => {});
 })();
