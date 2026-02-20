@@ -166,6 +166,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
       }
 
+      if (msg?.type === "QM_PING") {
+        sendResponse({ ok: true });
+        return;
+      }
+
       sendResponse({ ok: false, error: "Unknown message" });
     } catch (e) {
       sendResponse({ ok: false, error: e?.message || String(e) });
