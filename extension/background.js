@@ -1,17 +1,5 @@
 // extension/background.js
-// QuantumMail (latest ideology):
-// - Single login in popup -> background stores session (serverBase + token + user)
-// - On login: ensure local RSA keypair exists and register SPKI via /org/register-key
-// - Encrypt selected text (Gmail/Outlook/web) -> AES-GCM -> wrap DEK per org user public keys -> POST /api/messages
-// - Replace selection with decrypt link in compose body
-// - Decrypt flow: login (or reuse session) -> GET /api/messages/:id -> unwrap DEK -> decrypt body + attachments
-//
-// This version is hardened:
-// ✅ Handles server returning HTML on 500 (parses text fallback and shows useful error)
-// ✅ Better lastError handling for chrome.tabs.sendMessage
-// ✅ Stronger attachment base64url encoding (chunked)
-// ✅ Clear “content script not available” diagnostics
-// ✅ Safer attachment normalization (bytes[] or ArrayBuffer)
+// QuantumMail (hardened, MV3-safe)
 
 import {
   normalizeBase,
@@ -27,41 +15,34 @@ import {
 } from "./qm.js";
 
 /* =========================
-   Robust fetch helpers
+   Robust helpers
 ========================= */
-async function readBodySmart(res) {
-  const ct = String(res.headers.get("content-type") || "").toLowerCase();
 
-  // Prefer JSON if available
-  if (ct.includes("application/json")) {
-    try {
-      return { kind: "json", data: await res.json() };
-    } catch {
-      // fall through to text
-    }
-  }
-
-  // Fallback: text (HTML or plain)
-  try {
-    const t = await res.text();
-    return { kind: "text", data: t };
-  } catch {
-    return { kind: "none", data: null };
-  }
+function shortenText(s, n = 280) {
+  const str = String(s || "");
+  return str.length <= n ? str : str.slice(0, n) + "…";
 }
 
-function shortenText(s, n = 240) {
-  const str = String(s || "");
-  if (str.length <= n) return str;
-  return str.slice(0, n) + "…";
+async function readResponseSmart(res) {
+  const ct = String(res.headers.get("content-type") || "").toLowerCase();
+  const raw = await res.text().catch(() => "");
+  if (ct.includes("application/json")) {
+    try {
+      return { kind: "json", data: JSON.parse(raw || "{}"), raw };
+    } catch {
+      return { kind: "text", data: raw, raw };
+    }
+  }
+  return { kind: "text", data: raw, raw };
 }
 
 async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
+  const base = normalizeBase(serverBase);
+  const url = `${base}${path}`;
+
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body) headers["Content-Type"] = "application/json";
-
-  const url = `${serverBase}${path}`;
 
   let res;
   try {
@@ -74,45 +55,49 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
     throw new Error(`[NET] ${method} ${path} -> ${e?.message || e}`);
   }
 
-  const ct = String(res.headers.get("content-type") || "");
-  let payload = null;
-
-  if (ct.includes("application/json")) {
-    payload = await res.json().catch(() => null);
-  } else {
-    payload = await res.text().catch(() => "");
-  }
+  const parsed = await readResponseSmart(res);
 
   if (!res.ok) {
     const msg =
-      (payload && typeof payload === "object" && (payload.error || payload.message)) ||
-      (typeof payload === "string" ? payload.slice(0, 220) : "") ||
+      (parsed.kind === "json" && (parsed.data?.error || parsed.data?.message)) ||
+      shortenText(parsed.raw || parsed.data || "", 320) ||
       `Request failed (${res.status})`;
 
+    // ✅ This is the key: if server sent HTML, we still show a useful error
     throw new Error(`[HTTP ${res.status}] ${method} ${path} -> ${msg}`);
   }
 
-  return payload && typeof payload === "object" ? payload : { ok: true, raw: payload };
+  // ok
+  if (parsed.kind === "json") return parsed.data;
+  return { ok: true, raw: parsed.data };
 }
-
 
 /* =========================
    Chrome tab messaging
 ========================= */
+
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error("No active tab");
+  if (!tab?.id) throw new Error("No active tab found.");
   return tab;
 }
 
-async function sendToTab(tabId, msg) {
+async function sendToTab(tabId, msg, timeoutMs = 1500) {
   return new Promise((resolve, reject) => {
+    let done = false;
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      reject(new Error("Timed out talking to content script. Refresh the Gmail/Outlook tab and try again."));
+    }, timeoutMs);
+
     chrome.tabs.sendMessage(tabId, msg, (resp) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+
       const err = chrome.runtime.lastError;
-      if (err) {
-        // Typical: "Could not establish connection. Receiving end does not exist."
-        return reject(new Error(err.message));
-      }
+      if (err) return reject(new Error(err.message));
       resolve(resp);
     });
   });
@@ -129,9 +114,10 @@ function aadFromTabUrl(tabUrl) {
 /* =========================
    Base64URL for large data
 ========================= */
+
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
-  const chunkSize = 0x8000; // 32KB chunks to avoid call stack overflow
+  const chunkSize = 0x8000; // 32KB
   let binary = "";
   for (let i = 0; i < u8.length; i += chunkSize) {
     const chunk = u8.subarray(i, i + chunkSize);
@@ -141,13 +127,21 @@ function bytesToB64Url(bytes) {
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function b64UrlToU8(b64url) {
-  return b64UrlToBytes(b64url); // from qm.js
-}
-
 /* =========================
    Attachment crypto (same DEK)
 ========================= */
+
+function attachmentToU8(a) {
+  if (!a) return new Uint8Array();
+  if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
+
+  // safety: tolerate other shapes
+  if (a.buffer instanceof ArrayBuffer) return new Uint8Array(a.buffer);
+  if (a.buffer?.byteLength != null && typeof a.buffer.slice === "function") return new Uint8Array(a.buffer);
+
+  return new Uint8Array();
+}
+
 async function encryptBytesWithRawDek(rawDekBytes, plainBytes) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, ["encrypt"]);
@@ -156,42 +150,26 @@ async function encryptBytesWithRawDek(rawDekBytes, plainBytes) {
 }
 
 async function decryptBytesWithRawDek(rawDekBytes, ivB64Url, ctB64Url) {
-  const iv = b64UrlToU8(ivB64Url);
-  const ct = b64UrlToU8(ctB64Url);
+  const iv = b64UrlToBytes(ivB64Url);
+  const ct = b64UrlToBytes(ctB64Url);
   const key = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, ["decrypt"]);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
   return new Uint8Array(pt);
 }
 
-// RSA unwrap DEK for org-mode
 async function rsaUnwrapDek(privateKey, wrappedDekB64Url) {
   const wrappedBytes = b64UrlToBytes(wrappedDekB64Url);
   const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrappedBytes);
   return new Uint8Array(raw);
 }
 
-// Normalize attachments coming from popup (bytes[] OR ArrayBuffer)
-function attachmentToU8(a) {
-  if (!a) return new Uint8Array();
-
-  if (a.buffer instanceof ArrayBuffer) return new Uint8Array(a.buffer);
-
-  if (a.buffer?.byteLength != null && typeof a.buffer.slice === "function") {
-    return new Uint8Array(a.buffer);
-  }
-
-  if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
-
-  return new Uint8Array();
-}
-
 /* =========================
    Session + login
 ========================= */
+
 async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const base = normalizeBase(serverBase);
 
-  // Login
   const out = await apiJson(base, "/auth/login", {
     method: "POST",
     body: { orgId, username, password }
@@ -201,43 +179,47 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const user = out?.user || null;
   if (!token || !user) throw new Error("Login failed: missing token/user.");
 
-  // Ensure RSA keypair exists + register public key with server
-  // ensureKeypairAndRegister(base, token) should POST /org/register-key internally
   await ensureKeypairAndRegister(base, token);
 
-  // Save session for popup + content scripts
   await setSession({ serverBase: base, token, user });
-
   return { base, token, user };
 }
 
 /* =========================
    Encrypt selection org-wide
 ========================= */
+
+async function assertContentScriptAvailable(tabId) {
+  // A quick ping to provide a clean error if the content script isn't injected
+  try {
+    const r = await sendToTab(tabId, { type: "QM_PING" }, 900);
+    if (!r?.ok) throw new Error("Ping failed");
+  } catch (e) {
+    throw new Error(
+      `Content script not available in this tab.\n` +
+        `Fix:\n` +
+        `1) Open Gmail/Outlook compose window\n` +
+        `2) Refresh the tab (Cmd/Ctrl+R)\n` +
+        `3) Re-open the popup and try again\n\n` +
+        `Details: ${e.message}`
+    );
+  }
+}
+
 async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const s = await getSession();
-  if (!s?.token || !s?.serverBase) {
-    throw new Error("Please login first in the popup.");
-  }
+  if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
   const tab = await getActiveTab();
   const tabId = tab.id;
   const aad = aadFromTabUrl(tab.url);
 
-  // Selection from content script
-  let sel;
-  try {
-    sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
-  } catch (e) {
-    throw new Error(
-      `Could not read selection. Open Gmail/Outlook compose, ensure extension is enabled, then refresh the tab. (${e.message})`
-    );
-  }
+  await assertContentScriptAvailable(tabId);
 
+  const sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
   const plaintext = String(sel?.text || "").trim();
   if (!plaintext) throw new Error("Select text in the email body first (compose body).");
 
-  // Encrypt body (returns rawDek)
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, aad);
 
   // Encrypt attachments with SAME rawDek
@@ -257,7 +239,7 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
     });
   }
 
-  // Get org users so we can wrap DEK for each user with a public key
+  // Wrap DEK for all org users
   const usersOut = await apiJson(s.serverBase, "/org/users", { token: s.token });
   const users = Array.isArray(usersOut?.users) ? usersOut.users : [];
 
@@ -267,14 +249,10 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   for (const u of users) {
     if (!u?.userId) continue;
-
-    // Important: your server returns publicKeySpkiB64 for /org/users currently.
-    // If you ever stop returning it for privacy, add a new admin endpoint.
     if (!u.publicKeySpkiB64) {
       skippedNoKey++;
       continue;
     }
-
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
     const wrappedDek = await rsaWrapDek(pub, rawDek);
     wrappedKeys[u.userId] = wrappedDek;
@@ -285,7 +263,6 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
     throw new Error("No org users have public keys registered yet. Have at least one user login once.");
   }
 
-  // Store message on server
   const msgOut = await apiJson(s.serverBase, "/api/messages", {
     method: "POST",
     token: s.token,
@@ -301,14 +278,7 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const url = msgOut?.url;
   if (!url) throw new Error("Server did not return message URL.");
 
-  // Insert link into compose body
-  let rep;
-  try {
-    rep = await sendToTab(tabId, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
-  } catch (e) {
-    throw new Error(`Failed to insert link into email. (${e.message})`);
-  }
-
+  const rep = await sendToTab(tabId, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
   if (!rep?.ok) throw new Error(rep?.error || "Failed to insert link into email.");
 
   return { url, wrappedCount, skippedNoKey, warning: rep?.warning || null };
@@ -317,29 +287,19 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 /* =========================
    Login + decrypt message
 ========================= */
+
 async function loginAndDecrypt({ msgId, serverBase, orgId, username, password }) {
-  // Fresh login (decrypt page supplies creds)
   const { base, token } = await loginAndStoreSession({ serverBase, orgId, username, password });
 
-  // Fetch encrypted payload (server enforces wrapped key exists for this user)
   const payload = await apiJson(base, `/api/messages/${encodeURIComponent(msgId)}`, { token });
 
   if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
 
-  // Unwrap DEK with our local private RSA key
   const kp = await getOrCreateRsaKeypair();
   const rawDek = await rsaUnwrapDek(kp.privateKey, payload.wrappedDek);
 
-  // Decrypt body
-  // IMPORTANT: aesDecrypt in qm.js must accept rawDek override (4th arg)
-  const plaintext = await aesDecrypt(
-    payload.iv,
-    payload.ciphertext,
-    payload.aad || "web",
-    rawDek
-  );
+  const plaintext = await aesDecrypt(payload.iv, payload.ciphertext, payload.aad || "web", rawDek);
 
-  // Decrypt attachments (if any)
   const outAttachments = [];
   const encAtts = Array.isArray(payload.attachments) ? payload.attachments : [];
   for (const a of encAtts) {
@@ -357,12 +317,12 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
 }
 
 /* =========================
-   Message router (popup / portal bridge)
+   Message router
 ========================= */
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
-      // Login from popup
       if (msg?.type === "QM_LOGIN") {
         const { serverBase, orgId, username, password } = msg;
         await loginAndStoreSession({ serverBase, orgId, username, password });
@@ -370,14 +330,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
-      // Encrypt selection from popup
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
         const out = await encryptSelectionOrgWide({ attachments: msg.attachments || [] });
         sendResponse({ ok: true, ...out });
         return;
       }
 
-      // Login + decrypt from portal decrypt page bridge
       if (msg?.type === "QM_LOGIN_AND_DECRYPT") {
         const { msgId, serverBase, orgId, username, password } = msg;
         const out = await loginAndDecrypt({ msgId, serverBase, orgId, username, password });
@@ -392,8 +350,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
 
-  return true; // async
+  return true;
 });
 
-// Keep installed hook (noop)
 chrome.runtime.onInstalled?.addListener(() => {});
