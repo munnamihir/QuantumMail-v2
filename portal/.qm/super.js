@@ -1,3 +1,4 @@
+// portal/super.js
 (() => {
   const $ = (id) => document.getElementById(id);
 
@@ -19,36 +20,43 @@
 
   const toastEl = $("toast");
 
-  // Prefer sessionStorage (your portal uses sessionStorage)
+  // Storage keys
   const SS_SUPER = "qm_super_token";
   const SS_TOKEN = "qm_token";
-  const LS_TOKEN = "qm_token";      // optional fallback
-  const LS_BASE = "qm_api_base";
-  const SS_BASE = "qm_api_base";
+  const SS_USER  = "qm_user";
+  const SS_ADMIN = "qm_admin_token";
+  const SS_BASE  = "qm_api_base";
+
+  const LS_TOKEN = "qm_token";
+  const LS_USER  = "qm_user";
+  const LS_SUPER = "qm_super_token";
+  const LS_ADMIN = "qm_admin_token";
+  const LS_BASE  = "qm_api_base";
 
   function toast(msg) {
+    if (!toastEl) return;
     toastEl.textContent = msg;
     toastEl.classList.add("show");
     setTimeout(() => toastEl.classList.remove("show"), 2200);
   }
 
   function getApiBase() {
-    const v = String(apiBaseEl.value || "").trim();
+    const v = String(apiBaseEl?.value || "").trim();
     return v ? v.replace(/\/+$/, "") : ""; // "" = same origin
   }
 
   function getToken() {
-    return String(tokenEl.value || "").trim();
+    return String(tokenEl?.value || "").trim();
   }
 
   function setLocked(msg) {
-    mainCard.style.display = "none";
-    whoEl.textContent = msg || "Access denied";
+    if (mainCard) mainCard.style.display = "none";
+    if (whoEl) whoEl.textContent = msg || "Access denied";
   }
 
   function setUnlocked(user) {
-    mainCard.style.display = "block";
-    whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
+    if (mainCard) mainCard.style.display = "block";
+    if (whoEl) whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
   }
 
   async function api(path, { method = "GET", body } = {}) {
@@ -56,7 +64,8 @@
     const url = base ? `${base}${path}` : path;
 
     const token = getToken();
-    const headers = { "Content-Type": "application/json" };
+    const headers = {};
+    if (body) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const res = await fetch(url, {
@@ -118,17 +127,17 @@
         <button class="btn btnBad rejectBtn" data-id="${esc(id)}">Reject</button>
 
         <div class="small mono setupOut" style="word-break:break-all;display:none"></div>
-        <button class="btn btnGhost copyBtn" style="display:none">Copy Setup Link</button>
+        <button class="btn btnGhost copyBtn" style="display:none" type="button">Copy Setup Link</button>
       </div>
     `;
   }
 
   async function loadList() {
-    listMsg.textContent = "";
-    tbody.innerHTML = `<tr><td colspan="4" class="small">Loading…</td></tr>`;
+    if (listMsg) listMsg.textContent = "";
+    if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="small">Loading…</td></tr>`;
 
     try {
-      const status = String(statusSel.value || "pending");
+      const status = String(statusSel?.value || "pending");
       const data = await api(`/super/org-requests?status=${encodeURIComponent(status)}`);
       const items = Array.isArray(data?.items) ? data.items : [];
 
@@ -179,7 +188,7 @@
       wireRowButtons();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="4" class="small">Failed: ${esc(e.message)}</td></tr>`;
-      listMsg.textContent = `Error: ${e.message}`;
+      if (listMsg) listMsg.textContent = `Error: ${e.message}`;
     }
   }
 
@@ -189,86 +198,83 @@
       const approveBtn = row.querySelector(".approveBtn");
       const rejectBtn = row.querySelector(".rejectBtn");
 
-      if (approveBtn) {
-        approveBtn.addEventListener("click", async () => {
-          const id = row.getAttribute("data-id");
-          const orgId = row.querySelector(".orgId")?.value?.trim();
-          const adminUsername = row.querySelector(".adminUsername")?.value?.trim();
+      approveBtn?.addEventListener("click", async () => {
+        const id = row.getAttribute("data-id");
+        const orgId = row.querySelector(".orgId")?.value?.trim();
+        const adminUsername = row.querySelector(".adminUsername")?.value?.trim();
 
-          if (!orgId || !adminUsername) {
-            toast("orgId + adminUsername required");
-            return;
+        if (!orgId || !adminUsername) {
+          toast("orgId + adminUsername required");
+          return;
+        }
+
+        approveBtn.disabled = true;
+        const prevText = approveBtn.textContent;
+        approveBtn.textContent = "Approving…";
+        try {
+          const out = await api(`/super/org-requests/${encodeURIComponent(id)}/approve`, {
+            method: "POST",
+            body: { orgId, adminUsername }
+          });
+
+          const setupLink = out?.setupLink || "";
+          const expiresAt = out?.expiresAt || "";
+
+          const outEl = row.querySelector(".setupOut");
+          const copyEl = row.querySelector(".copyBtn");
+
+          if (outEl) {
+            outEl.style.display = "block";
+            outEl.textContent = `Setup Link (expires ${expiresAt}):\n${setupLink}`;
           }
 
-          approveBtn.disabled = true;
-          approveBtn.textContent = "Approving…";
-          try {
-            const out = await api(`/super/org-requests/${encodeURIComponent(id)}/approve`, {
-              method: "POST",
-              body: { orgId, adminUsername }
-            });
-
-            const setupLink = out?.setupLink || "";
-            const expiresAt = out?.expiresAt || "";
-
-            const outEl = row.querySelector(".setupOut");
-            const copyEl = row.querySelector(".copyBtn");
-
-            if (outEl) {
-              outEl.style.display = "block";
-              outEl.textContent = `Setup Link (expires ${expiresAt}):\n${setupLink}`;
-            }
-
-            if (copyEl) {
-              copyEl.style.display = "inline-flex";
-              copyEl.onclick = async () => {
-                try {
-                  await navigator.clipboard.writeText(setupLink);
-                  toast("Copied setup link");
-                } catch {
-                  toast("Copy failed (browser blocked)");
-                }
-              };
-            }
-
-            // IMPORTANT: do NOT auto reload, otherwise output disappears
-            toast("Approved ✅ (copy setup link)");
-          } catch (e) {
-            toast(`Approve failed: ${e.message}`);
-          } finally {
-            approveBtn.disabled = false;
-            approveBtn.textContent = "Approve + Create Setup Link";
+          if (copyEl) {
+            copyEl.style.display = "inline-flex";
+            copyEl.onclick = async () => {
+              try {
+                await navigator.clipboard.writeText(setupLink);
+                toast("Copied setup link");
+              } catch {
+                toast("Copy failed (browser blocked)");
+              }
+            };
           }
-        });
-      }
 
-      if (rejectBtn) {
-        rejectBtn.addEventListener("click", async () => {
-          const id = row.getAttribute("data-id");
-          const reason = row.querySelector(".rejectReason")?.value?.trim() || "";
+          toast("Approved ✅ (copy setup link)");
+        } catch (e) {
+          toast(`Approve failed: ${e.message}`);
+        } finally {
+          approveBtn.disabled = false;
+          approveBtn.textContent = prevText || "Approve + Create Setup Link";
+        }
+      });
 
-          rejectBtn.disabled = true;
-          rejectBtn.textContent = "Rejecting…";
-          try {
-            await api(`/super/org-requests/${encodeURIComponent(id)}/reject`, {
-              method: "POST",
-              body: { reason }
-            });
-            toast("Rejected");
-            await loadList(); // fine to reload on reject
-          } catch (e) {
-            toast(`Reject failed: ${e.message}`);
-          } finally {
-            rejectBtn.disabled = false;
-            rejectBtn.textContent = "Reject";
-          }
-        });
-      }
+      rejectBtn?.addEventListener("click", async () => {
+        const id = row.getAttribute("data-id");
+        const reason = row.querySelector(".rejectReason")?.value?.trim() || "";
+
+        rejectBtn.disabled = true;
+        const prevText = rejectBtn.textContent;
+        rejectBtn.textContent = "Rejecting…";
+        try {
+          await api(`/super/org-requests/${encodeURIComponent(id)}/reject`, {
+            method: "POST",
+            body: { reason }
+          });
+          toast("Rejected");
+          await loadList();
+        } catch (e) {
+          toast(`Reject failed: ${e.message}`);
+        } finally {
+          rejectBtn.disabled = false;
+          rejectBtn.textContent = prevText || "Reject";
+        }
+      });
     });
   }
 
   async function checkAccess() {
-    guardMsg.textContent = "";
+    if (guardMsg) guardMsg.textContent = "";
     try {
       const me = await api("/auth/me");
       const user = me?.user;
@@ -276,7 +282,7 @@
 
       if (user.role !== "SuperAdmin") {
         setLocked("Not SuperAdmin");
-        guardMsg.textContent = "Blocked: role is not SuperAdmin.";
+        if (guardMsg) guardMsg.textContent = "Blocked: role is not SuperAdmin.";
         return false;
       }
 
@@ -285,15 +291,38 @@
       return true;
     } catch (e) {
       setLocked("Checking access failed");
-      guardMsg.textContent = `Access check failed: ${e.message}`;
+      if (guardMsg) guardMsg.textContent = `Access check failed: ${e.message}`;
       return false;
     }
   }
 
+  function hardLogoutAndRedirect() {
+    // Clear session storage
+    sessionStorage.removeItem(SS_SUPER);
+    sessionStorage.removeItem(SS_TOKEN);
+    sessionStorage.removeItem(SS_USER);
+    sessionStorage.removeItem(SS_ADMIN);
+    sessionStorage.removeItem(SS_BASE);
+
+    // Clear local storage (because you sometimes store there now)
+    localStorage.removeItem(LS_SUPER);
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_USER);
+    localStorage.removeItem(LS_ADMIN);
+    localStorage.removeItem(LS_BASE);
+
+    // Optional: wipe any visible token field
+    if (tokenEl) tokenEl.value = "";
+    if (apiBaseEl) apiBaseEl.value = "";
+
+    // Redirect to login page
+    window.location.href = "/portal/index.html";
+  }
+
   // buttons
-  saveTokenBtn.addEventListener("click", () => {
+  saveTokenBtn?.addEventListener("click", () => {
     const t = getToken();
-    const b = String(apiBaseEl.value || "").trim();
+    const b = String(apiBaseEl?.value || "").trim();
 
     // save to session (primary)
     if (t) {
@@ -304,15 +333,17 @@
 
     // optional persistence
     localStorage.setItem(LS_TOKEN, t || "");
+    localStorage.setItem(LS_SUPER, t || "");
     localStorage.setItem(LS_BASE, b);
 
     toast("Saved token");
   });
 
-  loadTokenBtn.addEventListener("click", () => {
+  loadTokenBtn?.addEventListener("click", () => {
     const t =
       sessionStorage.getItem(SS_SUPER) ||
       sessionStorage.getItem(SS_TOKEN) ||
+      localStorage.getItem(LS_SUPER) ||
       localStorage.getItem(LS_TOKEN) ||
       "";
 
@@ -321,37 +352,28 @@
       localStorage.getItem(LS_BASE) ||
       "";
 
-    tokenEl.value = t;
-    apiBaseEl.value = b;
+    if (tokenEl) tokenEl.value = t;
+    if (apiBaseEl) apiBaseEl.value = b;
     toast("Loaded saved token");
   });
 
-  refreshMeBtn.addEventListener("click", () => checkAccess());
-  reloadBtn.addEventListener("click", () => loadList());
-  statusSel.addEventListener("change", () => loadList());
+  refreshMeBtn?.addEventListener("click", () => checkAccess());
+  reloadBtn?.addEventListener("click", () => loadList());
+  statusSel?.addEventListener("change", () => loadList());
 
-  logoutBtn.addEventListener("click", () => {
-    // clear session
-    sessionStorage.removeItem(SS_SUPER);
-    sessionStorage.removeItem(SS_TOKEN);
-    sessionStorage.removeItem(SS_BASE);
-
-    // clear local
-    localStorage.removeItem(LS_TOKEN);
-    localStorage.removeItem(LS_BASE);
-
-    tokenEl.value = "";
-    toast("Logged out (token cleared)");
-    setLocked("Logged out");
-    mainCard.style.display = "none";
+  // ✅ FIXED LOGOUT: clear tokens AND redirect to index.html
+  logoutBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    toast("Logging out…");
+    hardLogoutAndRedirect();
   });
 
   // init
   (function init() {
-    // auto-load token from sessionStorage first
     const t =
       sessionStorage.getItem(SS_SUPER) ||
       sessionStorage.getItem(SS_TOKEN) ||
+      localStorage.getItem(LS_SUPER) ||
       localStorage.getItem(LS_TOKEN) ||
       "";
 
@@ -360,8 +382,8 @@
       localStorage.getItem(LS_BASE) ||
       "";
 
-    tokenEl.value = t;
-    apiBaseEl.value = b;
+    if (tokenEl) tokenEl.value = t;
+    if (apiBaseEl) apiBaseEl.value = b;
 
     checkAccess();
   })();
