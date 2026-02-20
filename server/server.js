@@ -176,7 +176,36 @@ async function requireAuth(req, res, next) {
     req.qm = { tokenPayload: payload, org, user };
     next();
   } catch {
-    return res.status(500).json({ error: "Auth middleware error" });
+    async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body) headers["Content-Type"] = "application/json";
+
+  const url = `${serverBase}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  // Read raw once (works even if server returns HTML/text on error)
+  const ct = res.headers.get("content-type") || "";
+  const raw = await res.text();
+
+  let data = {};
+  try {
+    data = ct.includes("application/json") ? JSON.parse(raw || "{}") : { raw };
+  } catch {
+    data = { raw };
+  }
+
+  if (!res.ok) {
+    console.error("API ERROR:", { url, status: res.status, data, raw });
+    throw new Error(data?.error || data?.message || `HTTP ${res.status}: ${String(raw).slice(0, 200)}`);
+  }
+
+  return data;
+}
   }
 }
 
