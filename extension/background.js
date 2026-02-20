@@ -26,23 +26,31 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`${serverBase}${path}`, {
+  const url = `${serverBase}${path}`;
+  const res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  // Read raw once (works even if server returns HTML/text on error)
+  const ct = res.headers.get("content-type") || "";
+  const raw = await res.text();
+
+  let data = {};
+  try {
+    data = ct.includes("application/json") ? JSON.parse(raw || "{}") : { raw };
+  } catch {
+    data = { raw };
+  }
+
+  if (!res.ok) {
+    console.error("API ERROR:", { url, status: res.status, data, raw });
+    throw new Error(data?.error || data?.message || `HTTP ${res.status}: ${String(raw).slice(0, 200)}`);
+  }
+
   return data;
 }
-
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error("No active tab");
-  return tab; 
-}
-
 
 async function sendToTab(tabId, msg) {
   return new Promise((resolve, reject) => {
