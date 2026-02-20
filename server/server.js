@@ -6,6 +6,8 @@ import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
 import nodemailer from "nodemailer";
+import { sendMail } from "./mailer.js";
+import { approvalEmail, rejectionEmail } from "./emailTemplates.js";
 
 import { pool } from "./db.js"; // Neon/PG pool
 import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
@@ -1246,12 +1248,115 @@ app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
   });
 });
 
+async function sendApprovalEmail({ req, requestRow, orgId, adminUsername, rawToken, expiresAtIso }) {
+  const base = getPublicBase(req);
+  const setupLink =
+    `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
+
+  const { subject, text, html } = approvalEmail({
+    orgName: requestRow.org_name,
+    orgId,
+    adminUsername,
+    setupLink,
+    expiresAt: expiresAtIso
+  });
+
+  await sendMail({
+    to: requestRow.requester_email,
+    subject,
+    text,
+    html
+  });
+
+  return { setupLink };
+}
+
+
 /* =========================================================
    SUPERADMIN: queue list / approve / reject (NEW: auto-email)
 ========================================================= */
 function makeSetupToken() {
   return crypto.randomBytes(32).toString("base64url"); // url-safe
 }
+
+// POST /super/org-requests/:id/resend-approval-email
+app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSuperAdmin, async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+
+  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
+
+  const reqRow = r1.rows[0];
+  if (reqRow.status !== "approved") {
+    return res.status(409).json({ error: "Request must be approved to resend approval email" });
+  }
+  if (!reqRow.approved_org_id || !reqRow.approved_admin_user_id) {
+    return res.status(500).json({ error: "Approved request missing org/admin mapping" });
+  }
+
+  const orgId = reqRow.approved_org_id;
+  const adminUserId = reqRow.approved_admin_user_id;
+
+  // Find the admin username from org store
+  const org = await getOrg(orgId);
+  const admin = (org.users || []).find(u => u.userId === adminUserId);
+  const adminUsername = admin?.username || "admin";
+
+  // Try reuse latest unused token, else mint a new one
+  let rawToken = null;
+  let expiresAt = null;
+
+  const tok = await pool.query(
+    `select * from qm_setup_tokens
+      where org_id=$1 and user_id=$2 and purpose='initial_admin_setup'
+      order by created_at desc
+      limit 1`,
+    [orgId, adminUserId]
+  );
+
+  const latest = tok.rows[0] || null;
+
+  const latestExpired = latest ? (Date.parse(latest.expires_at) < Date.now()) : true;
+  const latestUsed = latest ? !!latest.used_at : false;
+
+  if (!latest || latestUsed || latestExpired) {
+    rawToken = makeSetupToken();
+    const tokenHash = sha256Hex(rawToken);
+    const tokenId = nanoid(12);
+    expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
+       values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
+      [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
+    );
+  } else {
+    // Cannot recover raw token from hash, so we MUST mint a fresh token if we want to include it in email.
+    // So: always mint a new one for resend to ensure link works.
+    rawToken = makeSetupToken();
+    const tokenHash = sha256Hex(rawToken);
+    const tokenId = nanoid(12);
+    expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
+       values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
+      [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
+    );
+  }
+
+  // Send email
+  const { setupLink } = await sendApprovalEmail({
+    req,
+    requestRow: reqRow,
+    orgId,
+    adminUsername,
+    rawToken,
+    expiresAtIso: expiresAt.toISOString()
+  });
+
+  res.json({ ok: true, requestId, orgId, adminUsername, setupLink, expiresAt: expiresAt.toISOString() });
+});
 
 app.get("/super/org-requests", requireAuth, requireSuperAdmin, async (req, res) => {
   const status = String(req.query.status || "pending").trim().toLowerCase();
