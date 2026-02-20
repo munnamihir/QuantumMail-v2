@@ -784,6 +784,11 @@ app.post("/auth/login", async (req, res) => {
   if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
 
   const org = await getOrg(orgId);
+  if (!org || !Array.isArray(org.users)) {
+      try { await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" }); } catch {}
+      return res.status(401).json({ error: "Invalid creds" });
+    }
+   
   const user = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
   if (!user) {
     await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
