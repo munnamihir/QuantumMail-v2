@@ -171,6 +171,22 @@
       color: #ffb3c0;
     }
   </style>
+
+  <script type="module">
+  import { requireAuth, logout } from "./guard.js";
+
+  (async () => {
+    const user = await requireAuth({ role: "Admin" }); 
+    if (!user) return;
+
+    const who = document.getElementById("who");
+    if (who) who.textContent = `${user.username} (${user.role})`;
+
+    const btn = document.getElementById("btnLogout");
+    if (btn) btn.addEventListener("click", logout);
+  })();
+</script>
+  
 </head>
 
 <body>
@@ -245,40 +261,7 @@
         <div id="seedErr" class="err"></div>
       </div>
 
-      <!-- Login -->
-      <div class="card">
-        <h3>2) Login</h3>
-        <div class="muted">Logs in via <code>/auth/login</code>. Token is kept in <b>sessionStorage</b> so all admin pages reuse it.</div>
-
-        <div class="row">
-          <div>
-            <label for="orgId">Org Id</label>
-            <input id="orgId" placeholder="org_demo" value="org_demo" />
-          </div>
-          <div>
-            <label for="username">Username</label>
-            <input id="username" placeholder="admin" />
-          </div>
-          <div>
-            <label for="password">Password</label>
-            <input id="password" type="password" placeholder="••••••••" />
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <div style="flex:0 0 auto;">
-            <button id="btnLogin" class="primary">Login</button>
-          </div>
-          <div style="flex:0 0 auto;">
-            <button id="btnLogout" class="secondary">Logout</button>
-          </div>
-          <div class="kbadge"><span class="dot"></span> Token in sessionStorage</div>
-        </div>
-
-        <div id="authOk" class="ok"></div>
-        <div id="authErr" class="err"></div>
-      </div>
-
+      
       <!-- Users -->
       <div class="card span2">
         <h3>3) Users & Key Health</h3>
