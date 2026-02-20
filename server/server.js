@@ -778,62 +778,95 @@ app.post("/public/org-requests", async (req, res) => {
    AUTH: login / me / change-password / setup-admin
 ========================================================= */
 app.post("/auth/login", async (req, res) => {
-  const orgId = String(req.body?.orgId || "").trim();
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
-  if (!orgId || !username || !password) return res.status(400).json({ error: "orgId, username, password required" });
+  try {
+    const orgId = String(req.body?.orgId || "").trim();
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
 
-  const org = await getOrg(orgId);
-  if (!org || !Array.isArray(org.users)) {
+    if (!orgId || !username || !password) {
+      return res.status(400).json({ error: "orgId, username, password required" });
+    }
+
+    let org;
+    try {
+      org = await getOrg(orgId);
+    } catch (e) {
+      // getOrg can throw (DB/network/json parse)
+      console.error("LOGIN getOrg failed:", { orgId, err: e?.message || e });
+      return res.status(503).json({ error: "Org store unavailable. Try again." });
+    }
+
+    if (!org || !Array.isArray(org.users)) {
       try { await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" }); } catch {}
       return res.status(401).json({ error: "Invalid creds" });
     }
-   
-  const user = (org.users || []).find((u) => u.username.toLowerCase() === username.toLowerCase());
-  if (!user) {
-    await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
-    return res.status(401).json({ error: "Invalid creds" });
-  }
 
-  if (String(user.status || "Active") === "PendingSetup") {
-    return res.status(403).json({ error: "Account pending setup. Use setup link." });
-  }
+    const unameLower = username.toLowerCase();
+    const user = (org.users || []).find((u) => String(u.username || "").toLowerCase() === unameLower);
 
-  const ph = sha256(password);
-  if (!user.passwordHash || !timingSafeEq(ph, user.passwordHash)) {
-    await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" });
-    return res.status(401).json({ error: "Invalid creds" });
-  }
+    if (!user) {
+      try { await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" }); } catch {}
+      return res.status(401).json({ error: "Invalid creds" });
+    }
 
-  user.lastLoginAt = nowIso();
+    if (String(user.status || "Active") === "PendingSetup") {
+      return res.status(403).json({ error: "Account pending setup. Use setup link." });
+    }
 
-  const payload = {
-    userId: user.userId,
-    orgId,
-    role: user.role,
-    username: user.username,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60,
-  };
+    let okPassword = false;
+    try {
+      const ph = sha256(password);
+      okPassword = !!user.passwordHash && timingSafeEq(ph, user.passwordHash);
+    } catch (e) {
+      console.error("LOGIN password verify failed:", { orgId, username, err: e?.message || e });
+      return res.status(500).json({ error: "Password verification failed" });
+    }
 
-  const token = signToken(payload);
+    if (!okPassword) {
+      try { await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" }); } catch {}
+      return res.status(401).json({ error: "Invalid creds" });
+    }
 
-  await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role });
-  await saveOrg(orgId, org);
+    user.lastLoginAt = nowIso();
 
-  res.json({
-    token,
-    user: {
+    const payload = {
       userId: user.userId,
       orgId,
-      username: user.username,
       role: user.role,
-      status: user.status || "Active",
-      hasPublicKey: !!user.publicKeySpkiB64,
-      lastLoginAt: user.lastLoginAt,
-      publicKeyRegisteredAt: user.publicKeyRegisteredAt,
-    },
-  });
+      username: user.username,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60
+    };
+
+    const token = signToken(payload);
+
+    try { await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role }); } catch {}
+
+    try {
+      await saveOrg(orgId, org);
+    } catch (e) {
+      console.error("LOGIN saveOrg failed:", { orgId, username, err: e?.message || e });
+      return res.status(503).json({ error: "Could not persist login state. Try again." });
+    }
+
+    return res.json({
+      token,
+      user: {
+        userId: user.userId,
+        orgId,
+        username: user.username,
+        role: user.role,
+        status: user.status || "Active",
+        hasPublicKey: !!user.publicKeySpkiB64,
+        lastLoginAt: user.lastLoginAt,
+        publicKeyRegisteredAt: user.publicKeyRegisteredAt
+      }
+    });
+  } catch (e) {
+    // ✅ Never HTML. Always JSON.
+    console.error("LOGIN handler crashed:", e);
+    return res.status(500).json({ error: "Internal Server Error", detail: String(e?.message || e) });
+  }
 });
 
 app.get("/auth/me", requireAuth, (req, res) => {
