@@ -1,37 +1,44 @@
+// portal/alerts.js
 const $ = (id) => document.getElementById(id);
-let token = "";
+
+function getToken() { return localStorage.getItem("qm_token") || ""; }
+function getUser() {
+  try { return JSON.parse(localStorage.getItem("qm_user") || "null"); }
+  catch { return null; }
+}
+function requireAdminOrBounce() {
+  const t = getToken();
+  const u = getUser();
+  const ok = Boolean(t && u && (u.role === "Admin" || u.role === "SuperAdmin"));
+  if (!ok) window.location.href = "/portal/index.html";
+  return ok;
+}
 
 async function api(path) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const token = getToken();
+  const headers = { Authorization: `Bearer ${token}` };
+
   const res = await fetch(path, { headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
 
-function readTokenFromMemoryHint() {
-  // Admin pages keep token in memory only.
-  // Easiest: login on /portal/admin.html in same tab session,
-  // then navigate here; token is NOT shared automatically.
-  // So we ask user to re-login here if you want, but to keep it simple:
-  // We'll store token in sessionStorage for admin pages only.
-  token = sessionStorage.getItem("qm_admin_token") || "";
-}
-
-function setErr(msg) { $("err").textContent = msg || ""; }
-function setOut(msg) { $("out").textContent = msg || ""; }
+function setErr(msg) { const e = $("err"); if (e) e.textContent = msg || ""; }
+function setOut(msg) { const o = $("out"); if (o) o.textContent = msg || ""; }
 
 async function refresh() {
   setErr(""); setOut("Loading…");
-  const minutes = Math.max(5, parseInt($("minutes").value || "60", 10) || 60);
+  requireAdminOrBounce();
 
-  if (!token) throw new Error("No admin token. Login on Admin page first.");
-
+  const minutes = Math.max(5, parseInt($("minutes")?.value || "60", 10) || 60);
   const out = await api(`/admin/alerts?minutes=${encodeURIComponent(minutes)}`);
-  setOut(`Denied decrypts: ${out.summary.denied} • Failed logins: ${out.summary.failedLogins}`);
+
+  setOut(`Denied decrypts: ${out.summary?.denied ?? 0} • Failed logins: ${out.summary?.failedLogins ?? 0}`);
 
   const list = $("list");
+  if (!list) return;
+
   list.innerHTML = "";
 
   const alerts = Array.isArray(out.alerts) ? out.alerts : [];
@@ -48,7 +55,5 @@ async function refresh() {
   }
 }
 
-$("btnRefresh").addEventListener("click", () => refresh().catch(e => setErr(e.message)));
-
-readTokenFromMemoryHint();
+$("btnRefresh")?.addEventListener("click", () => refresh().catch(e => setErr(e.message)));
 refresh().catch(e => setErr(e.message));
