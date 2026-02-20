@@ -1,28 +1,37 @@
+// portal/analytics.js
 const $ = (id) => document.getElementById(id);
 
-let token = sessionStorage.getItem("qm_admin_token") || "";
 let coreChart = null;
 let attChart = null;
 
+function getToken() { return localStorage.getItem("qm_token") || ""; }
+function getUser() {
+  try { return JSON.parse(localStorage.getItem("qm_user") || "null"); }
+  catch { return null; }
+}
+function requireAdminOrBounce() {
+  const t = getToken();
+  const u = getUser();
+  const ok = Boolean(t && u && (u.role === "Admin" || u.role === "SuperAdmin"));
+  if (!ok) window.location.href = "/portal/index.html";
+  return ok;
+}
+
 async function api(path) {
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const token = getToken();
+  const headers = { Authorization: `Bearer ${token}` };
   const res = await fetch(path, { headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
 
-function setErr(msg) { $("err").textContent = msg || ""; }
+function setErr(msg) { const e = $("err"); if (e) e.textContent = msg || ""; }
 function escapeHtml(s) {
   return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
-
 function setText(id, v) {
   const el = $(id);
   if (el) el.textContent = String(v ?? "—");
@@ -35,7 +44,6 @@ function setKpis(out) {
   setText("kDenied", c.deniedDecrypts);
   setText("kFailed", c.failedLogins);
 
-  // enterprise KPIs
   const seats = out.seats || {};
   setText("kActiveSeats", `${seats.activeUsers ?? 0} / ${seats.totalUsers ?? 0}`);
   setText("kWAU", `${seats.activeUsers7d ?? 0}`);
@@ -45,10 +53,13 @@ function setKpis(out) {
 
 function renderTopUsers(list) {
   const tbody = $("tbodyUsers");
+  if (!tbody) return;
+
   if (!Array.isArray(list) || !list.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="muted">No data.</td></tr>`;
     return;
   }
+
   tbody.innerHTML = list.map(u => `
     <tr>
       <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
@@ -71,26 +82,32 @@ function renderKeyHealth(out) {
   setText("staleKeyDaysLabel", staleDays);
 
   const tbMissing = $("tbodyMissingKeys");
-  if (!missing.length) tbMissing.innerHTML = `<tr><td colspan="4" class="muted">None ✅</td></tr>`;
-  else tbMissing.innerHTML = missing.map(u => `
-    <tr>
-      <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
-      <td>${escapeHtml(u.role || "Member")}</td>
-      <td class="muted">${escapeHtml(u.lastLoginAt || "—")}</td>
-      <td><span class="muted">Register key on next login</span></td>
-    </tr>
-  `).join("");
+  if (tbMissing) {
+    tbMissing.innerHTML = !missing.length
+      ? `<tr><td colspan="4" class="muted">None ✅</td></tr>`
+      : missing.map(u => `
+          <tr>
+            <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
+            <td>${escapeHtml(u.role || "Member")}</td>
+            <td class="muted">${escapeHtml(u.lastLoginAt || "—")}</td>
+            <td><span class="muted">Register key on next login</span></td>
+          </tr>
+        `).join("");
+  }
 
   const tbStale = $("tbodyStaleKeys");
-  if (!stale.length) tbStale.innerHTML = `<tr><td colspan="4" class="muted">None ✅</td></tr>`;
-  else tbStale.innerHTML = stale.map(u => `
-    <tr>
-      <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
-      <td>${escapeHtml(u.role || "Member")}</td>
-      <td class="muted">${escapeHtml(u.publicKeyRegisteredAt || "—")}</td>
-      <td><b>${escapeHtml(u.keyAgeDays ?? "—")}</b></td>
-    </tr>
-  `).join("");
+  if (tbStale) {
+    tbStale.innerHTML = !stale.length
+      ? `<tr><td colspan="4" class="muted">None ✅</td></tr>`
+      : stale.map(u => `
+          <tr>
+            <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
+            <td>${escapeHtml(u.role || "Member")}</td>
+            <td class="muted">${escapeHtml(u.publicKeyRegisteredAt || "—")}</td>
+            <td><b>${escapeHtml(u.keyAgeDays ?? "—")}</b></td>
+          </tr>
+        `).join("");
+  }
 }
 
 function renderInvites(out) {
@@ -102,6 +119,8 @@ function renderInvites(out) {
 
 function drawCore(series) {
   const ctx = $("chartCore");
+  if (!ctx) return;
+
   const labels = series.map(x => x.day);
   const data = {
     labels,
@@ -109,7 +128,7 @@ function drawCore(series) {
       { label: "Encrypted", data: series.map(x => x.encrypted || 0) },
       { label: "Decrypts", data: series.map(x => x.decrypts || 0) },
       { label: "Denied", data: series.map(x => x.denied || 0) },
-      { label: "Failed Logins", data: series.map(x => x.failedLogins || 0) }
+      { label: "Failed Logins", data: series.map(x => x.failedLogins || 0) },
     ]
   };
 
@@ -119,13 +138,12 @@ function drawCore(series) {
 
 function drawAttachment(series) {
   const ctx = $("chartAtt");
+  if (!ctx) return;
+
   const labels = series.map(x => x.day);
   const vals = series.map(x => x.attachmentsBytes || 0);
 
-  const data = {
-    labels,
-    datasets: [{ label: "Attachment Bytes", data: vals }]
-  };
+  const data = { labels, datasets: [{ label: "Attachment Bytes", data: vals }] };
 
   if (attChart) attChart.destroy();
   attChart = new Chart(ctx, { type: "line", data });
@@ -133,10 +151,10 @@ function drawAttachment(series) {
 
 async function refresh() {
   setErr("");
-  if (!token) throw new Error("No admin token. Login on Admin page first.");
+  requireAdminOrBounce();
 
-  const days = Math.min(365, Math.max(1, parseInt($("days").value || "30", 10) || 30));
-  const staleKeyDays = Math.min(3650, Math.max(7, parseInt(($("staleKeyDays")?.value || "90"), 10) || 90));
+  const days = Math.min(365, Math.max(1, parseInt($("days")?.value || "30", 10) || 30));
+  const staleKeyDays = Math.min(3650, Math.max(7, parseInt($("staleKeyDays")?.value || "90", 10) || 90));
 
   const out = await api(`/admin/analytics?days=${encodeURIComponent(days)}&staleKeyDays=${encodeURIComponent(staleKeyDays)}`);
 
@@ -150,5 +168,5 @@ async function refresh() {
   drawAttachment(series);
 }
 
-$("btnRefresh").addEventListener("click", () => refresh().catch(e => setErr(e.message)));
+$("btnRefresh")?.addEventListener("click", () => refresh().catch(e => setErr(e.message)));
 refresh().catch(e => setErr(e.message));
