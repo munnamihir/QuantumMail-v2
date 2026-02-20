@@ -171,11 +171,13 @@ async function login() {
 
   const out = await api("/auth/login", { method: "POST", body: { orgId, username, password } });
 
-  sessionStorage.setItem("qm_token", out.token);
-  sessionStorage.setItem("qm_user", JSON.stringify(out.user));
+  localStorage.setItem("qm_token", out.token);
+  localStorage.setItem("qm_user", JSON.stringify(out.user));
 
-  if (out.user?.role === "Admin") sessionStorage.setItem("qm_admin_token", out.token);
-  if (out.user?.role === "SuperAdmin") sessionStorage.setItem("qm_super_token", out.token);
+  // optional role flags if you want, but not required:
+  localStorage.setItem("qm_role", out.user?.role || "");
+  localStorage.setItem("qm_orgId", out.user?.orgId || orgId);
+  localStorage.setItem("qm_username", out.user?.username || username);
 
   ok("liOk", "Logged in ✅ Redirecting…");
 
