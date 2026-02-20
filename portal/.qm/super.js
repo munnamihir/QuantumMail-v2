@@ -1,4 +1,4 @@
-// portal/super.js
+// portal/.qm/super.js
 (() => {
   const $ = (id) => document.getElementById(id);
 
@@ -105,6 +105,22 @@
       .replaceAll("'", "&#039;");
   }
 
+  // NEW: display email status + allow resend when approved/rejected
+  function renderEmailStatus(r) {
+    const sent = !!r.email_sent_at;
+    const last = r.email_sent_at ? `Last: ${esc(r.email_sent_at)}` : "Not sent yet";
+    const badge = sent
+      ? `<span class="tag tagGood">email sent</span>`
+      : `<span class="tag tagWarn">email pending</span>`;
+
+    return `
+      <div style="margin-top:8px">
+        ${badge}
+        <div class="small" style="margin-top:6px">${last}</div>
+      </div>
+    `;
+  }
+
   function renderPendingActions(id) {
     return `
       <div style="display:grid;gap:8px">
@@ -116,7 +132,9 @@
           <label>Approve: first admin username</label>
           <input class="adminUsername" placeholder="ex: admin" />
         </div>
-        <button class="btn btnGood approveBtn" data-id="${esc(id)}">Approve + Create Setup Link</button>
+        <button class="btn btnGood approveBtn" data-id="${esc(id)}" type="button">
+          Approve + Email Setup Link
+        </button>
 
         <div class="hr"></div>
 
@@ -124,10 +142,32 @@
           <label>Reject reason</label>
           <input class="rejectReason" placeholder="ex: Need business email verification" />
         </div>
-        <button class="btn btnBad rejectBtn" data-id="${esc(id)}">Reject</button>
+        <button class="btn btnBad rejectBtn" data-id="${esc(id)}" type="button">
+          Reject + Email Reason
+        </button>
 
         <div class="small mono setupOut" style="word-break:break-all;display:none"></div>
         <button class="btn btnGhost copyBtn" style="display:none" type="button">Copy Setup Link</button>
+      </div>
+    `;
+  }
+
+  function renderNonPendingActions(r) {
+    const id = esc(r.id);
+    const st = String(r.status || "").toLowerCase();
+    if (st !== "approved" && st !== "rejected") return `<div class="small">No actions.</div>`;
+
+    // Backend should implement:
+    // POST /super/org-requests/:id/resend-approval-email
+    // POST /super/org-requests/:id/resend-reject-email
+    const resendPath = st === "approved"
+      ? `/super/org-requests/${encodeURIComponent(id)}/resend-approval-email`
+      : `/super/org-requests/${encodeURIComponent(id)}/resend-reject-email`;
+
+    return `
+      <div style="display:grid;gap:8px">
+        <button class="btn resendBtn" data-path="${esc(resendPath)}" type="button">Resend Email</button>
+        <div class="small muted">Resends the ${esc(st)} email to requester.</div>
       </div>
     `;
   }
@@ -177,9 +217,14 @@
               ${st === "approved" && approvedOrgId ? `<div class="small" style="margin-top:8px">OrgId: <span class="mono">${approvedOrgId}</span></div>` : ""}
               ${st === "approved" && approvedAdminUserId ? `<div class="small">AdminUserId: <span class="mono">${approvedAdminUserId}</span></div>` : ""}
               ${reviewedAt ? `<div class="small">Reviewed: ${reviewedAt}</div>` : ""}
+
+              ${renderEmailStatus(r)}
             </td>
             <td>
-              ${st === "pending" ? renderPendingActions(id) : `<div class="small">No actions for ${esc(st)}.</div>`}
+              ${String(st).toLowerCase() === "pending"
+                ? renderPendingActions(id)
+                : renderNonPendingActions(r)
+              }
             </td>
           </tr>
         `;
@@ -197,6 +242,7 @@
     rows.forEach((row) => {
       const approveBtn = row.querySelector(".approveBtn");
       const rejectBtn = row.querySelector(".rejectBtn");
+      const resendBtn = row.querySelector(".resendBtn");
 
       approveBtn?.addEventListener("click", async () => {
         const id = row.getAttribute("data-id");
@@ -212,6 +258,11 @@
         const prevText = approveBtn.textContent;
         approveBtn.textContent = "Approving…";
         try {
+          // Backend should now:
+          // - approve
+          // - generate setupLink
+          // - email requester automatically
+          // - return { setupLink, expiresAt, emailSent:true }
           const out = await api(`/super/org-requests/${encodeURIComponent(id)}/approve`, {
             method: "POST",
             body: { orgId, adminUsername }
@@ -219,16 +270,17 @@
 
           const setupLink = out?.setupLink || "";
           const expiresAt = out?.expiresAt || "";
+          const emailSent = out?.emailSent !== false; // default true if not provided
 
+          // still show setup link (optional)
           const outEl = row.querySelector(".setupOut");
           const copyEl = row.querySelector(".copyBtn");
 
-          if (outEl) {
+          if (setupLink && outEl) {
             outEl.style.display = "block";
             outEl.textContent = `Setup Link (expires ${expiresAt}):\n${setupLink}`;
           }
-
-          if (copyEl) {
+          if (setupLink && copyEl) {
             copyEl.style.display = "inline-flex";
             copyEl.onclick = async () => {
               try {
@@ -240,12 +292,14 @@
             };
           }
 
-          toast("Approved ✅ (copy setup link)");
+          toast(emailSent ? "Approved ✅ Email sent" : "Approved ✅ (email NOT sent)");
+          // Reload to show approved status + email timestamp if your API returns it
+          await loadList();
         } catch (e) {
           toast(`Approve failed: ${e.message}`);
         } finally {
           approveBtn.disabled = false;
-          approveBtn.textContent = prevText || "Approve + Create Setup Link";
+          approveBtn.textContent = prevText || "Approve + Email Setup Link";
         }
       });
 
@@ -257,17 +311,40 @@
         const prevText = rejectBtn.textContent;
         rejectBtn.textContent = "Rejecting…";
         try {
-          await api(`/super/org-requests/${encodeURIComponent(id)}/reject`, {
+          // Backend should:
+          // - save reject reason
+          // - email requester automatically
+          // - return { emailSent:true }
+          const out = await api(`/super/org-requests/${encodeURIComponent(id)}/reject`, {
             method: "POST",
             body: { reason }
           });
-          toast("Rejected");
+
+          toast(out?.emailSent === false ? "Rejected (email NOT sent)" : "Rejected ✅ Email sent");
           await loadList();
         } catch (e) {
           toast(`Reject failed: ${e.message}`);
         } finally {
           rejectBtn.disabled = false;
-          rejectBtn.textContent = prevText || "Reject";
+          rejectBtn.textContent = prevText || "Reject + Email Reason";
+        }
+      });
+
+      resendBtn?.addEventListener("click", async () => {
+        const path = resendBtn.getAttribute("data-path");
+        if (!path) return;
+        resendBtn.disabled = true;
+        const prev = resendBtn.textContent;
+        resendBtn.textContent = "Sending…";
+        try {
+          await api(path, { method: "POST" });
+          toast("Resent ✅");
+          await loadList();
+        } catch (e) {
+          toast(`Resend failed: ${e.message}`);
+        } finally {
+          resendBtn.disabled = false;
+          resendBtn.textContent = prev || "Resend Email";
         }
       });
     });
@@ -297,41 +374,34 @@
   }
 
   function hardLogoutAndRedirect() {
-    // Clear session storage
     sessionStorage.removeItem(SS_SUPER);
     sessionStorage.removeItem(SS_TOKEN);
     sessionStorage.removeItem(SS_USER);
     sessionStorage.removeItem(SS_ADMIN);
     sessionStorage.removeItem(SS_BASE);
 
-    // Clear local storage (because you sometimes store there now)
     localStorage.removeItem(LS_SUPER);
     localStorage.removeItem(LS_TOKEN);
     localStorage.removeItem(LS_USER);
     localStorage.removeItem(LS_ADMIN);
     localStorage.removeItem(LS_BASE);
 
-    // Optional: wipe any visible token field
     if (tokenEl) tokenEl.value = "";
     if (apiBaseEl) apiBaseEl.value = "";
 
-    // Redirect to login page
     window.location.href = "/portal/index.html";
   }
 
-  // buttons
   saveTokenBtn?.addEventListener("click", () => {
     const t = getToken();
     const b = String(apiBaseEl?.value || "").trim();
 
-    // save to session (primary)
     if (t) {
       sessionStorage.setItem(SS_SUPER, t);
-      sessionStorage.setItem(SS_TOKEN, t); // optional: keep qm_token aligned
+      sessionStorage.setItem(SS_TOKEN, t);
     }
     sessionStorage.setItem(SS_BASE, b);
 
-    // optional persistence
     localStorage.setItem(LS_TOKEN, t || "");
     localStorage.setItem(LS_SUPER, t || "");
     localStorage.setItem(LS_BASE, b);
@@ -361,14 +431,12 @@
   reloadBtn?.addEventListener("click", () => loadList());
   statusSel?.addEventListener("change", () => loadList());
 
-  // ✅ FIXED LOGOUT: clear tokens AND redirect to index.html
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     toast("Logging out…");
     hardLogoutAndRedirect();
   });
 
-  // init
   (function init() {
     const t =
       sessionStorage.getItem(SS_SUPER) ||
