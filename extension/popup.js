@@ -166,7 +166,7 @@ async function openAdmin() {
     err("Set Server Base first.");
     return;
   }
-  chrome.tabs.create({ url: `${base}/portal/admin.html` });
+  chrome.tabs.create({ url: `${base}/portal/index.html` });
 }
 
 $("btnLogin").addEventListener("click", login);
