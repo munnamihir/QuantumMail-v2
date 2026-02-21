@@ -89,7 +89,7 @@ function b64ToBytes(b64) {
 function getPublicBase(req) {
   const proto = req.headers["x-forwarded-proto"] || "http";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
-  return `${proto}://${host}`;
+  return '${proto}://${host}';
 }
 
 function defaultPolicies() {
