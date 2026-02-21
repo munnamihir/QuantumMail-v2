@@ -2,7 +2,7 @@
 import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
-
+const DEFAULT_SERVER_BASE = "https://quantummail-v2.onrender.com";
 /** ===== Attachment state (appendable) ===== */
 let selectedFiles = []; // Array<File>
 
@@ -169,7 +169,8 @@ async function login() {
   ok(""); $("err").textContent = "";
   setStatus("Signing in…");
 
-  const serverBase = normalizeBase($("serverBase").value.trim());
+  //const serverBase = normalizeBase($("serverBase").value.trim());
+  const serverBase = DEFAULT_SERVER_BASE;
   const orgId = $("orgId").value.trim();
   const username = $("username").value.trim();
   const password = $("password").value;
