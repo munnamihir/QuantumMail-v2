@@ -1,5 +1,5 @@
 // extension/background.js
-// QuantumMail (hardened, MV3-safe)
+// QuantumMail (hardened, MV3-safe) — UPDATED
 
 import {
   normalizeBase,
@@ -63,11 +63,9 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
       shortenText(parsed.raw || parsed.data || "", 320) ||
       `Request failed (${res.status})`;
 
-    // ✅ This is the key: if server sent HTML, we still show a useful error
     throw new Error(`[HTTP ${res.status}] ${method} ${path} -> ${msg}`);
   }
 
-  // ok
   if (parsed.kind === "json") return parsed.data;
   return { ok: true, raw: parsed.data };
 }
@@ -112,16 +110,16 @@ function aadFromTabUrl(tabUrl) {
 }
 
 /* =========================
-   Base64URL for large data
+   Base64URL (safe for larger data)
 ========================= */
 
+// ✅ UPDATED: avoids .apply() which can crash on big chunks
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
-  const chunkSize = 0x8000; // 32KB
   let binary = "";
+  const chunkSize = 0x2000; // 8KB is safer across engines
   for (let i = 0; i < u8.length; i += chunkSize) {
-    const chunk = u8.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, chunk);
+    binary += String.fromCharCode(...u8.subarray(i, i + chunkSize));
   }
   const b64 = btoa(binary);
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -135,7 +133,6 @@ function attachmentToU8(a) {
   if (!a) return new Uint8Array();
   if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
 
-  // safety: tolerate other shapes
   if (a.buffer instanceof ArrayBuffer) return new Uint8Array(a.buffer);
   if (a.buffer?.byteLength != null && typeof a.buffer.slice === "function") return new Uint8Array(a.buffer);
 
@@ -180,8 +177,8 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   if (!token || !user) throw new Error("Login failed: missing token/user.");
 
   await ensureKeypairAndRegister(base, token);
-
   await setSession({ serverBase: base, token, user });
+
   return { base, token, user };
 }
 
@@ -190,7 +187,6 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 ========================= */
 
 async function assertContentScriptAvailable(tabId) {
-  // A quick ping to provide a clean error if the content script isn't injected
   try {
     const r = await sendToTab(tabId, { type: "QM_PING" }, 900);
     if (!r?.ok) throw new Error("Ping failed");
@@ -210,6 +206,14 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const s = await getSession();
   if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
+  // ✅ UPDATED: cap attachments total size for MVP stability
+  const list = Array.isArray(attachments) ? attachments : [];
+  const totalBytes = list.reduce((sum, a) => sum + Number(a?.size || 0), 0);
+  const MAX_TOTAL_BYTES = 8 * 1024 * 1024; // 8MB
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    throw new Error(`Attachments too large for MVP (${Math.round(totalBytes / 1024 / 1024)}MB). Limit is 8MB.`);
+  }
+
   const tab = await getActiveTab();
   const tabId = tab.id;
   const aad = aadFromTabUrl(tab.url);
@@ -224,7 +228,6 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   // Encrypt attachments with SAME rawDek
   const encAttachments = [];
-  const list = Array.isArray(attachments) ? attachments : [];
   for (const a of list) {
     const bytes = attachmentToU8(a);
     if (!bytes || bytes.length === 0) continue;
@@ -292,7 +295,6 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
   const { base, token } = await loginAndStoreSession({ serverBase, orgId, username, password });
 
   const payload = await apiJson(base, `/api/messages/${encodeURIComponent(msgId)}`, { token });
-
   if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
 
   const kp = await getOrCreateRsaKeypair();
@@ -350,7 +352,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
 
-  return true;
+  return true; // keep channel open for async
 });
 
 chrome.runtime.onInstalled?.addListener(() => {});
