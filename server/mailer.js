@@ -1,88 +1,54 @@
 // server/mailer.js
-import nodemailer from "nodemailer";
+import fetch from "node-fetch";
 
-const SMTP_HOST = process.env.QM_SMTP_HOST || "";
-const SMTP_PORT = parseInt(process.env.QM_SMTP_PORT || "587", 10);
-const SMTP_USER = process.env.QM_SMTP_USER || "";
-const SMTP_PASS = process.env.QM_SMTP_PASS || "";
+const PROVIDER = (process.env.QM_EMAIL_PROVIDER || "brevo").toLowerCase();
 
-const FROM_EMAIL = process.env.QM_FROM_EMAIL || SMTP_USER;
+const BREVO_API_KEY = process.env.QM_BREVO_API_KEY || "";
+const FROM_EMAIL = process.env.QM_FROM_EMAIL || "";
 const FROM_NAME = process.env.QM_FROM_NAME || "QuantumMail";
 
-// Optional knobs (help with picky providers)
-const SMTP_SECURE = (process.env.QM_SMTP_SECURE || "").toLowerCase() === "true"; // force secure if needed
-const SMTP_REQUIRE_TLS = (process.env.QM_SMTP_REQUIRE_TLS || "").toLowerCase() === "true"; // STARTTLS required
-const SMTP_TLS_REJECT_UNAUTH = (process.env.QM_SMTP_TLS_REJECT_UNAUTH || "true").toLowerCase() === "true"; // keep true in prod
-const SMTP_TLS_SERVERNAME = process.env.QM_SMTP_TLS_SERVERNAME || ""; // sometimes needed (SNI), usually same as host
-
-let transporter = null;
-let verifiedOnce = false;
-
-function getTransporter() {
-  if (transporter) return transporter;
-
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    throw new Error("Mailer not configured. Set QM_SMTP_HOST/QM_SMTP_USER/QM_SMTP_PASS");
-  }
-
-  const secure = SMTP_SECURE ? true : (SMTP_PORT === 465);
-
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure, // 465 => true, 587 => false (STARTTLS)
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-
-    // Fail fast instead of hanging forever
-    connectionTimeout: 12_000,
-    greetingTimeout: 12_000,
-    socketTimeout: 20_000,
-
-    // STARTTLS / TLS tweaks
-    requireTLS: SMTP_REQUIRE_TLS,
-    tls: {
-      rejectUnauthorized: SMTP_TLS_REJECT_UNAUTH,
-      servername: SMTP_TLS_SERVERNAME || SMTP_HOST,
-    },
-  });
-
-  return transporter;
-}
-
-async function ensureVerified() {
-  if (verifiedOnce) return;
-  const t = getTransporter();
-
-  // Log safe config (no secrets)
-  console.log("MAIL CONFIG", {
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: (process.env.QM_SMTP_SECURE || "") || (SMTP_PORT === 465),
-    requireTLS: SMTP_REQUIRE_TLS,
-    fromEmail: FROM_EMAIL ? "set" : "missing",
-    fromName: FROM_NAME,
-    user: SMTP_USER ? "set" : "missing",
-  });
-
-  try {
-    await t.verify();
-    verifiedOnce = true;
-    console.log("MAIL verify OK");
-  } catch (e) {
-    console.error("MAIL verify FAILED:", e?.message || e);
-    throw e;
-  }
+function requireEnv(name, val) {
+  if (!val) throw new Error(`Missing env: ${name}`);
 }
 
 export async function sendMail({ to, subject, html, text }) {
-  await ensureVerified();
-  const t = getTransporter();
+  if (PROVIDER !== "brevo") {
+    throw new Error(`Unsupported email provider: ${PROVIDER}`);
+  }
 
-  return t.sendMail({
-    from: `${FROM_NAME} <${FROM_EMAIL}>`,
-    to,
-    subject,
-    text: text || "",
-    html: html || "",
+  requireEnv("QM_BREVO_API_KEY", BREVO_API_KEY);
+  requireEnv("QM_FROM_EMAIL", FROM_EMAIL);
+
+  const payload = {
+    sender: { name: FROM_NAME, email: FROM_EMAIL },
+    to: [{ email: to }],
+    subject: subject || "",
+    textContent: text || "",
+    htmlContent: html || "",
+  };
+
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": BREVO_API_KEY,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify(payload),
   });
+
+  const bodyText = await res.text();
+  let bodyJson = null;
+  try { bodyJson = JSON.parse(bodyText); } catch {}
+
+  if (!res.ok) {
+    const msg =
+      (bodyJson && (bodyJson.message || bodyJson.error)) ||
+      bodyText ||
+      `Brevo API error HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  // Brevo returns { messageId: "..." }
+  return bodyJson || { ok: true };
 }
