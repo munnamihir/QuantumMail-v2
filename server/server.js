@@ -1,4 +1,4 @@
-```js
+'''js
 // server/server.js
 import express from "express";
 import path from "path";
@@ -128,7 +128,7 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (isAllowedOrigin(origin)) return cb(null, true);
-      return cb(new Error(`CORS blocked origin: ${origin}`));
+      return cb(new Error('CORS blocked origin: ${origin}));
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-QM-Bootstrap"],
@@ -159,9 +159,9 @@ function signToken(payload) {
   const header = { alg: "HS256", typ: "JWT" };
   const h = b64urlEncode(JSON.stringify(header));
   const p = b64urlEncode(JSON.stringify(payload));
-  const sig = crypto.createHmac("sha256", TOKEN_SECRET).update(`${h}.${p}`).digest();
+  const sig = crypto.createHmac("sha256", TOKEN_SECRET).update('${h}.${p}').digest();
   const s = b64urlEncode(sig);
-  return `${h}.${p}.${s}`;
+  return '${h}.${p}.${s}';
 }
 
 function verifyToken(token) {
@@ -169,7 +169,7 @@ function verifyToken(token) {
   if (parts.length !== 3) return null;
   const [h, p, s] = parts;
 
-  const sig = crypto.createHmac("sha256", TOKEN_SECRET).update(`${h}.${p}`).digest();
+  const sig = crypto.createHmac("sha256", TOKEN_SECRET).update('${h}.${p}').digest();
   const expected = b64urlEncode(sig);
   if (!timingSafeEq(expected, s)) return null;
 
@@ -363,14 +363,14 @@ function getKekByVersion(org, version) {
 function genInviteCode() {
   const n = crypto.randomInt(0, 1000000);
   const s = String(n).padStart(6, "0");
-  return `${s.slice(0, 3)}-${s.slice(3)}`;
+  return '${s.slice(0, 3)}-${s.slice(3)}';
 }
 
 /* =========================================================
    DB bootstrap (tables)
 ========================================================= */
 async function ensureTables() {
-  await pool.query(`
+  await pool.query('
     create table if not exists qm_org_requests (
       id text primary key,
       org_name text not null,
@@ -386,9 +386,9 @@ async function ensureTables() {
       approved_org_id text,
       approved_admin_user_id text
     );
-  `);
+  ');
 
-  await pool.query(`
+  await pool.query('
     create table if not exists qm_setup_tokens (
       id text primary key,
       org_id text not null,
@@ -399,30 +399,30 @@ async function ensureTables() {
       used_at timestamptz,
       created_at timestamptz not null default now()
     );
-  `);
+  ');
 
-  await pool.query(`create index if not exists idx_qm_setup_tokens_org_hash on qm_setup_tokens(org_id, token_hash);`);
-  await pool.query(`create index if not exists idx_qm_org_requests_status on qm_org_requests(status, created_at);`);
+  await pool.query('create index if not exists idx_qm_setup_tokens_org_hash on qm_setup_tokens(org_id, token_hash);');
+  await pool.query('create index if not exists idx_qm_org_requests_status on qm_org_requests(status, created_at);');
 
-  await pool.query(`
+  await pool.query('
     alter table qm_org_requests
       add column if not exists email_sent_at timestamptz,
       add column if not exists email_last_error text,
       add column if not exists email_last_type text;
-  `);
+  ');
 
   // ---- columns for email verification / setup context
-  await pool.query(`alter table qm_setup_tokens add column if not exists email text;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists org_name text;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists admin_username text;`);
+  await pool.query('alter table qm_setup_tokens add column if not exists email text;');
+  await pool.query('alter table qm_setup_tokens add column if not exists org_name text;');
+  await pool.query('alter table qm_setup_tokens add column if not exists admin_username text;');
 
-  await pool.query(`alter table qm_setup_tokens add column if not exists email_verified_at timestamptz;`);
+  await pool.query('alter table qm_setup_tokens add column if not exists email_verified_at timestamptz;');
 
-  await pool.query(`alter table qm_setup_tokens add column if not exists otp_hash text;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists otp_expires_at timestamptz;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists otp_sent_at timestamptz;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists otp_attempts int not null default 0;`);
-  await pool.query(`alter table qm_setup_tokens add column if not exists otp_last_attempt_at timestamptz;`);
+  await pool.query('alter table qm_setup_tokens add column if not exists otp_hash text;');
+  await pool.query('alter table qm_setup_tokens add column if not exists otp_expires_at timestamptz;');
+  await pool.query('alter table qm_setup_tokens add column if not exists otp_sent_at timestamptz;');
+  await pool.query('alter table qm_setup_tokens add column if not exists otp_attempts int not null default 0;');
+  await pool.query('alter table qm_setup_tokens add column if not exists otp_last_attempt_at timestamptz;');
 }
 
 await ensureTables();
@@ -525,7 +525,7 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "LOGIN_FAILED",
         severity: "high",
         at: a.at,
-        message: `Failed login for ${a.username || "unknown"} from ${a.ip || "unknown ip"}`,
+        message: 'Failed login for ${a.username || "unknown"} from ${a.ip || "unknown ip"}',
       });
     }
 
@@ -534,7 +534,7 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "DECRYPT_DENIED",
         severity: "critical",
         at: a.at,
-        message: `Unauthorized decrypt attempt (msgId=${a.msgId || "?"})`,
+        message: 'Unauthorized decrypt attempt (msgId=${a.msgId || "?"})',
       });
     }
 
@@ -543,7 +543,7 @@ app.get("/admin/alerts", requireAuth, requireAdmin, async (req, res) => {
         code: "KEY_CLEARED",
         severity: "medium",
         at: a.at,
-        message: `Public key cleared for userId=${a.targetUserId || "?"}`,
+        message: 'Public key cleared for userId=${a.targetUserId || "?"}',
       });
     }
   }
@@ -778,8 +778,8 @@ app.post("/public/org-requests", async (req, res) => {
 
   const id = nanoid(12);
   await pool.query(
-    `insert into qm_org_requests (id, org_name, requester_name, requester_email, notes, status)
-     values ($1,$2,$3,$4,$5,'pending')`,
+    'insert into qm_org_requests (id, org_name, requester_name, requester_email, notes, status)
+     values ($1,$2,$3,$4,$5,'pending')',
     [id, orgName, requesterName, requesterEmail, notes || null]
   );
 
@@ -941,10 +941,10 @@ app.get("/public/setup-admin-info", async (req, res) => {
   const tokenHash = sha256Hex(token);
 
   const { rows } = await pool.query(
-    `select org_id, user_id, email, org_name, admin_username, expires_at, used_at, email_verified_at
+    'select org_id, user_id, email, org_name, admin_username, expires_at, used_at, email_verified_at
        from qm_setup_tokens
       where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
-      limit 1`,
+      limit 1',
     [orgId, tokenHash]
   );
   if (!rows.length) return res.status(403).json({ error: "Invalid token" });
@@ -972,9 +972,9 @@ app.post("/auth/setup-admin/send-code", async (req, res) => {
   const tokenHash = sha256Hex(token);
 
   const { rows } = await pool.query(
-    `select * from qm_setup_tokens
+    'select * from qm_setup_tokens
       where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
-      limit 1`,
+      limit 1',
     [orgId, tokenHash]
   );
   if (!rows.length) return res.status(403).json({ error: "Invalid token" });
@@ -998,26 +998,26 @@ app.post("/auth/setup-admin/send-code", async (req, res) => {
   const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   await pool.query(
-    `update qm_setup_tokens
+    'update qm_setup_tokens
         set otp_hash=$3,
             otp_expires_at=$4,
             otp_sent_at=now(),
             otp_attempts=0,
             otp_last_attempt_at=null
-      where id=$1 and org_id=$2`,
+      where id=$1 and org_id=$2',
     [t.id, orgId, codeHash, otpExpiresAt.toISOString()]
   );
 
-  const subject = `QuantumMail Admin Setup Code (${code})`;
-  const text = `Your QuantumMail verification code is ${code}. It expires in 10 minutes.`;
-  const html = `
+  const subject = 'QuantumMail Admin Setup Code (${code})';
+  const text = 'Your QuantumMail verification code is ${code}. It expires in 10 minutes.';
+  const html = '
     <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
       <h2 style="margin:0 0 8px 0">QuantumMail Verification</h2>
       <p style="margin:0 0 10px 0">Use this code to verify your email for admin setup:</p>
       <div style="font-size:28px;font-weight:800;letter-spacing:2px;margin:10px 0">${code}</div>
       <p style="color:#6b7280;margin:10px 0 0 0">Expires in 10 minutes.</p>
     </div>
-  `;
+  ';
 
   try {
     await sendMail({ to: email, subject, text, html });
@@ -1040,9 +1040,9 @@ app.post("/auth/setup-admin/verify-code", async (req, res) => {
   const tokenHash = sha256Hex(token);
 
   const { rows } = await pool.query(
-    `select * from qm_setup_tokens
+    'select * from qm_setup_tokens
       where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
-      limit 1`,
+      limit 1',
     [orgId, tokenHash]
   );
   if (!rows.length) return res.status(403).json({ error: "Invalid token" });
@@ -1069,21 +1069,21 @@ app.post("/auth/setup-admin/verify-code", async (req, res) => {
   const ok = timingSafeEq(incomingHash, t.otp_hash);
 
   await pool.query(
-    `update qm_setup_tokens
+    'update qm_setup_tokens
         set otp_attempts = otp_attempts + 1,
             otp_last_attempt_at = now()
-      where id=$1`,
+      where id=$1',
     [t.id]
   );
 
   if (!ok) return res.status(403).json({ error: "Incorrect code" });
 
   await pool.query(
-    `update qm_setup_tokens
+    'update qm_setup_tokens
         set email_verified_at=now(),
             otp_hash=null,
             otp_expires_at=null
-      where id=$1`,
+      where id=$1',
     [t.id]
   );
 
@@ -1101,9 +1101,9 @@ app.post("/auth/setup-admin", async (req, res) => {
   const tokenHash = sha256Hex(token);
 
   const { rows } = await pool.query(
-    `select * from qm_setup_tokens
+    'select * from qm_setup_tokens
       where org_id=$1 and token_hash=$2 and purpose='initial_admin_setup'
-      limit 1`,
+      limit 1',
     [orgId, tokenHash]
   );
   if (!rows.length) return res.status(403).json({ error: "Invalid token" });
@@ -1124,7 +1124,7 @@ app.post("/auth/setup-admin", async (req, res) => {
   u.status = "Active";
 
   await saveOrg(orgId, org);
-  await pool.query(`update qm_setup_tokens set used_at=now() where id=$1`, [t.id]);
+  await pool.query('update qm_setup_tokens set used_at=now() where id=$1', [t.id]);
 
   res.json({ ok: true });
 });
@@ -1225,20 +1225,20 @@ function makeSetupToken() {
 async function markRequestEmailStatus({ requestId, type, ok, err }) {
   if (ok) {
     await pool.query(
-      `update qm_org_requests
+      'update qm_org_requests
          set email_sent_at = now(),
              email_last_error = null,
              email_last_type = $2
-       where id=$1`,
+       where id=$1',
       [requestId, type]
     );
   } else {
     await pool.query(
-      `update qm_org_requests
+      'update qm_org_requests
          set email_sent_at = null,
              email_last_error = $2,
              email_last_type = $3
-       where id=$1`,
+       where id=$1',
       [requestId, String(err || "unknown"), type]
     );
   }
@@ -1249,7 +1249,7 @@ app.get("/super/org-requests", requireAuth, requireSuperAdmin, async (req, res) 
   const allowed = new Set(["pending", "approved", "rejected"]);
   const s = allowed.has(status) ? status : "pending";
 
-  const { rows } = await pool.query(`select * from qm_org_requests where status = $1 order by created_at desc limit 200`, [s]);
+  const { rows } = await pool.query('select * from qm_org_requests where status = $1 order by created_at desc limit 200', [s]);
   res.json({ ok: true, status: s, items: rows });
 });
 
@@ -1257,19 +1257,19 @@ app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async
   const requestId = String(req.params.id || "").trim();
   const reason = String(req.body?.reason || "").trim();
 
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  const r1 = await pool.query('select * from qm_org_requests where id=$1', [requestId]);
   if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
   const reqRow = r1.rows[0];
   if (reqRow.status !== "pending") return res.status(409).json({ error: "Request is not pending" });
 
   await pool.query(
-    `update qm_org_requests
+    'update qm_org_requests
        set status='rejected',
            updated_at=now(),
            reviewed_by_user_id=$2,
            reviewed_at=now(),
            reject_reason=$3
-     where id=$1`,
+     where id=$1',
     [requestId, req.qm.user.userId, reason || null]
   );
 
@@ -1304,7 +1304,7 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
     return res.status(400).json({ error: "requestId, orgId, adminUsername required" });
   }
 
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  const r1 = await pool.query('select * from qm_org_requests where id=$1', [requestId]);
   if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
   const reqRow = r1.rows[0];
   if (reqRow.status !== "pending") return res.status(409).json({ error: "Request is not pending" });
@@ -1340,8 +1340,8 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   await pool.query(
-    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
-     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)`,
+    'insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)',
     [
       tokenId,
       orgId,
@@ -1356,19 +1356,19 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
 
   // Update request as approved
   await pool.query(
-    `update qm_org_requests
+    'update qm_org_requests
        set status='approved',
            updated_at=now(),
            reviewed_by_user_id=$2,
            reviewed_at=now(),
            approved_org_id=$3,
            approved_admin_user_id=$4
-     where id=$1`,
+     where id=$1',
     [requestId, req.qm.user.userId, orgId, adminUserId]
   );
 
   const base = getPublicBase(req);
-  const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
+  const setupLink = '${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}';
 
   let emailSent = false;
   let emailError = null;
@@ -1407,7 +1407,7 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
 app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSuperAdmin, async (req, res) => {
   const requestId = String(req.params.id || "").trim();
 
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  const r1 = await pool.query('select * from qm_org_requests where id=$1', [requestId]);
   if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
   const row = r1.rows[0];
 
@@ -1429,8 +1429,8 @@ app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSu
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   await pool.query(
-    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
-     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)`,
+    'insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)',
     [
       tokenId,
       orgId,
@@ -1444,7 +1444,7 @@ app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSu
   );
 
   const base = getPublicBase(req);
-  const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
+  const setupLink = '${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}';
 
   let emailSent = false;
   let emailError = null;
@@ -1473,7 +1473,7 @@ app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSu
 app.post("/super/org-requests/:id/resend-reject-email", requireAuth, requireSuperAdmin, async (req, res) => {
   const requestId = String(req.params.id || "").trim();
 
-  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  const r1 = await pool.query('select * from qm_org_requests where id=$1', [requestId]);
   if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
   const row = r1.rows[0];
   if (row.status !== "rejected") return res.status(409).json({ error: "Request is not rejected" });
@@ -1555,7 +1555,7 @@ app.post("/api/messages", requireAuth, async (req, res) => {
   await saveOrg(orgId, org);
 
   const base = getPublicBase(req);
-  const url = `${base}/m/${id}`;
+  const url = '${base}/m/${id}';
   res.json({ id, url, kekVersion: version });
 });
 
@@ -1645,12 +1645,12 @@ const portalDir = path.join(__dirname, "..", "portal");
 app.use("/portal", express.static(portalDir, { extensions: ["html"], etag: false, maxAge: 0 }));
 
 app.get("/m/:id", (_req, res) => res.sendFile(path.join(portalDir, "decrypt.html")));
-app.get("/portal/m/:id", (req, res) => res.redirect(`/m/${req.params.id}`));
+app.get("/portal/m/:id", (req, res) => res.redirect('/m/${req.params.id}'));
 app.get("/", (_req, res) => res.redirect("/portal/index.html"));
 
 /* =========================================================
    Start (Render compatible)
 ========================================================= */
 const PORT = Number(process.env.PORT || "10000");
-app.listen(PORT, () => console.log(`QuantumMail server running on port ${PORT}`));
-```
+app.listen(PORT, () => console.log('QuantumMail server running on port ${PORT}'));
+'''
