@@ -3,54 +3,87 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 
+/** ===== Attachment state (appendable) ===== */
+let selectedFiles = []; // Array<File>
+
 function fmtBytes(n) {
-  const x = Number(n || 0);
-  if (x < 1024) return `${x} B`;
-  const kb = x / 1024;
+  const b = Number(n || 0);
+  if (b < 1024) return `${b} B`;
+  const kb = b / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   const mb = kb / 1024;
   if (mb < 1024) return `${mb.toFixed(1)} MB`;
   const gb = mb / 1024;
-  return `${gb.toFixed(2)} GB`;
+  return `${gb.toFixed(1)} GB`;
 }
 
-function setChosenFiles(files) {
-  // store in memory so we can remove individual ones
-  window.__qmChosenFiles = files || [];
-  renderAttachmentsUI();
-}
+function updateAttachmentUI() {
+  const chips = $("chips");
+  chips.innerHTML = "";
 
-function getChosenFiles() {
-  return Array.isArray(window.__qmChosenFiles) ? window.__qmChosenFiles : [];
-}
+  const totalBytes = selectedFiles.reduce((s, f) => s + (f?.size || 0), 0);
 
-function renderAttachmentsUI() {
-  const list = $("attList");
-  const clearBtn = $("btnClearAtt");
-  if (!list) return;
+  $("attCount").textContent = String(selectedFiles.length);
 
-  const files = getChosenFiles();
-  list.innerHTML = "";
+  if (selectedFiles.length === 0) {
+    $("attTitle").textContent = "No files attached";
+    $("attHint").textContent = "Click the pin to add one file, then click again to add more.";
+    return;
+  }
 
-  if (clearBtn) clearBtn.style.display = files.length ? "inline-flex" : "none";
+  $("attTitle").textContent = `${selectedFiles.length} file(s) attached`;
+  $("attHint").textContent = `Total size: ${fmtBytes(totalBytes)} • Click 📎 to add more.`;
 
-  for (const f of files) {
+  selectedFiles.forEach((f, idx) => {
     const chip = document.createElement("div");
     chip.className = "chip";
-    chip.innerHTML = `
-      <span class="chipName" title="${f.name}">${f.name}</span>
-      <span style="color:var(--muted)">${fmtBytes(f.size)}</span>
-      <button type="button" class="chipX" aria-label="Remove ${f.name}">×</button>
-    `;
 
-    chip.querySelector(".chipX").addEventListener("click", () => {
-      const next = getChosenFiles().filter((x) => !(x.name === f.name && x.size === f.size && x.lastModified === f.lastModified));
-      setChosenFiles(next);
+    const name = document.createElement("div");
+    name.className = "chipName";
+    name.title = `${f.name} (${fmtBytes(f.size)})`;
+    name.textContent = `${f.name} • ${fmtBytes(f.size)}`;
+
+    const x = document.createElement("div");
+    x.className = "chipX";
+    x.textContent = "×";
+    x.title = "Remove";
+    x.addEventListener("click", () => {
+      selectedFiles.splice(idx, 1);
+      updateAttachmentUI();
     });
 
-    list.appendChild(chip);
-  }
+    chip.appendChild(name);
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  });
 }
+
+function openPicker() {
+  // IMPORTANT: clear input value so selecting the SAME file again still triggers "change"
+  const input = $("filePicker");
+  input.value = "";
+  input.click();
+}
+
+function addFilesFromPicker(fileList) {
+  const incoming = Array.from(fileList || []);
+  if (!incoming.length) return;
+
+  // Append, but dedupe by (name + size + lastModified)
+  const key = (f) => `${f.name}::${f.size}::${f.lastModified}`;
+  const existing = new Set(selectedFiles.map(key));
+  for (const f of incoming) {
+    const k = key(f);
+    if (!existing.has(k)) {
+      selectedFiles.push(f);
+      existing.add(k);
+    }
+  }
+
+  updateAttachmentUI();
+}
+
+/* ===== UI helpers ===== */
 
 function setDot(state) {
   const dot = $("dot");
@@ -86,24 +119,25 @@ async function sendBg(type, payload = {}) {
  * IMPORTANT:
  * Read attachments immediately (before any other awaits),
  * otherwise MV3 popup can lose file handle and throw NotReadableError.
+ *
+ * ✅ UPDATED: reads from selectedFiles[] (not from <input>)
  */
 async function collectAttachmentsImmediate() {
-  const files = getChosenFiles();
-  if (!files.length) return [];
+  if (!selectedFiles.length) return [];
 
   const out = [];
-  for (const f of files) {
+  for (const f of selectedFiles) {
     try {
       const buf = await f.arrayBuffer();
       out.push({
         name: f.name,
         mimeType: f.type || "application/octet-stream",
         size: f.size,
-        bytes: Array.from(new Uint8Array(buf)),
+        bytes: Array.from(new Uint8Array(buf))
       });
     } catch (e) {
       throw new Error(
-        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid restricted folders. (${e?.name || "ReadError"})`
+        `Could not read "${f.name}". Try re-selecting it, keep the popup open, and avoid restricted folders. (${e?.name || "ReadError"})`
       );
     }
   }
@@ -196,9 +230,9 @@ async function encryptSelected() {
     ok(`Link inserted ✅${attNote}\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
     setStatus("Ready", "good");
 
-    // optional: clear attachments input after encrypt
-    //$("attachments").value = "";
-    setChosenFiles([]);
+    // ✅ Clear after encrypt (optional)
+    selectedFiles = [];
+    updateAttachmentUI();
   } catch (e) {
     console.error(e);
     err(e?.message || String(e));
@@ -213,44 +247,21 @@ async function openAdmin() {
     err("Set Server Base first.");
     return;
   }
-  chrome.tabs.create({ url: `${base}/portal/index.html` });
+  chrome.tabs.create({ url: `${base}/portal/admin.html` });
 }
+
+/* ===== wire up ===== */
 
 $("btnLogin").addEventListener("click", login);
 $("btnLogout").addEventListener("click", logout);
 $("btnEncrypt").addEventListener("click", encryptSelected);
 $("openAdmin").addEventListener("click", openAdmin);
-$("btnAttach")?.addEventListener("click", () => {
-  // open OS file picker
-  $("attachments")?.click();
-});
 
-$("attachments")?.addEventListener("change", (e) => {
-  const picked = Array.from(e.target.files || []);
-  if (!picked.length) return;
+$("btnAttach").addEventListener("click", openPicker);
+$("filePicker").addEventListener("change", (e) => addFilesFromPicker(e.target.files));
 
-  // append to existing selection (gmail-like)
-  const existing = getChosenFiles();
-  const merged = [...existing];
-
-  for (const f of picked) {
-    // avoid duplicates
-    const dup = merged.some((x) => x.name === f.name && x.size === f.size && x.lastModified === f.lastModified);
-    if (!dup) merged.push(f);
-  }
-
-  setChosenFiles(merged);
-
-  // IMPORTANT: reset input so selecting same file again triggers change
-  e.target.value = "";
-});
-
-$("btnClearAtt")?.addEventListener("click", () => {
-  setChosenFiles([]);
-  $("attachments").value = "";
-});
 (async function init() {
   fillDefaults();
-  setChosenFiles([]);
+  updateAttachmentUI();
   await refreshSessionUI();
 })();
