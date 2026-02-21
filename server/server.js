@@ -119,7 +119,7 @@ function otpHash(code) {
 ========================================================= */
 function isAllowedOrigin(origin) {
   if (!origin) return true; // curl/server-to-server
-  if (EXTENSION_ID && origin === `chrome-extension://${EXTENSION_ID}`) return true;
+  if (EXTENSION_ID && origin === 'chrome-extension://${EXTENSION_ID}') return true;
   if (ALLOWED_WEB_ORIGINS.includes(origin)) return true;
   return false;
 }
