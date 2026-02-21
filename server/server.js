@@ -796,6 +796,138 @@ app.get("/org/check-username", async (req, res) => {
   res.json({ ok: true, orgId, username, orgExists: true, available: !taken });
 });
 
+// Resend approval email (creates a NEW setup token + link, safer)
+app.post("/super/org-requests/:id/resend-approval-email", requireAuth, requireSuperAdmin, async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+
+  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
+  const row = r1.rows[0];
+  if (row.status !== "approved") return res.status(409).json({ error: "Request is not approved" });
+  if (!row.approved_org_id || !row.approved_admin_user_id) return res.status(409).json({ error: "Missing approved org/user info" });
+
+  const orgId = row.approved_org_id;
+  const adminUserId = row.approved_admin_user_id;
+
+  const org = await getOrg(orgId);
+  const adminUser = (org.users || []).find(u => u.userId === adminUserId);
+  if (!adminUser) return res.status(404).json({ error: "Admin user not found in org" });
+
+  // New setup token
+  const rawToken = makeSetupToken();
+  const tokenHash = sha256Hex(rawToken);
+  const tokenId = nanoid(12);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await pool.query(
+    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
+    [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
+  );
+
+  const base = getPublicBase(req);
+  const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
+
+  let emailSent = false;
+  let emailError = null;
+
+  try {
+    const tpl = approvedEmailTemplate({
+      orgName: row.org_name,
+      orgId,
+      username: adminUser.username,
+      setupLink,
+      expiresAt: expiresAt.toISOString()
+    });
+
+    const out = await sendMail({
+      to: row.requester_email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text
+    });
+
+    emailSent = (out.accepted || []).length > 0;
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = now(),
+             email_last_error = null,
+             email_last_type = 'approved'
+       where id=$1`,
+      [requestId]
+    );
+  } catch (e) {
+    emailSent = false;
+    emailError = String(e?.message || e);
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = null,
+             email_last_error = $2,
+             email_last_type = 'approved'
+       where id=$1`,
+      [requestId, emailError]
+    );
+  }
+
+  res.json({ ok: true, emailSent, emailError, setupLink, expiresAt: expiresAt.toISOString() });
+});
+
+// Resend approval email (creates a NEW setup token + link, safer)
+app.post("/super/org-requests/:id/resend-reject-email", requireAuth, requireSuperAdmin, async (req, res) => {
+  const requestId = String(req.params.id || "").trim();
+
+  const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
+  if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
+  const row = r1.rows[0];
+  if (row.status !== "rejected") return res.status(409).json({ error: "Request is not rejected" });
+
+  let emailSent = false;
+  let emailError = null;
+
+  try {
+    const tpl = rejectedEmailTemplate({
+      orgName: row.org_name,
+      requesterName: row.requester_name,
+      reason: row.reject_reason || ""
+    });
+
+    const out = await sendMail({
+      to: row.requester_email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text
+    });
+
+    emailSent = (out.accepted || []).length > 0;
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = now(),
+             email_last_error = null,
+             email_last_type = 'rejected'
+       where id=$1`,
+      [requestId]
+    );
+  } catch (e) {
+    emailSent = false;
+    emailError = String(e?.message || e);
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = null,
+             email_last_error = $2,
+             email_last_type = 'rejected'
+       where id=$1`,
+      [requestId, emailError]
+    );
+  }
+
+  res.json({ ok: true, emailSent, emailError });
+});
+
+
 /* =========================================================
    BOOTSTRAP: create first SuperAdmin in PLATFORM org
    POST /bootstrap/superadmin
