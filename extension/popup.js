@@ -3,6 +3,55 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 
+function fmtBytes(n) {
+  const x = Number(n || 0);
+  if (x < 1024) return `${x} B`;
+  const kb = x / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+}
+
+function setChosenFiles(files) {
+  // store in memory so we can remove individual ones
+  window.__qmChosenFiles = files || [];
+  renderAttachmentsUI();
+}
+
+function getChosenFiles() {
+  return Array.isArray(window.__qmChosenFiles) ? window.__qmChosenFiles : [];
+}
+
+function renderAttachmentsUI() {
+  const list = $("attList");
+  const clearBtn = $("btnClearAtt");
+  if (!list) return;
+
+  const files = getChosenFiles();
+  list.innerHTML = "";
+
+  if (clearBtn) clearBtn.style.display = files.length ? "inline-flex" : "none";
+
+  for (const f of files) {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.innerHTML = `
+      <span class="chipName" title="${f.name}">${f.name}</span>
+      <span style="color:var(--muted)">${fmtBytes(f.size)}</span>
+      <button type="button" class="chipX" aria-label="Remove ${f.name}">×</button>
+    `;
+
+    chip.querySelector(".chipX").addEventListener("click", () => {
+      const next = getChosenFiles().filter((x) => !(x.name === f.name && x.size === f.size && x.lastModified === f.lastModified));
+      setChosenFiles(next);
+    });
+
+    list.appendChild(chip);
+  }
+}
+
 function setDot(state) {
   const dot = $("dot");
   if (!dot) return;
@@ -39,12 +88,10 @@ async function sendBg(type, payload = {}) {
  * otherwise MV3 popup can lose file handle and throw NotReadableError.
  */
 async function collectAttachmentsImmediate() {
-  const input = $("attachments");
-  if (!input || !input.files || input.files.length === 0) return [];
+  const files = getChosenFiles();
+  if (!files.length) return [];
 
-  const files = Array.from(input.files);
   const out = [];
-
   for (const f of files) {
     try {
       const buf = await f.arrayBuffer();
@@ -52,15 +99,14 @@ async function collectAttachmentsImmediate() {
         name: f.name,
         mimeType: f.type || "application/octet-stream",
         size: f.size,
-        bytes: Array.from(new Uint8Array(buf))
+        bytes: Array.from(new Uint8Array(buf)),
       });
     } catch (e) {
       throw new Error(
-        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid restricted folders (Desktop/Screenshots). (${e?.name || "ReadError"})`
+        `Could not read "${f.name}". Try re-selecting the file, keep the popup open, and avoid restricted folders. (${e?.name || "ReadError"})`
       );
     }
   }
-
   return out;
 }
 
@@ -151,7 +197,8 @@ async function encryptSelected() {
     setStatus("Ready", "good");
 
     // optional: clear attachments input after encrypt
-    $("attachments").value = "";
+    //$("attachments").value = "";
+    setChosenFiles([]);
   } catch (e) {
     console.error(e);
     err(e?.message || String(e));
@@ -173,7 +220,35 @@ $("btnLogin").addEventListener("click", login);
 $("btnLogout").addEventListener("click", logout);
 $("btnEncrypt").addEventListener("click", encryptSelected);
 $("openAdmin").addEventListener("click", openAdmin);
+$("btnAttach")?.addEventListener("click", () => {
+  // open OS file picker
+  $("attachments")?.click();
+});
 
+$("attachments")?.addEventListener("change", (e) => {
+  const picked = Array.from(e.target.files || []);
+  if (!picked.length) return;
+
+  // append to existing selection (gmail-like)
+  const existing = getChosenFiles();
+  const merged = [...existing];
+
+  for (const f of picked) {
+    // avoid duplicates
+    const dup = merged.some((x) => x.name === f.name && x.size === f.size && x.lastModified === f.lastModified);
+    if (!dup) merged.push(f);
+  }
+
+  setChosenFiles(merged);
+
+  // IMPORTANT: reset input so selecting same file again triggers change
+  e.target.value = "";
+});
+
+$("btnClearAtt")?.addEventListener("click", () => {
+  setChosenFiles([]);
+  $("attachments").value = "";
+});
 (async function init() {
   fillDefaults();
   await refreshSessionUI();
