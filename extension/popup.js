@@ -255,7 +255,7 @@ async function openHome() {
 $("btnLogin").addEventListener("click", login);
 $("btnLogout").addEventListener("click", logout);
 $("btnEncrypt").addEventListener("click", encryptSelected);
-$("openAdmin").addEventListener("click", openAdmin);
+$("openHome").addEventListener("click", openHome);
 
 $("btnAttach").addEventListener("click", openPicker);
 $("filePicker").addEventListener("change", (e) => addFilesFromPicker(e.target.files));
