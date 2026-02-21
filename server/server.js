@@ -1465,7 +1465,8 @@ app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async
 
   const r1 = await pool.query(`select * from qm_org_requests where id=$1`, [requestId]);
   if (!r1.rows.length) return res.status(404).json({ error: "Request not found" });
-  if (r1.rows[0].status !== "pending") return res.status(409).json({ error: "Request is not pending" });
+  const reqRow = r1.rows[0];
+  if (reqRow.status !== "pending") return res.status(409).json({ error: "Request is not pending" });
 
   await pool.query(
     `update qm_org_requests
@@ -1478,33 +1479,49 @@ app.post("/super/org-requests/:id/reject", requireAuth, requireSuperAdmin, async
     [requestId, req.qm.user.userId, reason || null]
   );
 
-  // ✅ NEW: email requester on rejection (don’t fail API if email fails)
+  let emailSent = false;
+  let emailError = null;
+
   try {
-    const row = r1.rows[0];
-    const to = String(row.requester_email || "").trim();
-    const orgName = String(row.org_name || "").trim();
-    if (to) {
-      const subject = `QuantumMail Org Request Rejected: ${orgName}`;
-      const text = `Your request for ${orgName} was rejected.${reason ? ` Reason: ${reason}` : ""}`;
-      const html = `
-        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
-          <h2 style="margin:0 0 8px 0">Organization Request Update</h2>
-          <p style="margin:0 0 10px 0">
-            Your QuantumMail organization request for <b>${orgName}</b> was rejected.
-          </p>
-          ${reason ? `<p style="margin:0 0 10px 0"><b>Reason:</b> ${reason}</p>` : ""}
-          <p style="color:#6b7280;margin:12px 0 0 0">Reply to this email if you need help.</p>
-        </div>
-      `;
-      await sendEmail({ to, subject, text, html });
-    }
+    const tpl = rejectedEmailTemplate({
+      orgName: reqRow.org_name,
+      requesterName: reqRow.requester_name,
+      reason: reason || reqRow.reject_reason || ""
+    });
+
+    const out = await sendMail({
+      to: reqRow.requester_email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text
+    });
+
+    emailSent = (out.accepted || []).length > 0;
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = now(),
+             email_last_error = null,
+             email_last_type = 'rejected'
+       where id=$1`,
+      [requestId]
+    );
   } catch (e) {
-    console.error("Reject email failed:", e);
+    emailSent = false;
+    emailError = String(e?.message || e);
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = null,
+             email_last_error = $2,
+             email_last_type = 'rejected'
+       where id=$1`,
+      [requestId, emailError]
+    );
   }
 
-  res.json({ ok: true });
+  return res.json({ ok: true, emailSent, emailError });
 });
-
 // Approve: create org + create first admin (PendingSetup) + create setup token + return setupLink + email it
 app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, async (req, res) => {
   const requestId = String(req.params.id || "").trim();
