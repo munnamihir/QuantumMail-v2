@@ -520,7 +520,13 @@ async function ensureTables() {
 
   await pool.query(`create index if not exists idx_qm_setup_tokens_org_hash on qm_setup_tokens(org_id, token_hash);`);
   await pool.query(`create index if not exists idx_qm_org_requests_status on qm_org_requests(status, created_at);`);
-
+  await pool.query(`
+    alter table qm_org_requests
+      add column if not exists email_sent_at timestamptz,
+      add column if not exists email_last_error text,
+      add column if not exists email_last_type text;
+  `);
+   
   // ---- columns for email verification / context
   await pool.query(`alter table qm_setup_tokens add column if not exists email text;`);
   await pool.query(`alter table qm_setup_tokens add column if not exists org_name text;`);
@@ -1520,7 +1526,7 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   org.policies = org.policies || defaultPolicies();
   ensureKeyring(org);
 
-  const taken = org.users.some((u) => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
+  const taken = org.users.some(u => String(u.username || "").toLowerCase() === adminUsername.toLowerCase());
   if (taken) return res.status(409).json({ error: "adminUsername already exists in org" });
 
   const adminUserId = nanoid(10);
@@ -1533,32 +1539,24 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
     publicKeySpkiB64: null,
     publicKeyRegisteredAt: null,
     createdAt: nowIso(),
-    lastLoginAt: null,
+    lastLoginAt: null
   });
 
   await saveOrg(orgId, org);
 
+  // Create setup token
   const rawToken = makeSetupToken();
   const tokenHash = sha256Hex(rawToken);
   const tokenId = nanoid(12);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  // ✅ NEW: store email + orgName + adminUsername with the setup token
   await pool.query(
-    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at, email, org_name, admin_username)
-     values ($1,$2,$3,$4,'initial_admin_setup',$5,$6,$7,$8)`,
-    [
-      tokenId,
-      orgId,
-      adminUserId,
-      tokenHash,
-      expiresAt.toISOString(),
-      String(reqRow.requester_email || "").trim(),
-      String(reqRow.org_name || "").trim(),
-      adminUsername,
-    ]
+    `insert into qm_setup_tokens (id, org_id, user_id, token_hash, purpose, expires_at)
+     values ($1,$2,$3,$4,'initial_admin_setup',$5)`,
+    [tokenId, orgId, adminUserId, tokenHash, expiresAt.toISOString()]
   );
 
+  // Update request as approved
   await pool.query(
     `update qm_org_requests
        set status='approved',
@@ -1574,46 +1572,61 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   const base = getPublicBase(req);
   const setupLink = `${base}/portal/setup-admin.html?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(rawToken)}`;
 
-  // ✅ NEW: email requester on approval (don’t fail API if email fails)
-  let emailedTo = null;
-  try {
-    const to = String(reqRow.requester_email || "").trim();
-    const orgName = String(reqRow.org_name || "").trim();
-    emailedTo = to || null;
+  // Send email to requester
+  let emailSent = false;
+  let emailError = null;
 
-    if (to) {
-      const subject = `QuantumMail Setup Link: ${orgName} (${orgId})`;
-      const text = `Your org is approved.\nOrgName: ${orgName}\nOrgId: ${orgId}\nAdminUsername: ${adminUsername}\nSetup: ${setupLink}\nExpires: ${expiresAt.toISOString()}`;
-      const html = `
-        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
-          <h2 style="margin:0 0 8px 0">Your QuantumMail Org is Approved ✅</h2>
-          <p style="margin:0 0 10px 0">
-            <b>Org Name:</b> ${orgName}<br/>
-            <b>Org ID:</b> ${orgId}<br/>
-            <b>Admin Username:</b> ${adminUsername}
-          </p>
-          <p style="margin:0 0 10px 0">
-            Click this secure setup link to verify your email and activate your admin account:
-          </p>
-          <p style="margin:0 0 10px 0">
-            <a href="${setupLink}" style="display:inline-block;padding:10px 14px;border-radius:12px;background:#2bd576;color:#07101f;font-weight:800;text-decoration:none">
-              Open Admin Setup
-            </a>
-          </p>
-          <div style="color:#6b7280;font-size:12px">
-            This link expires at ${expiresAt.toISOString()}.
-          </div>
-        </div>
-      `;
-      await sendEmail({ to, subject, text, html });
-    }
+  try {
+    const tpl = approvedEmailTemplate({
+      orgName: reqRow.org_name,
+      orgId,
+      username: adminUsername,
+      setupLink,
+      expiresAt: expiresAt.toISOString()
+    });
+
+    const out = await sendMail({
+      to: reqRow.requester_email,
+      subject: tpl.subject,
+      html: tpl.html,
+      text: tpl.text,
+    });
+
+    emailSent = (out.accepted || []).length > 0;
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = now(),
+             email_last_error = null,
+             email_last_type = 'approved'
+       where id=$1`,
+      [requestId]
+    );
   } catch (e) {
-    console.error("Approve email failed:", e);
+    emailSent = false;
+    emailError = String(e?.message || e);
+
+    await pool.query(
+      `update qm_org_requests
+         set email_sent_at = null,
+             email_last_error = $2,
+             email_last_type = 'approved'
+       where id=$1`,
+      [requestId, emailError]
+    );
   }
 
-  res.json({ ok: true, orgId, adminUserId, adminUsername, setupLink, expiresAt: expiresAt.toISOString(), emailedTo });
+  return res.json({
+    ok: true,
+    orgId,
+    adminUserId,
+    adminUsername,
+    setupLink,
+    expiresAt: expiresAt.toISOString(),
+    emailSent,
+    emailError
+  });
 });
-
 /* =========================================================
    MESSAGES: create + inbox + fetch (durable in org JSON)
 ========================================================= */
