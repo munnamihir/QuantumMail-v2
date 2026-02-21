@@ -126,11 +126,11 @@
       <div style="display:grid;gap:8px">
         <div>
           <label>Approve: orgId</label>
-          <input class="orgId" placeholder="ex: org_acme123" />
+          <input class="orgId"  />
         </div>
         <div>
           <label>Approve: first admin username</label>
-          <input class="adminUsername" placeholder="ex: admin" />
+          <input class="adminUsername"  />
         </div>
         <button class="btn btnGood approveBtn" data-id="${esc(id)}" type="button">
           Approve + Email Setup Link
@@ -140,7 +140,7 @@
 
         <div>
           <label>Reject reason</label>
-          <input class="rejectReason" placeholder="ex: Need business email verification" />
+          <input class="rejectReason"  />
         </div>
         <button class="btn btnBad rejectBtn" data-id="${esc(id)}" type="button">
           Reject + Email Reason
@@ -270,7 +270,8 @@
 
           const setupLink = out?.setupLink || "";
           const expiresAt = out?.expiresAt || "";
-          const emailSent = out?.emailSent !== false; // default true if not provided
+          const emailSent = out?.emailSent === true;
+          toast(emailSent ? "Approved ✅ Email sent" : "Approved ✅ (email not sent)");
 
           // still show setup link (optional)
           const outEl = row.querySelector(".setupOut");
@@ -320,7 +321,7 @@
             body: { reason }
           });
 
-          toast(out?.emailSent === false ? "Rejected (email NOT sent)" : "Rejected ✅ Email sent");
+          toast(out?.emailSent === true ? "Rejected ✅ Email sent" : "Rejected (email not sent)");
           await loadList();
         } catch (e) {
           toast(`Reject failed: ${e.message}`);
