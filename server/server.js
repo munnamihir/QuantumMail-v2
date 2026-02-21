@@ -46,41 +46,126 @@ const BOOTSTRAP_SECRET = process.env.QM_BOOTSTRAP_SECRET || "";
 const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 
 /* =========================================================
-   EMAIL (SMTP)
+   SMTP (Brevo)
 ========================================================= */
-const SMTP_HOST = process.env.QM_SMTP_HOST || "";
-const SMTP_PORT = parseInt(process.env.QM_SMTP_PORT || "587", 10);
-const SMTP_USER = process.env.QM_SMTP_USER || "";
-const SMTP_PASS = process.env.QM_SMTP_PASS || "";
-const FROM_EMAIL = process.env.QM_FROM_EMAIL || "";
-const FROM_NAME = process.env.QM_FROM_NAME || "QuantumMail";
+const QM_SMTP_HOST = process.env.QM_SMTP_HOST || "";
+const QM_SMTP_PORT = parseInt(process.env.QM_SMTP_PORT || "587", 10);
+const QM_SMTP_USER = process.env.QM_SMTP_USER || "";
+const QM_SMTP_PASS = process.env.QM_SMTP_PASS || "";
+const QM_FROM_EMAIL = process.env.QM_FROM_EMAIL || "";
+const QM_FROM_NAME = process.env.QM_FROM_NAME || "QuantumMail";
 
-const EMAIL_ENABLED = !!(SMTP_HOST && SMTP_USER && SMTP_PASS && FROM_EMAIL);
+let _mailer = null;
 
-const mailer = EMAIL_ENABLED
-  ? nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    })
-  : null;
+function mailerConfigured() {
+  return !!(QM_SMTP_HOST && QM_SMTP_PORT && QM_SMTP_USER && QM_SMTP_PASS && QM_FROM_EMAIL);
+}
 
-async function sendEmail({ to, subject, html, text }) {
-  if (!EMAIL_ENABLED || !mailer) {
-    console.warn("EMAIL DISABLED (missing SMTP env). Would have sent:", { to, subject });
-    return { ok: false, skipped: true };
+function getMailer() {
+  if (!mailerConfigured()) {
+    throw new Error("Mailer not configured. Set QM_SMTP_HOST/QM_SMTP_PORT/QM_SMTP_USER/QM_SMTP_PASS/QM_FROM_EMAIL");
   }
+  if (_mailer) return _mailer;
 
-  await mailer.sendMail({
-    from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+  const secure = QM_SMTP_PORT === 465; // 465 = SMTPS, 587 = STARTTLS
+  _mailer = nodemailer.createTransport({
+    host: QM_SMTP_HOST,
+    port: QM_SMTP_PORT,
+    secure,
+    auth: { user: QM_SMTP_USER, pass: QM_SMTP_PASS },
+  });
+
+  return _mailer;
+}
+
+async function sendMail({ to, subject, html, text }) {
+  const t = getMailer();
+  const from = QM_FROM_NAME ? `"${QM_FROM_NAME}" <${QM_FROM_EMAIL}>` : QM_FROM_EMAIL;
+
+  const info = await t.sendMail({
+    from,
     to,
     subject,
     text: text || undefined,
     html: html || undefined,
   });
 
-  return { ok: true };
+  // "accepted" means Brevo accepted for delivery; delivery may still fail later.
+  const accepted = Array.isArray(info.accepted) ? info.accepted : [];
+  return { messageId: info.messageId || null, accepted };
+}
+
+function approvedEmailTemplate({ orgName, orgId, username, setupLink, expiresAt }) {
+  const safeOrgName = String(orgName || orgId || "Your Org");
+  return {
+    subject: `QuantumMail — Your organization is approved (${safeOrgName})`,
+    text:
+`Your QuantumMail organization request was approved.
+
+Org Name: ${safeOrgName}
+Org ID: ${orgId}
+Admin Username: ${username}
+
+Setup Link (expires ${expiresAt}):
+${setupLink}
+
+If you did not request this, ignore this email.`,
+    html:
+`<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.5;color:#0b1020">
+  <h2 style="margin:0 0 10px">Organization Approved ✅</h2>
+  <p style="margin:0 0 12px">Your QuantumMail organization request was approved.</p>
+
+  <div style="background:#f6f8ff;border:1px solid #e2e8ff;border-radius:12px;padding:12px">
+    <div><b>Org Name:</b> ${safeOrgName}</div>
+    <div><b>Org ID:</b> <span style="font-family:ui-monospace,Menlo,Consolas,monospace">${orgId}</span></div>
+    <div><b>Admin Username:</b> <span style="font-family:ui-monospace,Menlo,Consolas,monospace">${username}</span></div>
+  </div>
+
+  <p style="margin:14px 0 8px"><b>Setup Link</b> (expires ${expiresAt}):</p>
+  <p style="margin:0 0 14px">
+    <a href="${setupLink}" style="display:inline-block;padding:10px 14px;border-radius:12px;background:#0b5cff;color:#fff;text-decoration:none;font-weight:700">
+      Complete Admin Setup
+    </a>
+  </p>
+
+  <p style="margin:0;color:#4a5568;font-size:12px">
+    If you did not request this, ignore this email.
+  </p>
+</div>`
+  };
+}
+
+function rejectedEmailTemplate({ orgName, requesterName, reason }) {
+  const safeOrgName = String(orgName || "Your Org");
+  const safeName = String(requesterName || "there");
+  const safeReason = String(reason || "No reason provided.");
+  return {
+    subject: `QuantumMail — Organization request update (${safeOrgName})`,
+    text:
+`Hi ${safeName},
+
+Your QuantumMail organization request for "${safeOrgName}" was rejected.
+
+Reason: ${safeReason}
+
+You can reply to this email if you want to resubmit with more details.`,
+    html:
+`<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.5;color:#0b1020">
+  <h2 style="margin:0 0 10px">Request Update</h2>
+  <p style="margin:0 0 12px">Hi ${safeName},</p>
+  <p style="margin:0 0 12px">
+    Your QuantumMail organization request for <b>"${safeOrgName}"</b> was rejected.
+  </p>
+
+  <div style="background:#fff5f7;border:1px solid #ffd2dc;border-radius:12px;padding:12px">
+    <b>Reason:</b> ${safeReason}
+  </div>
+
+  <p style="margin:14px 0 0;color:#4a5568;font-size:12px">
+    You can resubmit your request after addressing the reason.
+  </p>
+</div>`
+  };
 }
 
 /* =========================================================
