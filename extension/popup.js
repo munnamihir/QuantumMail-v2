@@ -251,5 +251,6 @@ $("btnClearAtt")?.addEventListener("click", () => {
 });
 (async function init() {
   fillDefaults();
+  setChosenFiles([]);
   await refreshSessionUI();
 })();
