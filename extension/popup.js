@@ -240,14 +240,14 @@ async function encryptSelected() {
   }
 }
 
-async function openAdmin() {
+async function openHome() {
   const s = await getSession();
   const base = s?.serverBase || normalizeBase($("serverBase").value.trim());
   if (!base) {
     err("Set Server Base first.");
     return;
   }
-  chrome.tabs.create({ url: `${base}/portal/admin.html` });
+  chrome.tabs.create({ url: `${base}/portal/index.html` });
 }
 
 /* ===== wire up ===== */
