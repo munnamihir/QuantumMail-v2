@@ -1,162 +1,216 @@
 // portal/setup-admin.js
-(() => {
-  const $ = (id) => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-  const setErr = (m) => { $("err").textContent = m || ""; };
-  const setOk  = (m) => { $("ok").textContent = m || ""; };
+function setErr(msg) {
+  const el = $("err");
+  if (el) el.textContent = msg || "";
+}
+function setOk(msg) {
+  const el = $("ok");
+  if (el) el.textContent = msg || "";
+}
 
-  const setMErr = (m) => { $("mErr").textContent = m || ""; };
-  const setMOk  = (m) => { $("mOk").textContent = m || ""; };
+function mSetErr(msg) {
+  const el = $("mErr");
+  if (el) el.textContent = msg || "";
+}
+function mSetOk(msg) {
+  const el = $("mOk");
+  if (el) el.textContent = msg || "";
+}
 
-  const qs = new URLSearchParams(location.search);
-  const orgId = qs.get("orgId") || "";
-  const token = qs.get("token") || "";
+function qs() {
+  const u = new URL(window.location.href);
+  return {
+    orgId: u.searchParams.get("orgId") || "",
+    token: u.searchParams.get("token") || ""
+  };
+}
 
-  let verified = false;
-  let email = "";
+async function apiJson(path, { method = "GET", body = null } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: {
+      Accept: "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
 
-  async function getJson(path) {
-    const res = await fetch(path);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-    return data;
+  const raw = await res.text().catch(() => "");
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch { data = { error: raw }; }
+
+  if (!res.ok) {
+    throw new Error(data?.error || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+function openModal() {
+  const bd = $("backdrop");
+  if (bd) bd.style.display = "flex";
+}
+function closeModal() {
+  const bd = $("backdrop");
+  if (bd) bd.style.display = "none";
+}
+
+function setVerifiedUi() {
+  $("btnShowActivate").disabled = false;
+  setOk("Email verified ✅ You can activate your admin account now.");
+}
+
+async function loadSetupInfo() {
+  setErr("");
+  setOk("");
+
+  const { orgId, token } = qs();
+  if (!orgId || !token) {
+    setErr("Missing orgId/token in setup link.");
+    return;
   }
 
-  async function postJson(path, body) {
-    const res = await fetch(path, {
+  const info = await apiJson(`/public/setup-admin-info?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(token)}`);
+
+  $("orgId").value = info.orgId || orgId;
+  $("email").value = info.email || "";
+  $("mEmail").value = info.email || "";
+
+  // already verified?
+  if (info.emailVerified) {
+    setVerifiedUi();
+  } else {
+    $("btnShowActivate").disabled = true;
+  }
+}
+
+async function sendCode() {
+  mSetErr("");
+  mSetOk("");
+
+  const { orgId, token } = qs();
+  if (!orgId || !token) throw new Error("Missing orgId/token.");
+
+  const out = await apiJson("/auth/setup-admin/send-code", {
+    method: "POST",
+    body: { orgId, token }
+  });
+
+  if (out.alreadyVerified) {
+    mSetOk("Already verified ✅");
+    setVerifiedUi();
+    closeModal();
+    return;
+  }
+
+  mSetOk("Code sent ✅ Check your email.");
+}
+
+async function verifyCode() {
+  mSetErr("");
+  mSetOk("");
+
+  const code = String($("mCode").value || "").trim();
+  if (!/^\d{6}$/.test(code)) {
+    mSetErr("Enter a valid 6-digit code.");
+    return;
+  }
+
+  const { orgId, token } = qs();
+  if (!orgId || !token) throw new Error("Missing orgId/token.");
+
+  const out = await apiJson("/auth/setup-admin/verify-code", {
+    method: "POST",
+    body: { orgId, token, code }
+  });
+
+  if (out.alreadyVerified) {
+    mSetOk("Already verified ✅");
+  } else {
+    mSetOk("Verified ✅");
+  }
+
+  setVerifiedUi();
+  closeModal();
+}
+
+function showActivateBox() {
+  const box = $("activateBox");
+  if (box) box.style.display = "block";
+  $("pw")?.focus();
+}
+
+async function activateNow() {
+  setErr("");
+  setOk("");
+
+  const pw = String($("pw").value || "");
+  if (pw.length < 12) {
+    setErr("Password must be at least 12 characters.");
+    return;
+  }
+
+  const { orgId, token } = qs();
+  if (!orgId || !token) {
+    setErr("Missing orgId/token.");
+    return;
+  }
+
+  $("btnActivateNow").disabled = true;
+  $("btnActivateNow").textContent = "Activating...";
+
+  try {
+    await apiJson("/auth/setup-admin", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: { orgId, token, newPassword: pw }
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
-    return data;
+
+    // ✅ Redirect to login page and open login tab
+    window.location.href = "/portal/index.html#login";
+  } catch (e) {
+    setErr(e?.message || String(e));
+  } finally {
+    $("btnActivateNow").disabled = false;
+    $("btnActivateNow").textContent = "Activate";
   }
+}
 
-  function openModal() {
-    $("backdrop").style.display = "flex";
-  }
-  function closeModal() {
-    $("backdrop").style.display = "none";
-  }
+/* =========================
+   Wire up buttons
+========================= */
+$("btnVerify")?.addEventListener("click", () => {
+  mSetErr(""); mSetOk("");
+  $("mCode").value = "";
+  $("mEmail").value = $("email").value || "";
+  openModal();
+});
 
-  function syncUI() {
-    $("btnShowActivate").disabled = !verified;
-    $("activateBox").style.display = verified ? "block" : "none";
-    $("btnVerify").disabled = verified;
+$("btnClose")?.addEventListener("click", () => closeModal());
 
-    if (verified) {
-      setOk("Email verified ✅ You can activate your admin account now.");
-    } else {
-      setOk("");
-    }
-  }
+$("backdrop")?.addEventListener("click", (e) => {
+  // click outside modal closes
+  if (e.target?.id === "backdrop") closeModal();
+});
 
-  async function loadInfo() {
-    setErr(""); setOk("");
-    if (!orgId || !token) throw new Error("Missing orgId/token in link.");
+$("btnSendCode")?.addEventListener("click", () => {
+  $("btnSendCode").disabled = true;
+  sendCode()
+    .catch((e) => mSetErr(e?.message || String(e)))
+    .finally(() => ($("btnSendCode").disabled = false));
+});
 
-    $("orgId").value = orgId;
+$("btnVerifyCode")?.addEventListener("click", () => {
+  $("btnVerifyCode").disabled = true;
+  verifyCode()
+    .catch((e) => mSetErr(e?.message || String(e)))
+    .finally(() => ($("btnVerifyCode").disabled = false));
+});
 
-    // ✅ NEW: server tells us which email this setup is for
-    const info = await getJson(`/public/setup-admin-info?orgId=${encodeURIComponent(orgId)}&token=${encodeURIComponent(token)}`);
+$("btnShowActivate")?.addEventListener("click", () => showActivateBox());
+$("btnActivateNow")?.addEventListener("click", () => activateNow());
 
-    email = info.email || "";
-    verified = !!info.emailVerified;
-
-    $("email").value = email || "—";
-    $("mEmail").value = email || "—";
-
-    syncUI();
-  }
-
-  async function sendCode() {
-    setMErr(""); setMOk("");
-    if (!orgId || !token) { setMErr("Missing orgId/token."); return; }
-
-    $("btnSendCode").disabled = true;
-    const prev = $("btnSendCode").textContent;
-    $("btnSendCode").textContent = "Sending…";
-    try {
-      await postJson("/auth/setup-admin/send-code", { orgId, token });
-      setMOk("Code sent ✅ Check your email.");
-    } catch (e) {
-      setMErr(e.message);
-    } finally {
-      $("btnSendCode").disabled = false;
-      $("btnSendCode").textContent = prev || "Send Code";
-    }
-  }
-
-  async function verifyCode() {
-    setMErr(""); setMOk("");
-
-    const code = String($("mCode").value || "").trim();
-    if (!/^\d{6}$/.test(code)) {
-      setMErr("Enter a valid 6-digit code.");
-      return;
-    }
-
-    $("btnVerifyCode").disabled = true;
-    const prev = $("btnVerifyCode").textContent;
-    $("btnVerifyCode").textContent = "Verifying…";
-    try {
-      await postJson("/auth/setup-admin/verify-code", { orgId, token, code });
-      verified = true;
-      setMOk("Verified ✅");
-      syncUI();
-      closeModal();
-    } catch (e) {
-      setMErr(e.message);
-    } finally {
-      $("btnVerifyCode").disabled = false;
-      $("btnVerifyCode").textContent = prev || "Verify";
-    }
-  }
-
-  async function activate() {
-    setErr(""); setOk("");
-    if (!verified) { setErr("Verify email first."); return; }
-
-    const newPassword = String($("pw").value || "");
-    if (newPassword.length < 12) { setErr("New password must be at least 12 characters."); return; }
-
-    $("btnActivateNow").disabled = true;
-    const prev = $("btnActivateNow").textContent;
-    $("btnActivateNow").textContent = "Activating…";
-    try {
-      await postJson("/auth/setup-admin", { orgId, token, newPassword });
-      setOk("Activated ✅ You can now login as Admin.");
-      $("pw").value = "";
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      $("btnActivateNow").disabled = false;
-      $("btnActivateNow").textContent = prev || "Activate";
-    }
-  }
-
-  // Wire UI
-  $("btnVerify").addEventListener("click", () => {
-    setMErr(""); setMOk("");
-    $("mCode").value = "";
-    openModal();
-  });
-
-  $("btnClose").addEventListener("click", closeModal);
-  $("backdrop").addEventListener("click", (e) => {
-    if (e.target?.id === "backdrop") closeModal();
-  });
-
-  $("btnSendCode").addEventListener("click", () => sendCode());
-  $("btnVerifyCode").addEventListener("click", () => verifyCode());
-
-  $("btnShowActivate").addEventListener("click", () => {
-    if (verified) $("activateBox").style.display = "block";
-  });
-
-  $("btnActivateNow").addEventListener("click", () => activate());
-
-  // Init
-  loadInfo().catch((e) => setErr(e.message));
-})();
+/* =========================
+   Init
+========================= */
+loadSetupInfo().catch((e) => setErr(e?.message || String(e)));
