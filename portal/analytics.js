@@ -19,9 +19,14 @@ function requireAdminOrBounce() {
 
 async function api(path) {
   const token = getToken();
-  const headers = { Authorization: `Bearer ${token}` };
-  const res = await fetch(path, { headers });
-  const data = await res.json().catch(() => ({}));
+  const res = await fetch(path, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+  });
+
+  const raw = await res.text().catch(() => "");
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch { data = { error: raw }; }
+
   if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
@@ -39,10 +44,10 @@ function setText(id, v) {
 
 function setKpis(out) {
   const c = out.counts || {};
-  setText("kEncrypted", c.encryptedMessages);
-  setText("kDecrypts", c.decrypts);
-  setText("kDenied", c.deniedDecrypts);
-  setText("kFailed", c.failedLogins);
+  setText("kEncrypted", c.encryptedMessages ?? "—");
+  setText("kDecrypts", c.decrypts ?? "—");
+  setText("kDenied", c.deniedDecrypts ?? "—");
+  setText("kFailed", c.failedLogins ?? "—");
 
   const seats = out.seats || {};
   setText("kActiveSeats", `${seats.activeUsers ?? 0} / ${seats.totalUsers ?? 0}`);
@@ -64,21 +69,22 @@ function renderTopUsers(list) {
     <tr>
       <td>${escapeHtml(u.username || "—")}<div class="muted">${escapeHtml(u.userId || "")}</div></td>
       <td>${escapeHtml(u.role || "Member")}</td>
-      <td>${escapeHtml(u.encrypts)}</td>
-      <td>${escapeHtml(u.decrypts)}</td>
-      <td>${escapeHtml(u.denied)}</td>
-      <td>${escapeHtml(u.logins)}</td>
+      <td>${escapeHtml(u.encrypts ?? 0)}</td>
+      <td>${escapeHtml(u.decrypts ?? 0)}</td>
+      <td>${escapeHtml(u.denied ?? 0)}</td>
+      <td>${escapeHtml(u.logins ?? 0)}</td>
     </tr>
   `).join("");
 }
 
 function renderKeyHealth(out) {
-  const missing = out.keyHealth?.missingKeys || [];
-  const stale = out.keyHealth?.staleKeys || [];
-  const staleDays = out.keyHealth?.staleKeyDays ?? 90;
+  const kh = out.keyHealth || {};
+  const missing = kh.missingKeys || [];
+  const stale = kh.staleKeys || [];
+  const staleDays = kh.staleKeyDays ?? 90;
 
-  setText("kMissingKeys", out.keyHealth?.missingKeysCount ?? missing.length);
-  setText("kStaleKeys", out.keyHealth?.staleKeysCount ?? stale.length);
+  setText("kMissingKeys", kh.missingKeysCount ?? missing.length);
+  setText("kStaleKeys", kh.staleKeysCount ?? stale.length);
   setText("staleKeyDaysLabel", staleDays);
 
   const tbMissing = $("tbodyMissingKeys");
@@ -119,7 +125,7 @@ function renderInvites(out) {
 
 function drawCore(series) {
   const ctx = $("chartCore");
-  if (!ctx) return;
+  if (!ctx || typeof Chart === "undefined") return;
 
   const labels = series.map(x => x.day);
   const data = {
@@ -138,7 +144,7 @@ function drawCore(series) {
 
 function drawAttachment(series) {
   const ctx = $("chartAtt");
-  if (!ctx) return;
+  if (!ctx || typeof Chart === "undefined") return;
 
   const labels = series.map(x => x.day);
   const vals = series.map(x => x.attachmentsBytes || 0);
