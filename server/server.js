@@ -601,49 +601,227 @@ app.post("/admin/policies", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /* =========================================================
-   ADMIN: ANALYTICS
-   GET /admin/analytics?days=7
+   ADMIN: ANALYTICS  (FULL SHAPE FOR portal/analytics.js)
+   GET /admin/analytics?days=7&staleKeyDays=90
 ========================================================= */
 app.get("/admin/analytics", requireAuth, requireAdmin, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const org = await getOrg(orgId);
 
-  const days = Math.min(Math.max(parseInt(req.query.days || "7", 10) || 7, 1), 90);
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+  const days = Math.min(Math.max(parseInt(req.query.days || "7", 10) || 7, 1), 365);
+  const staleKeyDays = Math.min(Math.max(parseInt(req.query.staleKeyDays || "90", 10) || 90, 7), 3650);
+
+  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const since7dMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
   const auditItems = Array.isArray(org.audit) ? org.audit : [];
+  const users = Array.isArray(org.users) ? org.users : [];
   const messages = org.messages || {};
 
-  const usersTotal = Array.isArray(org.users) ? org.users.length : 0;
-  const messagesTotal = Object.keys(messages).length;
+  const totalUsers = users.length;
+  const usersWithKeys = users.filter((u) => !!u.publicKeySpkiB64).length;
+  const keyCoveragePct = totalUsers ? Math.round((usersWithKeys / totalUsers) * 100) : 0;
 
-  let encryptStore = 0,
-    decryptPayload = 0,
-    loginFailed = 0,
-    decryptDenied = 0;
+  // ---- invites hygiene
+  const invs = Object.values(org.invites || {});
+  const now = Date.now();
+  let invActive = 0, invUsed = 0, invExpired = 0;
+
+  for (const inv of invs) {
+    const exp = Date.parse(inv.expiresAt || "");
+    const isExpired = Number.isFinite(exp) && exp < now;
+    const isUsed = !!inv.usedAt;
+
+    if (isUsed) invUsed++;
+    else if (isExpired) invExpired++;
+    else invActive++;
+  }
+
+  // ---- counts from audit within window
+  let decrypts = 0, deniedDecrypts = 0, failedLogins = 0, logins = 0;
+  let encryptStore = 0;
+
+  // active seats = unique users who did anything meaningful in the window
+  const activeUsersSet = new Set();
+  const activeUsers7dSet = new Set();
+
+  // daily series
+  const dayKey = (d) => {
+    const dt = new Date(d);
+    dt.setHours(0, 0, 0, 0);
+    return dt.toISOString().slice(0, 10); // YYYY-MM-DD
+  };
+
+  const seriesMap = new Map(); // day -> bucket
+  function ensureBucket(day) {
+    if (!seriesMap.has(day)) {
+      seriesMap.set(day, {
+        day,
+        encrypted: 0,
+        decrypts: 0,
+        denied: 0,
+        failedLogins: 0,
+        attachmentsBytes: 0,
+      });
+    }
+    return seriesMap.get(day);
+  }
+
+  // user aggregates
+  const userAgg = new Map(); // userId -> counts
+  function aggUser(userId, fn) {
+    if (!userId) return;
+    if (!userAgg.has(userId)) userAgg.set(userId, { encrypts: 0, decrypts: 0, denied: 0, logins: 0 });
+    fn(userAgg.get(userId));
+  }
 
   for (const a of auditItems) {
-    const at = Date.parse(a.at || "");
-    if (Number.isNaN(at) || at < since) continue;
+    const atMs = Date.parse(a.at || "");
+    if (!Number.isFinite(atMs)) continue;
 
-    if (a.action === "encrypt_store") encryptStore++;
-    if (a.action === "decrypt_payload") decryptPayload++;
-    if (a.action === "login_failed") loginFailed++;
-    if (a.action === "decrypt_denied") decryptDenied++;
+    // 7d active set
+    if (atMs >= since7dMs && a.userId) activeUsers7dSet.add(a.userId);
+
+    // window filter
+    if (atMs < sinceMs) continue;
+
+    if (a.userId) activeUsersSet.add(a.userId);
+
+    const d = dayKey(atMs);
+    const b = ensureBucket(d);
+
+    if (a.action === "encrypt_store") {
+      encryptStore++;
+      b.encrypted++;
+      b.attachmentsBytes += Number(a.attachmentsTotalBytes || 0);
+      aggUser(a.userId, (u) => u.encrypts++);
+    }
+
+    if (a.action === "decrypt_payload") {
+      decrypts++;
+      b.decrypts++;
+      aggUser(a.userId, (u) => u.decrypts++);
+    }
+
+    if (a.action === "decrypt_denied") {
+      deniedDecrypts++;
+      b.denied++;
+      aggUser(a.userId, (u) => u.denied++);
+    }
+
+    if (a.action === "login_failed") {
+      failedLogins++;
+      b.failedLogins++;
+    }
+
+    if (a.action === "login") {
+      logins++;
+      aggUser(a.userId, (u) => u.logins++);
+    }
   }
+
+  // ensure full day range (even zeros) so charts look smooth
+  const activitySeries = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const dt = new Date();
+    dt.setDate(dt.getDate() - i);
+    dt.setHours(0, 0, 0, 0);
+    const dk = dt.toISOString().slice(0, 10);
+    const bucket = seriesMap.get(dk) || {
+      day: dk, encrypted: 0, decrypts: 0, denied: 0, failedLogins: 0, attachmentsBytes: 0
+    };
+    activitySeries.push(bucket);
+  }
+
+  // ---- key health
+  const missingKeys = users
+    .filter((u) => !u.publicKeySpkiB64)
+    .map((u) => ({
+      userId: u.userId,
+      username: u.username,
+      role: u.role,
+      lastLoginAt: u.lastLoginAt || null,
+    }));
+
+  const staleKeys = users
+    .filter((u) => !!u.publicKeySpkiB64 && !!u.publicKeyRegisteredAt)
+    .map((u) => {
+      const at = Date.parse(u.publicKeyRegisteredAt || "");
+      const ageDays = Number.isFinite(at) ? Math.floor((Date.now() - at) / (24 * 60 * 60 * 1000)) : null;
+      return {
+        userId: u.userId,
+        username: u.username,
+        role: u.role,
+        publicKeyRegisteredAt: u.publicKeyRegisteredAt || null,
+        keyAgeDays: ageDays,
+      };
+    })
+    .filter((x) => (x.keyAgeDays ?? 0) >= staleKeyDays)
+    .sort((a, b) => (b.keyAgeDays ?? 0) - (a.keyAgeDays ?? 0));
+
+  // ---- top users (by activity)
+  const topUsers = Array.from(userAgg.entries())
+    .map(([userId, c]) => {
+      const u = users.find((x) => x.userId === userId);
+      return {
+        userId,
+        username: u?.username || userId,
+        role: u?.role || "Member",
+        encrypts: c.encrypts,
+        decrypts: c.decrypts,
+        denied: c.denied,
+        logins: c.logins,
+      };
+    })
+    .sort((a, b) =>
+      (b.encrypts + b.decrypts + b.denied + b.logins) - (a.encrypts + a.decrypts + a.denied + a.logins)
+    )
+    .slice(0, 25);
+
+  const encryptedMessages = Object.keys(messages).length;
+  const decryptSuccessRatePct =
+    (decrypts + deniedDecrypts) > 0 ? Math.round((decrypts / (decrypts + deniedDecrypts)) * 100) : 0;
 
   res.json({
     ok: true,
     orgId,
     days,
-    summary: {
-      usersTotal,
-      messagesTotal,
-      encryptStoreLastNDays: encryptStore,
-      decryptPayloadLastNDays: decryptPayload,
-      loginFailedLastNDays: loginFailed,
-      decryptDeniedLastNDays: decryptDenied,
+    staleKeyDays,
+
+    counts: {
+      encryptedMessages,
+      decrypts,
+      deniedDecrypts,
+      failedLogins,
     },
+
+    seats: {
+      totalUsers,
+      activeUsers: activeUsersSet.size,
+      activeUsers7d: activeUsers7dSet.size,
+      keyCoveragePct,
+    },
+
+    rates: {
+      decryptSuccessRatePct,
+    },
+
+    invites: {
+      active: invActive,
+      used: invUsed,
+      expired: invExpired,
+    },
+
+    keyHealth: {
+      staleKeyDays,
+      missingKeysCount: missingKeys.length,
+      staleKeysCount: staleKeys.length,
+      missingKeys,
+      staleKeys,
+    },
+
+    topUsers,
+    activitySeries,
   });
 });
 
