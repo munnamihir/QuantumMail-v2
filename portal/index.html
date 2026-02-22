@@ -64,44 +64,45 @@
       <section id="joinPanel" style="display:none;">
         <h2>Join an existing org</h2>
         <p class="muted">You need an Org ID + invite code from your Admin.</p>
-      
+
         <div class="row">
           <div>
             <label for="jnOrgId">Org ID</label>
             <input id="jnOrgId" autocomplete="off"/>
             <div class="help" id="jnOrgStatus"></div>
           </div>
-      
+
           <div>
             <label for="jnInviteCode">Invite Code</label>
             <input id="jnInviteCode" autocomplete="off" />
           </div>
         </div>
-      
+
         <div class="row">
           <div>
             <label for="jnUsername">Username</label>
             <input id="jnUsername" autocomplete="off" />
             <div class="help" id="jnUserStatus"></div>
           </div>
-      
-          <div>
-            <label for="jnEmail">Email</label>
-            <input id="jnEmail" autocomplete="email" />
-          </div>
-        </div>
-      
-        <div class="row">
+
           <div>
             <label for="jnPassword">Password</label>
             <input id="jnPassword" type="password" placeholder="Minimum 12 recommended"/>
           </div>
         </div>
-      
+
+        <!-- OPTIONAL: if you want email stored at signup, add this -->
+        <div class="row">
+          <div>
+            <label for="jnEmail">Email (recommended)</label>
+            <input id="jnEmail" autocomplete="off" placeholder="you@company.com"/>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="btnJoin" class="primary" type="button">Create account (Join)</button>
         </div>
-      
+
         <div id="jnOk" class="ok"></div>
         <div id="jnErr" class="err"></div>
       </section>
@@ -131,8 +132,18 @@
           </div>
         </div>
 
-        <div class="actions">
+        <!-- NEW: email for recovery -->
+        <div class="row">
+          <div>
+            <label for="liEmail">Email (for recovery)</label>
+            <input id="liEmail" autocomplete="off" placeholder="you@company.com"/>
+          </div>
+        </div>
+
+        <div class="actions" style="display:flex; gap:10px; flex-wrap:wrap;">
           <button id="btnLogin" class="primary" type="button">Login</button>
+          <button id="btnForgotUsername" type="button">Forgot Username</button>
+          <button id="btnForgotPassword" type="button">Forgot Password</button>
         </div>
 
         <div id="liOk" class="ok"></div>
