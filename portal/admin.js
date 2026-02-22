@@ -67,6 +67,27 @@ function setSessionPill() {
 }
 
 /* =========================================================
+   Validation helpers
+========================================================= */
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+function isValidEmail(email) {
+  const e = normalizeEmail(email);
+  if (!e) return false;
+  // simple + strict enough for UI
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+function escapeAttr(s) {
+  return escapeHtml(s).replaceAll("`", "&#096;");
+}
+
+/* =========================================================
    API
 ========================================================= */
 async function api(path, { method = "GET", body = null } = {}) {
@@ -102,24 +123,17 @@ function daysOld(iso) {
   if (Number.isNaN(t)) return null;
   return Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000));
 }
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-}
-function escapeAttr(s) {
-  return escapeHtml(s).replaceAll("`", "&#096;");
-}
 
 /* =========================================================
    Users table
+   NOTE: supports email if backend returns it (u.email)
 ========================================================= */
 function renderUsers(users) {
   const tbody = $("usersTbody");
   if (!tbody) return;
 
   if (!Array.isArray(users) || users.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="muted">No users found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="muted">No users found.</td></tr>`;
     return;
   }
 
@@ -129,9 +143,16 @@ function renderUsers(users) {
       ? `✅ Registered${keyAge != null ? ` • ${keyAge}d` : ""}`
       : `— None`;
 
+    const email = u.email ? String(u.email) : "";
+
     return `
       <tr>
-        <td><b>${escapeHtml(u.username || "")}</b><br/><span class="muted">${escapeHtml(u.userId || "")}</span></td>
+        <td>
+          <b>${escapeHtml(u.username || "")}</b>
+          <br/>
+          <span class="muted">${escapeHtml(u.userId || "")}</span>
+        </td>
+        <td>${escapeHtml(email || "—")}</td>
         <td>${escapeHtml(u.role || "Member")}</td>
         <td>${escapeHtml(u.status || "Active")}</td>
         <td>${escapeHtml(keyHealth)}</td>
@@ -180,6 +201,8 @@ async function createUser() {
   ok("usersOk", ""); err("usersErr", "");
 
   const username = String($("newUsername")?.value || "").trim();
+  const emailRaw = String($("newEmail")?.value || "");
+  const email = normalizeEmail(emailRaw);
   const password = String($("newPassword")?.value || "");
   const role = String($("newRole")?.value || "Member").trim() || "Member";
 
@@ -187,11 +210,25 @@ async function createUser() {
     err("usersErr", "New Username and New Password are required.");
     return;
   }
+  if (!email) {
+    err("usersErr", "Email is required.");
+    return;
+  }
+  if (!isValidEmail(email)) {
+    err("usersErr", "Email is invalid.");
+    return;
+  }
 
-  await api("/admin/users", { method: "POST", body: { username, password, role } });
+  await api("/admin/users", { method: "POST", body: { username, email, password, role } });
+
+  // Store so you can re-use later (Join tab or elsewhere)
+  localStorage.setItem("qm_last_created_username", username);
+  localStorage.setItem("qm_last_created_email", email);
+
   ok("usersOk", `User created ✅ (${username})`);
 
   $("newUsername").value = "";
+  if ($("newEmail")) $("newEmail").value = "";
   $("newPassword").value = "";
   await refreshUsers();
 }
@@ -286,7 +323,7 @@ function doLogout() {
 
   // reset table + badge
   const tbody = $("usersTbody");
-  if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="muted">Login to load users…</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="muted">Login to load users…</td></tr>`;
   const badge = $("alertBadge");
   if (badge) badge.style.display = "none";
 
