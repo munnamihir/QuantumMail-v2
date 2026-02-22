@@ -10,6 +10,7 @@ import { pool } from "./db.js"; // Neon/PG pool
 import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
 import { sendMail } from "./mailer.js"; // single source of truth for email sending
 import { approvalEmail, rejectionEmail } from "./emailTemplates.js";
+import { recoveryRoutes } from "./routes/recovery.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -137,6 +138,20 @@ app.use(
 
 app.options("*", cors());
 app.use(express.json({ limit: "25mb" }));
+
+function hashPassword(pw) {
+  return sha256(String(pw || ""));
+}
+
+app.use(recoveryRoutes({
+  getOrg,
+  saveOrg,
+  sendMail,
+  tokenSecret: TOKEN_SECRET,
+  hashPassword, 
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || "" 
+}));
+
 
 /* =========================================================
    No-cache for portal + /m
