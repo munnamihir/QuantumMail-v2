@@ -46,6 +46,11 @@ async function api(path, { method = "GET", body = null, token = "" } = {}) {
   return data;
 }
 
+function isValidEmail(email) {
+  const e = String(email || "").trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
 /* -----------------------------
    Live checks (Join + Login)
 ------------------------------ */
@@ -113,6 +118,10 @@ async function submitRequest() {
     err("rqErr", "Organization name, your name, and your email are required.");
     return;
   }
+  if (!isValidEmail(requesterEmail)) {
+    err("rqErr", "Please enter a valid requester email.");
+    return;
+  }
 
   const out = await api("/public/org-requests", {
     method: "POST",
@@ -128,14 +137,21 @@ async function joinOrgSignup() {
   const orgId = String($("jnOrgId").value || "").trim();
   const inviteCode = String($("jnInviteCode").value || "").trim();
   const username = String($("jnUsername").value || "").trim();
+  const email = String($("jnEmail")?.value || "").trim();
   const password = String($("jnPassword").value || "");
 
-  if (!orgId || !inviteCode || !username || !password) {
-    err("jnErr", "Org ID, invite code, username, and password are required.");
+  if (!orgId || !inviteCode || !username || !email || !password) {
+    err("jnErr", "Org ID, invite code, username, email, and password are required.");
     return;
   }
-  if (password.length < 8) { // your server enforces 8 in signup; you can raise later
-    err("jnErr", "Password must be at least 8 characters.");
+  if (!isValidEmail(email)) {
+    err("jnErr", "Please enter a valid email address.");
+    return;
+  }
+
+  // Your server enforces >= 12 chars for signup
+  if (password.length < 12) {
+    err("jnErr", "Password must be at least 12 characters.");
     return;
   }
 
@@ -146,7 +162,7 @@ async function joinOrgSignup() {
 
   const out = await api("/auth/signup", {
     method: "POST",
-    body: { signupType: "OrgType", orgId, inviteCode, username, password }
+    body: { orgId, inviteCode, username, email, password }
   });
 
   ok("jnOk", `Account created ✅\nOrg: ${out.orgId}\nRole: ${out.role}\nNow login.`);
@@ -174,7 +190,6 @@ async function login() {
   localStorage.setItem("qm_token", out.token);
   localStorage.setItem("qm_user", JSON.stringify(out.user));
 
-  // optional role flags if you want, but not required:
   localStorage.setItem("qm_role", out.user?.role || "");
   localStorage.setItem("qm_orgId", out.user?.orgId || orgId);
   localStorage.setItem("qm_username", out.user?.username || username);
