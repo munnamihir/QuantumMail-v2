@@ -431,14 +431,18 @@ await ensureTables();
    POST /auth/signup { orgId, inviteCode, username, password }
 ========================================================= */
 app.post("/auth/signup", async (req, res) => {
-  const orgId = String(req.body?.orgId || "").trim();
-  const inviteCode = String(req.body?.inviteCode || "").trim();
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
+   const orgId = String(req.body?.orgId || "").trim();
+   const inviteCode = String(req.body?.inviteCode || "").trim();
+   const username = String(req.body?.username || "").trim();
+   const email = String(req.body?.email || "").trim().toLowerCase();
+   const password = String(req.body?.password || "");
 
-  if (!orgId || !inviteCode || !username || !password) {
-    return res.status(400).json({ error: "orgId, inviteCode, username, password required" });
-  }
+   if (!orgId || !inviteCode || !username || !email || !password) {
+      return res.status(400).json({ error: "orgId, inviteCode, username, email, password required" });
+   }
+   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+     return res.status(400).json({ error: "Invalid email format" });
+   }
   if (password.length < 12) {
     return res.status(400).json({ error: "Password must be at least 12 characters" });
   }
@@ -453,6 +457,10 @@ app.post("/auth/signup", async (req, res) => {
   const inv = org.invites[inviteCode];
   if (!inv) return res.status(403).json({ error: "Invalid invite code" });
 
+  if (inv.email && inv.email.toLowerCase() !== email.toLowerCase()) {
+     return res.status(403).json({ error: "Invite is designated to a different email" });
+  }
+   
   if (inv.usedAt) return res.status(403).json({ error: "Invite already used" });
   if (Date.parse(inv.expiresAt || "") < Date.now()) return res.status(403).json({ error: "Invite expired" });
 
@@ -465,6 +473,7 @@ app.post("/auth/signup", async (req, res) => {
   org.users.push({
     userId,
     username,
+    email,
     passwordHash: sha256(password),
     role,
     status: "Active",
@@ -1330,6 +1339,7 @@ app.get("/org/users", requireAuth, (req, res) => {
     users: (org.users || []).map((u) => ({
       userId: u.userId,
       username: u.username,
+      email: u.email || null
       role: u.role,
       status: u.status || "Active",
       publicKeySpkiB64: u.publicKeySpkiB64 || null,
@@ -1349,6 +1359,11 @@ app.post("/admin/invites/generate", requireAuth, requireAdmin, async (req, res) 
   const role = String(req.body?.role || "Member") === "Admin" ? "Admin" : "Member";
   const expiresMinutes = Math.min(Math.max(parseInt(req.body?.expiresMinutes || "60", 10) || 60, 5), 7 * 24 * 60);
 
+  // NEW: optional email stored with invite
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const emailOk = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailOk) return res.status(400).json({ error: "Invalid email format" });
+
   let code;
   for (let i = 0; i < 5; i++) {
     code = genInviteCode();
@@ -1361,14 +1376,23 @@ app.post("/admin/invites/generate", requireAuth, requireAdmin, async (req, res) 
   const createdAt = nowIso();
   const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
 
-  org.invites[code] = { code, role, createdAt, expiresAt, createdByUserId: admin.userId, usedAt: null, usedByUserId: null };
+  // NEW: save email on invite
+  org.invites[code] = {
+    code,
+    role,
+    email: email || null,
+    createdAt,
+    expiresAt,
+    createdByUserId: admin.userId,
+    usedAt: null,
+    usedByUserId: null
+  };
 
-  await audit(req, orgId, admin.userId, "invite_generate", { code, role, expiresAt });
+  await audit(req, orgId, admin.userId, "invite_generate", { code, role, email: email || null, expiresAt });
   await saveOrg(orgId, org);
 
-  res.json({ ok: true, code, role, expiresAt });
+  res.json({ ok: true, code, role, email: email || null, expiresAt });
 });
-
 app.get("/admin/invites", requireAuth, requireAdmin, (req, res) => {
   const { org } = req.qm;
   const items = Object.values(org.invites || {})
@@ -1383,6 +1407,7 @@ app.get("/admin/users", requireAuth, requireAdmin, (req, res) => {
     users: (org.users || []).map((u) => ({
       userId: u.userId,
       username: u.username,
+      email: u.email || null,
       role: u.role,
       status: u.status || "Active",
       hasPublicKey: !!u.publicKeySpkiB64,
