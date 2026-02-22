@@ -28,6 +28,12 @@ async function api(path, { method="GET", body=null } = {}) {
   return data;
 }
 
+function isValidEmailOptional(email) {
+  const e = String(email || "").trim();
+  if (!e) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
 function setSlots(text) {
   const compact = String(text || "").replace(/[^0-9]/g, "").padEnd(6, "-");
   for (let i=0;i<5;i++){
@@ -74,16 +80,35 @@ async function generateInvite() {
   const role = String($("selRole")?.value || "Member");
   const expires = Number($("expiresMinutes")?.value) || 60;
 
-  const out = await api("/admin/invites/generate", { method: "POST", body: { role, expiresMinutes: expires } });
+  // NEW: email
+  const email = String($("invEmail")?.value || "").trim().toLowerCase();
+  if (!isValidEmailOptional(email)) {
+    err("invErr", "Invalid email format.");
+    return;
+  }
+
+  const out = await api("/admin/invites/generate", {
+    method: "POST",
+    body: { role, expiresMinutes: expires, email }
+  });
+
   const code = out.code;
 
   animateTo(code);
   $("btnCopy").style.display = "";
   $("btnCopy").dataset.code = code;
-  $("generatedNote").textContent = `Code ${code} • expires ${new Date(out.expiresAt).toLocaleString()}`;
+
+  const emailNote = out.email ? ` • email ${out.email}` : "";
+  $("generatedNote").textContent = `Code ${code}${emailNote} • expires ${new Date(out.expiresAt).toLocaleString()}`;
 
   ok("invOk", "Invite generated ✅");
   await refreshRecent();
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
 async function refreshRecent() {
@@ -104,11 +129,17 @@ async function refreshRecent() {
   container.innerHTML = items.map(i => `
     <div class="invRow">
       <div>
-        <div><b>${i.code}</b> <span class="invMeta">• ${i.role}</span></div>
-        <div class="invMeta">created ${new Date(i.createdAt).toLocaleString()} • expires ${new Date(i.expiresAt).toLocaleString()}</div>
+        <div>
+          <b>${escapeHtml(i.code)}</b>
+          <span class="invMeta">• ${escapeHtml(i.role)}</span>
+          ${i.email ? `<span class="invMeta">• ${escapeHtml(i.email)}</span>` : ``}
+        </div>
+        <div class="invMeta">
+          created ${new Date(i.createdAt).toLocaleString()} • expires ${new Date(i.expiresAt).toLocaleString()}
+        </div>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
-        <button class="small" data-copy="${i.code}">Copy</button>
+        <button class="small" data-copy="${escapeHtml(i.code)}">Copy</button>
         <div class="invMeta">${i.usedAt ? `Used: ${new Date(i.usedAt).toLocaleString()}` : `<b>unused</b>`}</div>
       </div>
     </div>
@@ -146,7 +177,6 @@ async function refreshRecent() {
     }
   });
 
-  // optional logout button if exists on this page
   $("btnLogout")?.addEventListener("click", () => {
     localStorage.removeItem("qm_token");
     localStorage.removeItem("qm_user");
