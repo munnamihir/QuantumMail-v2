@@ -1339,7 +1339,7 @@ app.get("/org/users", requireAuth, (req, res) => {
     users: (org.users || []).map((u) => ({
       userId: u.userId,
       username: u.username,
-      email: u.email || null
+      email: u.email || null,
       role: u.role,
       status: u.status || "Active",
       publicKeySpkiB64: u.publicKeySpkiB64 || null,
