@@ -46,11 +46,6 @@ async function api(path, { method = "GET", body = null, token = "" } = {}) {
   return data;
 }
 
-function isValidEmail(email) {
-  const e = String(email || "").trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-}
-
 /* -----------------------------
    Live checks (Join + Login)
 ------------------------------ */
@@ -118,10 +113,6 @@ async function submitRequest() {
     err("rqErr", "Organization name, your name, and your email are required.");
     return;
   }
-  if (!isValidEmail(requesterEmail)) {
-    err("rqErr", "Please enter a valid requester email.");
-    return;
-  }
 
   const out = await api("/public/org-requests", {
     method: "POST",
@@ -137,32 +128,25 @@ async function joinOrgSignup() {
   const orgId = String($("jnOrgId").value || "").trim();
   const inviteCode = String($("jnInviteCode").value || "").trim();
   const username = String($("jnUsername").value || "").trim();
-  const email = String($("jnEmail")?.value || "").trim();
   const password = String($("jnPassword").value || "");
+  const email = String($("jnEmail")?.value || "").trim(); // optional
 
-  if (!orgId || !inviteCode || !username || !email || !password) {
-    err("jnErr", "Org ID, invite code, username, email, and password are required.");
+  if (!orgId || !inviteCode || !username || !password) {
+    err("jnErr", "Org ID, invite code, username, and password are required.");
     return;
   }
-  if (!isValidEmail(email)) {
-    err("jnErr", "Please enter a valid email address.");
-    return;
-  }
-
-  // Your server enforces >= 12 chars for signup
-  if (password.length < 12) {
-    err("jnErr", "Password must be at least 12 characters.");
+  if (password.length < 8) {
+    err("jnErr", "Password must be at least 8 characters.");
     return;
   }
 
-  // Guard: org must exist and be initialized
   const oc = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
   if (!oc.exists) { err("jnErr", "Org not found. Submit a request first."); return; }
   if (!oc.initialized) { err("jnErr", "Org is not initialized yet. Ask your Admin / wait for setup."); return; }
 
   const out = await api("/auth/signup", {
     method: "POST",
-    body: { orgId, inviteCode, username, email, password }
+    body: { signupType: "OrgType", orgId, inviteCode, username, password, email } // email will be ignored unless server supports it
   });
 
   ok("jnOk", `Account created ✅\nOrg: ${out.orgId}\nRole: ${out.role}\nNow login.`);
@@ -170,6 +154,7 @@ async function joinOrgSignup() {
   $("liOrgId").value = out.orgId;
   $("liUsername").value = username;
   $("liPassword").value = "";
+  if ($("liEmail") && email) $("liEmail").value = email;
   checkLoginOrgLive();
 }
 
@@ -208,6 +193,47 @@ async function login() {
 }
 
 /* -----------------------------
+   Recovery (NEW)
+------------------------------ */
+async function forgotUsername() {
+  ok("liOk",""); err("liErr","");
+
+  const orgId = String($("liOrgId").value || "").trim();
+  const email = String($("liEmail").value || "").trim();
+
+  if (!orgId || !email) {
+    err("liErr", "Org ID and Email are required for recovery.");
+    return;
+  }
+
+  const out = await api("/auth/forgot-username", {
+    method: "POST",
+    body: { orgId, email }
+  });
+
+  ok("liOk", out.message || "If an account exists, you’ll receive an email shortly.");
+}
+
+async function forgotPassword() {
+  ok("liOk",""); err("liErr","");
+
+  const orgId = String($("liOrgId").value || "").trim();
+  const email = String($("liEmail").value || "").trim();
+
+  if (!orgId || !email) {
+    err("liErr", "Org ID and Email are required for password reset.");
+    return;
+  }
+
+  const out = await api("/auth/forgot-password", {
+    method: "POST",
+    body: { orgId, email }
+  });
+
+  ok("liOk", out.message || "If an account exists, you’ll receive a reset link shortly.");
+}
+
+/* -----------------------------
    Wiring
 ------------------------------ */
 $("tabRequest").addEventListener("click", () => setTab("request"));
@@ -218,10 +244,30 @@ $("btnRequest").addEventListener("click", () => submitRequest().catch(e => err("
 $("btnJoin").addEventListener("click", () => joinOrgSignup().catch(e => err("jnErr", e.message)));
 $("btnLogin").addEventListener("click", () => login().catch(e => err("liErr", e.message)));
 
+$("btnForgotUsername")?.addEventListener("click", () => forgotUsername().catch(e => err("liErr", e.message)));
+$("btnForgotPassword")?.addEventListener("click", () => forgotPassword().catch(e => err("liErr", e.message)));
+
 $("jnOrgId")?.addEventListener("input", () => { checkJoinOrgLive(); checkJoinUsernameLive(); });
 $("jnUsername")?.addEventListener("input", () => checkJoinUsernameLive());
 
 $("liOrgId")?.addEventListener("input", () => checkLoginOrgLive());
 
-// boot
-setTab("request");
+/* -----------------------------
+   Boot
+------------------------------ */
+(function boot() {
+  setTab("request");
+
+  // Auto-tab via URL: /portal/index.html?tab=login&orgId=org_demo
+  const u = new URL(window.location.href);
+  const tab = (u.searchParams.get("tab") || "").toLowerCase();
+  if (tab === "login") setTab("login");
+  if (tab === "join") setTab("join");
+  if (tab === "request") setTab("request");
+
+  const orgFromUrl = u.searchParams.get("orgId");
+  if (orgFromUrl && $("liOrgId")) {
+    $("liOrgId").value = orgFromUrl;
+    checkLoginOrgLive();
+  }
+})();
