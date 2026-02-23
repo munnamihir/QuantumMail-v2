@@ -308,7 +308,7 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
   const tabId = tab.id;
   const aad = aadFromTabUrl(tab.url);
 
-  await assertContentScriptAvailable(tabId);
+  await ensureContentScript(tabId);
 
   const sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
   const plaintext = String(sel?.text || "").trim();
