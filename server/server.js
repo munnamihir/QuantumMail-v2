@@ -1917,7 +1917,14 @@ app.get("/super/companies", requireAuth, requireSuperAdmin, async (_req, res) =>
       (
         select count(*)
         from qm_org_store s
-        where (s.data->>'companyId') = c.company_id
+        where (SELECT
+                 o.org_id,
+                 o.company_id,
+                 c.company_name
+               FROM qm_org_store o
+               LEFT JOIN qm_companies c
+                 ON c.company_id = o.company_id;
+                 ) = c.company_id
       ) as org_count
     from qm_companies c
     order by c.company_name asc
