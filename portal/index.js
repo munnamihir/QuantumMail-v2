@@ -108,16 +108,20 @@ async function submitRequest() {
   const requesterName = String($("rqRequesterName").value || "").trim();
   const requesterEmail = String($("rqRequesterEmail").value || "").trim();
   const notes = String($("rqNotes").value || "").trim();
-
+  const companyName = String($("rqCompanyName").value || "").trim();
+  const companyId = String($("rqCompanyId").value || "").trim();
+  
+  if (!companyName) { err("rqErr","Company name is required."); return; }
   if (!orgName || !requesterName || !requesterEmail) {
     err("rqErr", "Organization name, your name, and your email are required.");
     return;
   }
-
+  
   const out = await api("/public/org-requests", {
     method: "POST",
-    body: { orgName, requesterName, requesterEmail, notes }
+    body: { companyName, companyId, orgName, requesterName, requesterEmail, notes }
   });
+  
 
   ok("rqOk", `Request submitted ✅\nRequest ID: ${out.requestId}\nYou’ll receive an Admin setup link after approval.`);
 }
