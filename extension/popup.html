@@ -263,6 +263,20 @@
     </div>
 
     <div class="card">
+      <label style="margin-top:2px;">Recipients (within your org)</label>
+    
+      <input id="rcptInput" placeholder="Type a username… (e.g., mih)" autocomplete="off"/>
+    
+      <div id="rcptSuggest" class="card" style="display:none; margin-top:8px; padding:8px;"></div>
+    
+      <div id="rcptChips" class="chips" style="margin-top:10px;"></div>
+    
+      <div class="mini">
+        you can't encrypt for users outside of your org.
+      </div>
+    </div>
+    
+    <div class="card">
       <label style="margin-top:6px;">Attachments (optional)</label>
 
       <!-- Gmail-like paperclip row -->
