@@ -543,6 +543,8 @@ app.get("/org/me", requireAuth, async (req, res) => {
     org: {
       orgId,
       orgName: org.orgName || org.name || orgId,
+      companyId: org.companyId || null,
+      companyName: org.companyName || null,
     },
   });
 });
