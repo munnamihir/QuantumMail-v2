@@ -1576,7 +1576,17 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
     createdAt: nowIso(),
     lastLoginAt: null,
   });
+  
+  const companyId = String(reqRow.company_id || "").trim() || `comp_${nanoid(10)}`;
+  const companyName = String(reqRow.company_name || "").trim() || "Unknown Company";
 
+  await pool.query(
+    `insert into qm_companies (company_id, company_name, updated_at)
+     values ($1, $2, now())
+     on conflict (company_id)
+     do update set company_name = excluded.company_name, updated_at = now()`,
+    [companyId, companyName]
+  );
   await saveOrg(orgId, org);
 
   // Create setup token (store context columns so setup-admin-info can prefill)
