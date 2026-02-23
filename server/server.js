@@ -991,23 +991,29 @@ app.post("/dev/seed-admin", rateLimitBootstrap, requireBootstrapSecret, async (r
    POST /public/org-requests
 ========================================================= */
 app.post("/public/org-requests", async (req, res) => {
+  const companyName = String(req.body?.companyName || "").trim();
+  const companyIdRaw = String(req.body?.companyId || "").trim();
+
   const orgName = String(req.body?.orgName || "").trim();
   const requesterName = String(req.body?.requesterName || "").trim();
-  const requesterEmail = String(req.body?.requesterEmail || "").trim();
+  const requesterEmail = String(req.body?.requesterEmail || "").trim().toLowerCase();
   const notes = String(req.body?.notes || "").trim();
 
-  if (!orgName || !requesterName || !requesterEmail) {
-    return res.status(400).json({ error: "orgName, requesterName, requesterEmail required" });
+  if (!companyName || !orgName || !requesterName || !requesterEmail) {
+    return res.status(400).json({ error: "companyName, orgName, requesterName, requesterEmail required" });
   }
+
+  // If caller doesn’t supply companyId, auto-generate stable one
+  const companyId = companyIdRaw || `comp_${nanoid(10)}`;
 
   const id = nanoid(12);
   await pool.query(
-    `insert into qm_org_requests (id, org_name, requester_name, requester_email, notes, status)
-     values ($1,$2,$3,$4,$5,'pending')`,
-    [id, orgName, requesterName, requesterEmail, notes || null]
+    `insert into qm_org_requests (id, company_id, company_name, org_name, requester_name, requester_email, notes, status)
+     values ($1,$2,$3,$4,$5,$6,$7,'pending')`,
+    [id, companyId, companyName, orgName, requesterName, requesterEmail, notes || null]
   );
 
-  res.json({ ok: true, requestId: id });
+  res.json({ ok: true, requestId: id, companyId });
 });
 
 /* =========================================================
