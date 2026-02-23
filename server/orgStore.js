@@ -50,8 +50,8 @@ export async function getOrg(orgId) {
   });
 
   await pool.query(
-    `insert into qm_org_store (org_id, data)
-     values ($1, $2::jsonb)
+    `insert into qm_org_store (org_id, company_id, org_name, data)
+      values ($1, $2, $3, $4::jsonb)
      on conflict (org_id) do nothing`,
     [oid, JSON.stringify(fresh)]
   );
