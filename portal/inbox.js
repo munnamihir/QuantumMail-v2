@@ -107,12 +107,24 @@ async function loadOrgHeader() {
     const on = org.orgName || org.orgId || "—";
     const oid = org.orgId || "—";
 
-    const orgLine = $("orgLine");
-    if (orgLine) orgLine.textContent = `Company: ${cn} • Org: ${on} (${oid})`;
-  } catch (e) {
-    // don't break inbox if this fails
-    const orgLine = $("orgLine");
-    if (orgLine) orgLine.textContent = "";
+    const wrap = $("orgLine");
+    if (wrap) wrap.style.display = "";
+
+    const companyName = $("companyName");
+    const orgName = $("orgName");
+    const orgIdSmall = $("orgIdSmall");
+
+    if (companyName) companyName.textContent = cn;
+    if (orgName) orgName.textContent = on;
+    if (orgIdSmall) orgIdSmall.textContent = `(${oid})`;
+
+    // nice tooltips if text is long
+    $("companyBadge")?.setAttribute("title", cn);
+    $("orgBadge")?.setAttribute("title", `${on} (${oid})`);
+  } catch {
+    // If it fails, keep header clean
+    const wrap = $("orgLine");
+    if (wrap) wrap.style.display = "none";
   }
 }
 
