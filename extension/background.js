@@ -1,5 +1,5 @@
 // extension/background.js
-// QuantumMail (hardened, MV3-safe) — UPDATED
+// QuantumMail (hardened, MV3-safe) — UPDATED (Recipients + Targeted Wrap + Cache)
 
 import {
   normalizeBase,
@@ -17,7 +17,6 @@ import {
 /* =========================
    Robust helpers
 ========================= */
-
 function shortenText(s, n = 280) {
   const str = String(s || "");
   return str.length <= n ? str : str.slice(0, n) + "…";
@@ -73,7 +72,6 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
 /* =========================
    Chrome tab messaging
 ========================= */
-
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab found.");
@@ -112,12 +110,10 @@ function aadFromTabUrl(tabUrl) {
 /* =========================
    Base64URL (safe for larger data)
 ========================= */
-
-// ✅ UPDATED: avoids .apply() which can crash on big chunks
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   let binary = "";
-  const chunkSize = 0x2000; // 8KB is safer across engines
+  const chunkSize = 0x2000;
   for (let i = 0; i < u8.length; i += chunkSize) {
     binary += String.fromCharCode(...u8.subarray(i, i + chunkSize));
   }
@@ -128,14 +124,11 @@ function bytesToB64Url(bytes) {
 /* =========================
    Attachment crypto (same DEK)
 ========================= */
-
 function attachmentToU8(a) {
   if (!a) return new Uint8Array();
   if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
-
   if (a.buffer instanceof ArrayBuffer) return new Uint8Array(a.buffer);
   if (a.buffer?.byteLength != null && typeof a.buffer.slice === "function") return new Uint8Array(a.buffer);
-
   return new Uint8Array();
 }
 
@@ -163,7 +156,6 @@ async function rsaUnwrapDek(privateKey, wrappedDekB64Url) {
 /* =========================
    Session + login
 ========================= */
-
 async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const base = normalizeBase(serverBase);
 
@@ -183,9 +175,32 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 }
 
 /* =========================
-   Encrypt selection org-wide
+   Org users cache (recipient list)
 ========================= */
+let __qmOrgUsersCache = { at: 0, users: [], key: "" };
 
+async function getOrgUsersCached(serverBase, token, ttlMs = 30_000) {
+  const now = Date.now();
+  const cacheKey = `${serverBase}::${token.slice(0, 12)}`;
+
+  if (
+    __qmOrgUsersCache.users.length &&
+    __qmOrgUsersCache.key === cacheKey &&
+    now - __qmOrgUsersCache.at < ttlMs
+  ) {
+    return __qmOrgUsersCache.users;
+  }
+
+  const out = await apiJson(serverBase, "/org/users", { token });
+  const users = Array.isArray(out?.users) ? out.users : [];
+
+  __qmOrgUsersCache = { at: now, users, key: cacheKey };
+  return users;
+}
+
+/* =========================
+   Encrypt selection (targeted recipients)
+========================= */
 async function assertContentScriptAvailable(tabId) {
   try {
     const r = await sendToTab(tabId, { type: "QM_PING" }, 900);
@@ -202,14 +217,13 @@ async function assertContentScriptAvailable(tabId) {
   }
 }
 
-async function encryptSelectionOrgWide({ attachments = [] } = {}) {
+async function encryptSelection({ attachments = [], recipientUserIds = null } = {}) {
   const s = await getSession();
   if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
-  // ✅ UPDATED: cap attachments total size for MVP stability
   const list = Array.isArray(attachments) ? attachments : [];
   const totalBytes = list.reduce((sum, a) => sum + Number(a?.size || 0), 0);
-  const MAX_TOTAL_BYTES = 8 * 1024 * 1024; // 8MB
+  const MAX_TOTAL_BYTES = 8 * 1024 * 1024;
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new Error(`Attachments too large for MVP (${Math.round(totalBytes / 1024 / 1024)}MB). Limit is 8MB.`);
   }
@@ -242,9 +256,13 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
     });
   }
 
-  // Wrap DEK for all org users
-  const usersOut = await apiJson(s.serverBase, "/org/users", { token: s.token });
-  const users = Array.isArray(usersOut?.users) ? usersOut.users : [];
+  const users = await getOrgUsersCached(s.serverBase, s.token);
+
+  // If recipients selected: only wrap for them. Else: wrap for all org users.
+  const targetIds =
+    Array.isArray(recipientUserIds) && recipientUserIds.length
+      ? new Set(recipientUserIds.map((x) => String(x)))
+      : null;
 
   const wrappedKeys = {};
   let wrappedCount = 0;
@@ -252,10 +270,13 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   for (const u of users) {
     if (!u?.userId) continue;
+    if (targetIds && !targetIds.has(String(u.userId))) continue;
+
     if (!u.publicKeySpkiB64) {
       skippedNoKey++;
       continue;
     }
+
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
     const wrappedDek = await rsaWrapDek(pub, rawDek);
     wrappedKeys[u.userId] = wrappedDek;
@@ -263,7 +284,7 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   }
 
   if (wrappedCount === 0) {
-    throw new Error("No org users have public keys registered yet. Have at least one user login once.");
+    throw new Error(targetIds ? "No selected recipients have public keys yet." : "No org users have public keys yet.");
   }
 
   const msgOut = await apiJson(s.serverBase, "/api/messages", {
@@ -290,7 +311,6 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 /* =========================
    Login + decrypt message
 ========================= */
-
 async function loginAndDecrypt({ msgId, serverBase, orgId, username, password }) {
   const { base, token } = await loginAndStoreSession({ serverBase, orgId, username, password });
 
@@ -321,7 +341,6 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
 /* =========================
    Message router
 ========================= */
-
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
@@ -332,8 +351,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === "QM_RECIPIENTS") {
+        const s = await getSession();
+        if (!s?.token || !s?.serverBase) {
+          sendResponse({ ok: true, users: [] });
+          return;
+        }
+
+        const users = await getOrgUsersCached(s.serverBase, s.token);
+        const list = users
+          .map((u) => ({
+            userId: u.userId,
+            username: u.username,
+            hasKey: !!u.publicKeySpkiB64
+          }))
+          .filter((u) => u.userId && u.username);
+
+        sendResponse({ ok: true, users: list });
+        return;
+      }
+
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
-        const out = await encryptSelectionOrgWide({ attachments: msg.attachments || [] });
+        const out = await encryptSelection({
+          attachments: msg.attachments || [],
+          recipientUserIds: msg.recipientUserIds || null
+        });
         sendResponse({ ok: true, ...out });
         return;
       }
@@ -352,7 +394,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
 
-  return true; // keep channel open for async
+  return true;
 });
 
 chrome.runtime.onInstalled?.addListener(() => {});
