@@ -1587,6 +1587,11 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
      do update set company_name = excluded.company_name, updated_at = now()`,
     [companyId, companyName]
   );
+
+  org.companyId = companyId;
+  org.companyName = companyName;
+  org.orgName = reqRow.org_name || org.orgName || orgId;
+  
   await saveOrg(orgId, org);
 
   // Create setup token (store context columns so setup-admin-info can prefill)
@@ -1611,16 +1616,18 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   );
 
   // Update request as approved
-  await pool.query(
+    await pool.query(
     `update qm_org_requests
        set status='approved',
            updated_at=now(),
            reviewed_by_user_id=$2,
            reviewed_at=now(),
            approved_org_id=$3,
-           approved_admin_user_id=$4
+           approved_admin_user_id=$4,
+           company_id=$5,
+           company_name=$6
      where id=$1`,
-    [requestId, req.qm.user.userId, orgId, adminUserId]
+    [requestId, req.qm.user.userId, orgId, adminUserId, companyId, companyName]
   );
 
   const base = getPublicBase(req);
@@ -1813,6 +1820,59 @@ app.post("/api/messages", requireAuth, async (req, res) => {
   const base = getPublicBase(req);
   const url = `${base}/m/${id}`;
   res.json({ id, url, kekVersion: version });
+});
+
+app.get("/super/companies", requireAuth, requireSuperAdmin, async (_req, res) => {
+  const { rows } = await pool.query(`
+    select
+      c.company_id,
+      c.company_name,
+      (
+        select count(*)
+        from qm_org_store s
+        where (s.data->>'companyId') = c.company_id
+      ) as org_count
+    from qm_companies c
+    order by c.company_name asc
+    limit 500
+  `);
+
+  res.json({
+    ok: true,
+    items: rows.map(r => ({
+      companyId: r.company_id,
+      companyName: r.company_name,
+      orgCount: Number(r.org_count || 0)
+    }))
+  });
+});
+
+app.get("/super/companies/:companyId/orgs", requireAuth, requireSuperAdmin, async (req, res) => {
+  const companyId = String(req.params.companyId || "").trim();
+  if (!companyId) return res.status(400).json({ error: "companyId required" });
+
+  const { rows } = await pool.query(`
+    select
+      org_id,
+      coalesce(data->>'orgName', data->>'name', org_id) as org_name,
+      data->>'companyName' as company_name,
+      updated_at
+    from qm_org_store
+    where (data->>'companyId') = $1
+    order by updated_at desc
+    limit 500
+  `, [companyId]);
+
+  res.json({
+    ok: true,
+    companyId,
+    items: rows.map(r => ({
+      orgId: r.org_id,
+      orgName: r.org_name,
+      companyName: r.company_name || null,
+      updatedAt: r.updated_at
+    }))
+  });
 });
 
 app.get("/api/inbox", requireAuth, (req, res) => {
