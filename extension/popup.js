@@ -6,6 +6,91 @@ const DEFAULT_SERVER_BASE = "https://quantummail-v2.onrender.com";
 /** ===== Attachment state (appendable) ===== */
 let selectedFiles = []; // Array<File>
 
+let orgUsers = [];          // [{userId, username, hasKey}]
+let selectedRecipients = []; // [{userId, username}]
+
+function esc(s){ return String(s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+
+function renderRecipientChips() {
+  const host = $("rcptChips");
+  if (!host) return;
+  host.innerHTML = "";
+
+  selectedRecipients.forEach((r, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+
+    const name = document.createElement("div");
+    name.className = "chipName";
+    name.textContent = r.username;
+
+    const x = document.createElement("div");
+    x.className = "chipX";
+    x.textContent = "×";
+    x.title = "Remove";
+    x.addEventListener("click", () => {
+      selectedRecipients.splice(idx, 1);
+      renderRecipientChips();
+    });
+
+    chip.appendChild(name);
+    chip.appendChild(x);
+    host.appendChild(chip);
+  });
+}
+
+function hideSuggest() {
+  const box = $("rcptSuggest");
+  if (box) box.style.display = "none";
+  if (box) box.innerHTML = "";
+}
+
+function showSuggest(matches) {
+  const box = $("rcptSuggest");
+  if (!box) return;
+
+  if (!matches.length) {
+    hideSuggest();
+    return;
+  }
+
+  box.style.display = "";
+  box.innerHTML = matches.slice(0, 8).map(u => {
+    const keyNote = u.hasKey ? "" : " • (no key yet)";
+    return `
+      <div class="item" style="padding:8px; cursor:pointer;" data-id="${esc(u.userId)}">
+        <div class="itemMain">
+          <div class="itemTitle">${esc(u.username)}${keyNote}</div>
+          <div class="muted">userId: ${esc(u.userId)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  box.querySelectorAll("[data-id]").forEach(el => {
+    el.addEventListener("click", () => {
+      const id = el.getAttribute("data-id");
+      const u = orgUsers.find(x => String(x.userId) === String(id));
+      if (!u) return;
+
+      // avoid duplicates
+      if (!selectedRecipients.some(r => String(r.userId) === String(u.userId))) {
+        selectedRecipients.push({ userId: u.userId, username: u.username });
+        renderRecipientChips();
+      }
+
+      $("rcptInput").value = "";
+      hideSuggest();
+      $("rcptInput").focus();
+    });
+  });
+}
+
+async function loadOrgRecipients() {
+  const resp = await sendBg("QM_RECIPIENTS");
+  orgUsers = Array.isArray(resp?.users) ? resp.users : [];
+}
+
 function fmtBytes(n) {
   const b = Number(n || 0);
   if (b < 1024) return `${b} B`;
@@ -158,6 +243,7 @@ async function refreshSessionUI() {
     if (!$("serverBase").value && s.serverBase) $("serverBase").value = s.serverBase;
     if (!$("orgId").value && s.user.orgId) $("orgId").value = s.user.orgId;
     if (!$("username").value) $("username").value = s.user.username || "";
+    await loadOrgRecipients();
   } else {
     who.textContent = "Signed out";
     setStatus("Not signed in");
@@ -188,9 +274,15 @@ async function login() {
 
   ok("Logged in ✅ Public key registered.");
   await refreshSessionUI();
+  await loadOrgRecipients();
+  renderRecipientChips();
 }
 
 async function logout() {
+  orgUsers = [];
+  selectedRecipients = [];
+  hideSuggest();
+  renderRecipientChips();
   ok(""); $("err").textContent = "";
   await clearSession();
   ok("Logged out.");
@@ -202,6 +294,9 @@ async function encryptSelected() {
   setStatus("Reading attachments…");
 
   try {
+    const recipientUserIds = selectedRecipients.map(r => r.userId);
+
+    const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments, recipientUserIds });
     // ✅ MUST be first to avoid NotReadableError
     const attachments = await collectAttachmentsImmediate();
 
@@ -227,9 +322,8 @@ async function encryptSelected() {
         ? `\nSkipped ${resp.skippedNoKey} users (no public key yet).`
         : "";
 
-    const attNote = attachments.length ? `\nAttachments: ${attachments.length}` : "";
-    ok(`Link inserted ✅${attNote}\nWrapped for ${resp.wrappedCount || "many"} org users.${extra}`);
-    setStatus("Ready", "good");
+    const rcptNote = recipientUserIds.length ? `\nRecipients: ${recipientUserIds.length}` : "\nRecipients: (all org users)";
+    ok(`Link inserted ✅${attNote}${rcptNote}\nWrapped for ${resp.wrappedCount || "many"} recipient(s).${extra}`);
 
     // ✅ Clear after encrypt (optional)
     selectedFiles = [];
@@ -260,6 +354,28 @@ $("openHome").addEventListener("click", openHome);
 
 $("btnAttach").addEventListener("click", openPicker);
 $("filePicker").addEventListener("change", (e) => addFilesFromPicker(e.target.files));
+
+$("rcptInput")?.addEventListener("input", () => {
+  const q = String($("rcptInput").value || "").trim().toLowerCase();
+  if (!q) return hideSuggest();
+
+  const selectedSet = new Set(selectedRecipients.map(r => String(r.userId)));
+  const matches = orgUsers
+    .filter(u => !selectedSet.has(String(u.userId)))
+    .filter(u => String(u.username || "").toLowerCase().includes(q));
+
+  showSuggest(matches);
+});
+
+document.addEventListener("click", (e) => {
+  // close suggestions if clicking outside input/suggest
+  const box = $("rcptSuggest");
+  const input = $("rcptInput");
+  if (!box || !input) return;
+
+  if (e.target === input || box.contains(e.target)) return;
+  hideSuggest();
+});
 
 (async function init() {
   fillDefaults();
