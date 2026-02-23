@@ -14,7 +14,18 @@
         <div>
           <h1>Inbox</h1>
           <p class="muted" id="who">—</p>
-          <p class="muted" id="orgLine" style="margin-top:4px;">—</p>
+          <div class="orgLine" id="orgLine" style="display:none;">
+            <span class="badge" id="companyBadge" title="Company">
+              <span class="badgeDot"></span>
+              Company: <strong id="companyName">—</strong>
+            </span>
+          
+            <span class="badge" id="orgBadge" title="Organization">
+              <span class="badgeDot"></span>
+              Org: <strong id="orgName">—</strong>
+              <span class="muted" id="orgIdSmall" style="margin-left:6px;">—</span>
+            </span>
+          </div>
         </div>
       </div>
 <a class="btn" href="/portal/admin.html" id="btnAdminDash" style="display:none;">Admin Dashboard</a>
