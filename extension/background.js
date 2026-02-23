@@ -72,6 +72,40 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
 /* =========================
    Chrome tab messaging
 ========================= */
+async function ensureContentScript(tabId) {
+  try {
+    const r = await sendToTab(tabId, { type: "QM_PING" }, 700);
+    if (r?.ok) return true;
+  } catch {}
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"]
+    });
+  } catch (e) {
+    throw new Error(
+      "QuantumMail can't run on this page.\n" +
+      "Open Gmail/Outlook, then try again.\n\n" +
+      `Details: ${e?.message || e}`
+    );
+  }
+
+  try {
+    const r2 = await sendToTab(tabId, { type: "QM_PING" }, 900);
+    if (r2?.ok) return true;
+  } catch (e) {
+    throw new Error(
+      "Injected content.js but it still isn't responding.\n" +
+      "Open a compose window and refresh Gmail.\n\n" +
+      `Details: ${e?.message || e}`
+    );
+  }
+
+  return false;
+}
+
+
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab found.");
