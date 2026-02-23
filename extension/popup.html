@@ -1,4 +1,4 @@
-<!-- extension/popup.html -->
+<!-- extension/popup.html (UPDATED) -->
 <!doctype html>
 <html>
 <head>
@@ -21,7 +21,7 @@
     body{
       margin:0;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      width: 720px;               /* ✅ LANDSCAPE */
+      width: 720px;
       min-height: 390px;
       background:
         radial-gradient(1000px 520px at 25% -10%, rgba(110,168,254,.18), transparent 55%),
@@ -30,14 +30,7 @@
       color:var(--text);
     }
     .wrap{ padding: 14px; }
-
-    .top{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-bottom: 10px;
-    }
+    .top{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 10px; }
     .brand{ display:flex; align-items:center; gap:10px; }
     .logo{
       width:36px; height:36px; border-radius:12px;
@@ -47,6 +40,7 @@
     .title{ display:flex; flex-direction:column; line-height:1.15; }
     .title b{ font-size: 14px; letter-spacing:.2px; }
     .title span{ font-size: 12px; color:var(--muted); }
+
     .pill{
       font-size: 11px;
       padding: 6px 10px;
@@ -71,13 +65,7 @@
     .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
     .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
 
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      align-items:start;
-    }
-
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items:start; }
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
       border:1px solid var(--border);
@@ -87,27 +75,18 @@
     }
 
     label{
-      display:block;
-      font-size: 11px;
-      color: var(--muted);
-      margin: 8px 0 6px;
-      font-weight: 900;
-      letter-spacing:.2px;
+      display:block; font-size: 11px; color: var(--muted);
+      margin: 8px 0 6px; font-weight: 900; letter-spacing:.2px;
     }
     input{
-      width:100%;
-      padding: 10px 11px;
-      border-radius: 12px;
+      width:100%; padding: 10px 11px; border-radius: 12px;
       border:1px solid var(--border);
       background: rgba(255,255,255,.06);
       color: var(--text);
       outline:none;
     }
     input::placeholder{ color: rgba(170,180,214,.7); }
-    input:focus{
-      border-color: rgba(110,168,254,.55);
-      box-shadow: 0 0 0 4px rgba(110,168,254,.12);
-    }
+    input:focus{ border-color: rgba(110,168,254,.55); box-shadow: 0 0 0 4px rgba(110,168,254,.12); }
     input:disabled{ opacity:.85; cursor:not-allowed; }
 
     .row{ display:flex; gap:8px; }
@@ -125,44 +104,18 @@
       letter-spacing: .2px;
       flex:1;
     }
-    button.primary{
-      background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
-      border: none;
-      color: #07101f;
-    }
-    button.danger{
-      background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
-      border:none;
-      color: #07101f;
-    }
-    button:hover{ filter:brightness(1.06); }
+    button.primary{ background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90)); border: none; color: #07101f; }
+    button.danger{ background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95)); border:none; color: #07101f; }
 
     .mini{ font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 8px; }
     .msgOk{ color: var(--good); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
     .msgErr{ color: var(--bad); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
 
-    /* Recipient chips + suggest */
     .chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top: 10px; }
-    .chip{
-      display:flex; align-items:center; gap:6px;
-      padding: 6px 8px;
-      border-radius: 999px;
-      border:1px solid var(--border);
-      background: var(--chip);
-      max-width: 100%;
-    }
-    .chipName{
-      font-size: 11px; color: var(--text);
-      max-width: 240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    }
-    .chipX{
-      width: 18px; height: 18px; border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.12);
-      background: rgba(255,255,255,.06);
-      color: var(--muted);
-      display:flex; align-items:center; justify-content:center;
-      cursor:pointer; font-size: 12px; line-height: 1;
-    }
+    .chip{ display:flex; align-items:center; gap:6px; padding: 6px 8px; border-radius: 999px; border:1px solid var(--border); background: var(--chip); }
+    .chipName{ font-size: 11px; color: var(--text); max-width: 240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chipX{ width: 18px; height: 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size: 12px; line-height: 1; }
+
     .suggest{
       margin-top:8px;
       border:1px solid rgba(255,255,255,.10);
@@ -170,6 +123,8 @@
       background: rgba(15,20,35,.96);
       overflow:hidden;
       box-shadow: 0 18px 60px rgba(0,0,0,.45);
+      position: relative;
+      z-index: 50; /* ✅ keep above cards */
     }
     .sItem{
       padding:10px 10px;
@@ -184,17 +139,8 @@
     .sItem:hover{ background: rgba(255,255,255,.05); }
     .sTitle{ font-weight:900; font-size:12px; }
     .sSub{ font-size:11px; color: var(--muted); margin-top:2px; }
-    .sTag{
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.06);
-      color: var(--muted);
-      white-space:nowrap;
-    }
+    .sTag{ font-size: 11px; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.06); color: var(--muted); white-space:nowrap; }
 
-    /* Attachment UI */
     .attRow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top: 8px; }
     .attLeft{ display:flex; align-items:center; gap:10px; min-width: 0; }
     .paperclipBtn{
@@ -203,14 +149,10 @@
       display:flex; align-items:center; justify-content:center;
       cursor:pointer; user-select:none;
     }
-    .paperclipBtn:active{ transform: scale(.98); }
     .paperclipSvg{ width: 18px; height: 18px; opacity: .92; }
     .attMeta{ display:flex; flex-direction:column; gap:2px; min-width: 0; }
     .attMeta b{ font-size: 12px; }
-    .attMeta span{
-      font-size: 11px; color: var(--muted);
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 280px;
-    }
+    .attMeta span{ font-size: 11px; color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 280px; }
     #filePicker{ display:none; }
 
     .foot{
@@ -223,34 +165,17 @@
       gap:10px;
     }
     .link{ color: rgba(110,168,254,.95); text-decoration:none; cursor:pointer; }
-
     .full{ grid-column: 1 / -1; }
 
-    /* ✅ Login block toggle */
     #loginCard { display:block; }
     #sessionCard { display:none; }
     .hide { display:none !important; }
     .show { display:block !important; }
 
-    .sessionRow{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .sessionMeta{
-      display:flex;
-      flex-direction:column;
-      gap:2px;
-      min-width: 0;
-    }
+    .sessionRow{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .sessionMeta{ display:flex; flex-direction:column; gap:2px; min-width: 0; }
     .sessionMeta b{ font-size: 12px; }
-    .sessionMeta span{
-      font-size: 11px; color: var(--muted);
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-      max-width: 330px;
-    }
+    .sessionMeta span{ font-size: 11px; color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 330px; }
   </style>
 </head>
 
@@ -272,7 +197,7 @@
     </div>
 
     <div class="grid">
-      <!-- ✅ SESSION CARD (shown only when logged in) -->
+      <!-- SESSION CARD -->
       <div class="card" id="sessionCard">
         <div class="sessionRow">
           <div class="sessionMeta">
@@ -282,15 +207,13 @@
           <button id="btnLogoutTop" class="danger" style="flex:0 0 auto; padding:10px 14px;">Logout</button>
         </div>
 
-        <div class="mini">
-          Login info is hidden to keep the popup clean.
-        </div>
+        <div class="mini">Login info is hidden to keep the popup clean.</div>
 
         <div id="ok" class="msgOk"></div>
         <div id="err" class="msgErr"></div>
       </div>
 
-      <!-- ✅ LOGIN CARD (hidden after login) -->
+      <!-- LOGIN CARD -->
       <div class="card" id="loginCard">
         <label>Server Base</label>
         <input id="serverBase" value="https://quantummail-v2.onrender.com" disabled />
@@ -362,12 +285,7 @@
           Encrypt Selected Text
         </button>
 
-        <div class="mini">
-          Select text in compose → attach files → Encrypt.
-        </div>
-
-        <div id="ok" class="msgOk"></div>
-        <div id="err" class="msgErr"></div>
+        <div class="mini">Select text in compose → attach files → Encrypt.</div>
       </div>
 
       <div class="foot full">
