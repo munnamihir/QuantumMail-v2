@@ -6,14 +6,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QuantumMail</title>
   <style>
-    input:disabled {
-      background: #f3f4f6;
-      color: #6b7280;
-      cursor: not-allowed;
-    }
     :root{
       --bg:#0b0f1a;
-      --card:#12182a;
       --text:#e9eefc;
       --muted:#aab4d6;
       --border:rgba(255,255,255,.10);
@@ -21,52 +15,85 @@
       --good:#2bd576;
       --bad:#ff5c77;
       --chip: rgba(255,255,255,.06);
+      --shadow: 0 14px 44px rgba(0,0,0,.28);
     }
     *{box-sizing:border-box}
     body{
       margin:0;
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      width: 360px;
+      width: 720px;               /* ✅ LANDSCAPE */
+      min-height: 390px;
       background:
-        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
-        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        radial-gradient(1000px 520px at 25% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(700px 420px at 100% 0%, rgba(43,213,118,.12), transparent 50%),
         var(--bg);
       color:var(--text);
     }
     .wrap{ padding: 14px; }
-    .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 10px; }
+
+    .top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom: 10px;
+    }
     .brand{ display:flex; align-items:center; gap:10px; }
     .logo{
-      width:34px; height:34px; border-radius:12px;
+      width:36px; height:36px; border-radius:12px;
       background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.95));
       box-shadow: 0 12px 30px rgba(110,168,254,.18);
     }
-    .title{ display:flex; flex-direction:column; line-height: 1.15; }
-    .title b{ font-size: 14px; letter-spacing:.2px;}
+    .title{ display:flex; flex-direction:column; line-height:1.15; }
+    .title b{ font-size: 14px; letter-spacing:.2px; }
     .title span{ font-size: 12px; color:var(--muted); }
     .pill{
       font-size: 11px;
-      padding: 4px 8px;
+      padding: 6px 10px;
       border-radius: 999px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,.06);
       color: var(--muted);
-      max-width: 160px;
+      max-width: 320px;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
+      display:flex;
+      align-items:center;
+      gap:8px;
     }
+    .dot{
+      width:8px; height:8px; border-radius:999px;
+      background: rgba(255,255,255,.25);
+      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+      display:inline-block;
+    }
+    .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
+    .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items:start;
+    }
+
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
       border:1px solid var(--border);
       border-radius: 16px;
       padding: 12px;
-      box-shadow: 0 14px 40px rgba(0,0,0,.25);
-      margin-bottom: 10px;
+      box-shadow: var(--shadow);
     }
-    .row{ display:flex; gap:8px; }
-    .row > div{ flex:1; }
-    label{ display:block; font-size: 11px; color: var(--muted); margin: 8px 0 6px; font-weight: 700; }
+
+    label{
+      display:block;
+      font-size: 11px;
+      color: var(--muted);
+      margin: 8px 0 6px;
+      font-weight: 900;
+      letter-spacing:.2px;
+    }
     input{
       width:100%;
       padding: 10px 11px;
@@ -77,6 +104,15 @@
       outline:none;
     }
     input::placeholder{ color: rgba(170,180,214,.7); }
+    input:focus{
+      border-color: rgba(110,168,254,.55);
+      box-shadow: 0 0 0 4px rgba(110,168,254,.12);
+    }
+    input:disabled{ opacity:.85; cursor:not-allowed; }
+
+    .row{ display:flex; gap:8px; }
+    .row > div{ flex:1; }
+
     .actions{ display:flex; gap:8px; margin-top: 10px; }
     button{
       border-radius: 12px;
@@ -85,33 +121,100 @@
       color: var(--text);
       padding: 10px 12px;
       cursor:pointer;
-      font-weight: 800;
+      font-weight: 900;
       letter-spacing: .2px;
+      flex:1;
     }
     button.primary{
       background: linear-gradient(135deg, rgba(110,168,254,.95), rgba(43,213,118,.90));
       border: none;
       color: #07101f;
     }
-    .mini{ font-size: 11px; color: var(--muted); line-height: 1.4; margin-top: 8px; }
-    .statusRow{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      margin-top: 8px; padding-top: 8px; border-top:1px solid rgba(255,255,255,.08);
+    button.danger{
+      background: linear-gradient(135deg, rgba(255,92,119,.95), rgba(176,0,32,.95));
+      border:none;
+      color: #07101f;
     }
-    .dot{
-      width:8px; height:8px; border-radius: 999px;
-      background: rgba(255,255,255,.25);
-      box-shadow: 0 0 0 3px rgba(255,255,255,.06);
-      display:inline-block;
-      margin-right:8px;
-      vertical-align: middle;
-    }
-    .dot.good{ background: var(--good); box-shadow:0 0 0 3px rgba(43,213,118,.15); }
-    .dot.bad{ background: var(--bad); box-shadow:0 0 0 3px rgba(255,92,119,.15); }
+    button:hover{ filter:brightness(1.06); }
+
+    .mini{ font-size: 11px; color: var(--muted); line-height: 1.45; margin-top: 8px; }
     .msgOk{ color: var(--good); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
     .msgErr{ color: var(--bad); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+
+    /* Recipient chips + suggest */
+    .chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top: 10px; }
+    .chip{
+      display:flex; align-items:center; gap:6px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      border:1px solid var(--border);
+      background: var(--chip);
+      max-width: 100%;
+    }
+    .chipName{
+      font-size: 11px; color: var(--text);
+      max-width: 240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .chipX{
+      width: 18px; height: 18px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer; font-size: 12px; line-height: 1;
+    }
+    .suggest{
+      margin-top:8px;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background: rgba(15,20,35,.96);
+      overflow:hidden;
+      box-shadow: 0 18px 60px rgba(0,0,0,.45);
+    }
+    .sItem{
+      padding:10px 10px;
+      cursor:pointer;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .sItem:last-child{ border-bottom:none; }
+    .sItem:hover{ background: rgba(255,255,255,.05); }
+    .sTitle{ font-weight:900; font-size:12px; }
+    .sSub{ font-size:11px; color: var(--muted); margin-top:2px; }
+    .sTag{
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      color: var(--muted);
+      white-space:nowrap;
+    }
+
+    /* Attachment UI */
+    .attRow{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top: 8px; }
+    .attLeft{ display:flex; align-items:center; gap:10px; min-width: 0; }
+    .paperclipBtn{
+      width: 38px; height: 38px; border-radius: 12px;
+      border: 1px solid var(--border); background: rgba(255,255,255,.06);
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer; user-select:none;
+    }
+    .paperclipBtn:active{ transform: scale(.98); }
+    .paperclipSvg{ width: 18px; height: 18px; opacity: .92; }
+    .attMeta{ display:flex; flex-direction:column; gap:2px; min-width: 0; }
+    .attMeta b{ font-size: 12px; }
+    .attMeta span{
+      font-size: 11px; color: var(--muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 280px;
+    }
+    #filePicker{ display:none; }
+
     .foot{
-      margin-top: 6px;
+      margin-top: 10px;
       font-size: 11px;
       color: rgba(170,180,214,.85);
       display:flex;
@@ -121,83 +224,33 @@
     }
     .link{ color: rgba(110,168,254,.95); text-decoration:none; cursor:pointer; }
 
-    /* ===== Attachment UI (Gmail-like) ===== */
-    .attRow{
+    .full{ grid-column: 1 / -1; }
+
+    /* ✅ Login block toggle */
+    #loginCard { display:block; }
+    #sessionCard { display:none; }
+    .hide { display:none !important; }
+    .show { display:block !important; }
+
+    .sessionRow{
       display:flex;
-      align-items:center;
       justify-content:space-between;
-      gap:10px;
-      margin-top: 8px;
-    }
-    .attLeft{
-      display:flex;
       align-items:center;
       gap:10px;
-      min-width: 0;
+      flex-wrap:wrap;
     }
-    .paperclipBtn{
-      width: 38px;
-      height: 38px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.06);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      user-select:none;
-    }
-    .paperclipBtn:active{ transform: scale(.98); }
-    .paperclipSvg{ width: 18px; height: 18px; opacity: .92; }
-    .attMeta{
+    .sessionMeta{
       display:flex;
       flex-direction:column;
       gap:2px;
       min-width: 0;
     }
-    .attMeta b{ font-size: 12px; }
-    .attMeta span{ font-size: 11px; color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 210px; }
-    .chips{
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top: 10px;
+    .sessionMeta b{ font-size: 12px; }
+    .sessionMeta span{
+      font-size: 11px; color: var(--muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      max-width: 330px;
     }
-    .chip{
-      display:flex;
-      align-items:center;
-      gap:6px;
-      padding: 6px 8px;
-      border-radius: 999px;
-      border:1px solid var(--border);
-      background: var(--chip);
-      max-width: 100%;
-    }
-    .chipName{
-      font-size: 11px;
-      color: var(--text);
-      max-width: 230px;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      white-space:nowrap;
-    }
-    .chipX{
-      width: 18px;
-      height: 18px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.12);
-      background: rgba(255,255,255,.06);
-      color: var(--muted);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      font-size: 12px;
-      line-height: 1;
-    }
-
-    /* Hide the real file input */
-    #filePicker{ display:none; }
   </style>
 </head>
 
@@ -208,117 +261,122 @@
         <div class="logo"></div>
         <div class="title">
           <b>QuantumMail</b>
-          <span>Org-wide secure link encryption</span>
-        </div>
-      </div>
-      <div id="who" class="pill">Signed out</div>
-    </div>
-
-    <div class="card">
-      <div class="row">
-        <div>
-          <label>Server Base</label>
-          <input id="serverBase" value="https://quantummail-v2.onrender.com" disabled style="opacity:.9; cursor:not-allowed;"/>
+          <span>Recipients + org-scoped secure link encryption</span>
         </div>
       </div>
 
-      <div class="row">
-        <div>
-          <label>Org</label>
-          <input id="orgId"  value="org_demo" />
-        </div>
-        <div>
-          <label>Username</label>
-          <input id="username" placeholder="Enter Username" />
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label>Password</label>
-          <input id="password" type="password" placeholder="••••••••" />
-        </div>
-      </div>
-
-      <div class="actions">
-        <button id="btnLogin" class="primary">Login</button>
-        <button id="btnLogout">Logout</button>
-      </div>
-
-      <div class="statusRow">
-        <div>
-          <span id="dot" class="dot"></span>
-          <span id="status" style="font-size:12px;color:var(--muted)">Not signed in</span>
-        </div>
-        <div class="pill">ORG-WIDE</div>
-      </div>
-
-      <div id="ok" class="msgOk"></div>
-      <div id="err" class="msgErr"></div>
-
-      <div class="mini">
-        • First login registers your public key for decryption.<br/>
-        • Encrypt wraps the same DEK for all org users (audited decrypt).
+      <div id="whoPill" class="pill">
+        <span id="dot" class="dot"></span>
+        <span id="whoText">Signed out</span>
       </div>
     </div>
 
-    <div class="card">
-      <label style="margin-top:2px;">Recipients (within your org)</label>
-    
-      <input id="rcptInput" placeholder="Type a username… (e.g., mih)" autocomplete="off"/>
-    
-      <div id="rcptSuggest" class="card" style="display:none; margin-top:8px; padding:8px;"></div>
-    
-      <div id="rcptChips" class="chips" style="margin-top:10px;"></div>
-    
-      <div class="mini">
-        you can't encrypt for users outside of your org.
-      </div>
-    </div>
-    
-    <div class="card">
-      <label style="margin-top:6px;">Attachments (optional)</label>
-
-      <!-- Gmail-like paperclip row -->
-      <div class="attRow">
-        <div class="attLeft">
-          <div id="btnAttach" class="paperclipBtn" title="Attach files">
-            <svg class="paperclipSvg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M8 12.5l6.7-6.7a3 3 0 114.2 4.2L10.6 18.3a5 5 0 11-7.1-7.1L12 2.7"
-                    stroke="rgba(233,238,252,.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+    <div class="grid">
+      <!-- ✅ SESSION CARD (shown only when logged in) -->
+      <div class="card" id="sessionCard">
+        <div class="sessionRow">
+          <div class="sessionMeta">
+            <b>Session</b>
+            <span id="sessionLine">—</span>
           </div>
-          <div class="attMeta">
-            <b id="attTitle">No files attached</b>
-            <span id="attHint">Click the pin to add one file, then click again to add more.</span>
+          <button id="btnLogoutTop" class="danger" style="flex:0 0 auto; padding:10px 14px;">Logout</button>
+        </div>
+
+        <div class="mini">
+          Login info is hidden to keep the popup clean.
+        </div>
+
+        <div id="ok" class="msgOk"></div>
+        <div id="err" class="msgErr"></div>
+      </div>
+
+      <!-- ✅ LOGIN CARD (hidden after login) -->
+      <div class="card" id="loginCard">
+        <label>Server Base</label>
+        <input id="serverBase" value="https://quantummail-v2.onrender.com" disabled />
+
+        <div class="row">
+          <div>
+            <label>Org</label>
+            <input id="orgId" value="org_demo" />
+          </div>
+          <div>
+            <label>Username</label>
+            <input id="username" placeholder="Enter Username" />
           </div>
         </div>
 
-        <div class="pill" id="attCount">0</div>
+        <label>Password</label>
+        <input id="password" type="password" placeholder="••••••••" />
+
+        <div class="actions">
+          <button id="btnLogin" class="primary">Login</button>
+          <button id="btnLogout" class="danger">Clear</button>
+        </div>
+
+        <div id="ok_login" class="msgOk"></div>
+        <div id="err_login" class="msgErr"></div>
+
+        <div class="mini">
+          • Login registers your public key once.<br/>
+          • Recipients are limited to your org.
+        </div>
       </div>
 
-      <!-- Hidden real input (we open it with the pin) -->
-      <input id="filePicker" type="file" multiple />
+      <!-- Recipients -->
+      <div class="card">
+        <label>Recipients (within your org)</label>
+        <input id="rcptInput" placeholder="Type a username… (mih)" autocomplete="off"/>
+        <div id="rcptSuggest" class="suggest" style="display:none;"></div>
+        <div id="rcptChips" class="chips"></div>
 
-      <!-- Chips list -->
-      <div id="chips" class="chips"></div>
+        <div class="mini">
+          If you don’t pick recipients → defaults to <b>all org users</b>.
+        </div>
+      </div>
 
-      <button id="btnEncrypt" class="primary" style="margin-top:10px; width:100%;">
-        Encrypt Selected Text
-      </button>
+      <!-- Attachments + Encrypt -->
+      <div class="card">
+        <label>Attachments (optional)</label>
 
-      <div class="mini">
-        Select text in Gmail → click 📎 to add files → click Encrypt.<br/>
-        Files are encrypted with the same message key.
+        <div class="attRow">
+          <div class="attLeft">
+            <div id="btnAttach" class="paperclipBtn" title="Attach files">
+              <svg class="paperclipSvg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 12.5l6.7-6.7a3 3 0 114.2 4.2L10.6 18.3a5 5 0 11-7.1-7.1L12 2.7"
+                      stroke="rgba(233,238,252,.92)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="attMeta">
+              <b id="attTitle">No files attached</b>
+              <span id="attHint">Click 📎 to add files (up to 8MB total).</span>
+            </div>
+          </div>
+          <div class="pill" id="attCount">0</div>
+        </div>
+
+        <input id="filePicker" type="file" multiple />
+        <div id="chips" class="chips"></div>
+
+        <button id="btnEncrypt" class="primary" style="margin-top:12px; width:100%;">
+          Encrypt Selected Text
+        </button>
+
+        <div class="mini">
+          Select text in compose → attach files → Encrypt.
+        </div>
+
+        <div id="ok" class="msgOk"></div>
+        <div id="err" class="msgErr"></div>
+      </div>
+
+      <div class="foot full">
+        <span>v0.5 • Landscape</span>
+        <a class="link" id="openHome">Open Home</a>
       </div>
     </div>
 
-    <div class="foot">
-      <span>v0.4 • MVP</span>
-      <a class="link" id="openHome">Open Home</a>
-    </div>
+    <script type="module" src="popup.js"></script>
   </div>
-
-  <script type="module" src="popup.js"></script>
 </body>
 </html>
