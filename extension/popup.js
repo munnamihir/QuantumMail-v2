@@ -58,7 +58,6 @@ function setWho(text, state = null) {
 }
 
 function ok(msg) {
-  // there are multiple ok/err containers in HTML, so target the ones that exist
   const o = document.querySelectorAll("#ok, #ok_login");
   const e = document.querySelectorAll("#err, #err_login");
   o.forEach((x) => (x.textContent = msg || ""));
@@ -130,18 +129,21 @@ function showSuggest(matches) {
   }
 
   box.style.display = "";
-  box.innerHTML = matches.slice(0, 8).map((u) => {
-    const tag = u.hasKey ? "key ✅" : "no key";
-    return `
-      <div class="sItem" data-id="${esc(u.userId)}">
-        <div>
-          <div class="sTitle">${esc(u.username)}</div>
-          <div class="sSub">${esc(u.userId)}</div>
+  box.innerHTML = matches
+    .slice(0, 8)
+    .map((u) => {
+      const tag = u.hasKey ? "key ✅" : "no key";
+      return `
+        <div class="sItem" data-id="${esc(u.userId)}">
+          <div>
+            <div class="sTitle">${esc(u.username)}</div>
+            <div class="sSub">${esc(u.userId)}</div>
+          </div>
+          <div class="sTag">${tag}</div>
         </div>
-        <div class="sTag">${tag}</div>
-      </div>
-    `;
-  }).join("");
+      `;
+    })
+    .join("");
 
   box.querySelectorAll("[data-id]").forEach((el) => {
     el.addEventListener("click", () => {
@@ -163,6 +165,12 @@ function showSuggest(matches) {
 
 async function loadOrgRecipients() {
   const resp = await sendBg("QM_RECIPIENTS");
+  if (!resp?.ok) {
+    // This is the #1 reason autocomplete "silently fails"
+    orgUsers = [];
+    console.warn("QM_RECIPIENTS failed:", resp?.error);
+    return;
+  }
   orgUsers = Array.isArray(resp?.users) ? resp.users : [];
 }
 
@@ -186,7 +194,6 @@ function updateAttachmentUI() {
   chips.innerHTML = "";
 
   const totalBytes = selectedFiles.reduce((s, f) => s + (f?.size || 0), 0);
-
   if ($("attCount")) $("attCount").textContent = String(selectedFiles.length);
 
   if (selectedFiles.length === 0) {
@@ -225,7 +232,7 @@ function updateAttachmentUI() {
 function openPicker() {
   const input = $("filePicker");
   if (!input) return;
-  input.value = ""; // allow selecting same file again
+  input.value = "";
   input.click();
 }
 
@@ -245,29 +252,17 @@ function addFilesFromPicker(fileList) {
   updateAttachmentUI();
 }
 
-/**
- * IMPORTANT:
- * Read attachments immediately (before any other awaits),
- * otherwise MV3 popup can lose file handle and throw NotReadableError.
- */
 async function collectAttachmentsImmediate() {
   if (!selectedFiles.length) return [];
-
   const out = [];
   for (const f of selectedFiles) {
-    try {
-      const buf = await f.arrayBuffer();
-      out.push({
-        name: f.name,
-        mimeType: f.type || "application/octet-stream",
-        size: f.size,
-        bytes: Array.from(new Uint8Array(buf))
-      });
-    } catch (e) {
-      throw new Error(
-        `Could not read "${f.name}". Try re-selecting it and keep popup open. (${e?.name || "ReadError"})`
-      );
-    }
+    const buf = await f.arrayBuffer();
+    out.push({
+      name: f.name,
+      mimeType: f.type || "application/octet-stream",
+      size: f.size,
+      bytes: Array.from(new Uint8Array(buf))
+    });
   }
   return out;
 }
@@ -285,16 +280,14 @@ async function refreshSessionUI() {
   if (s?.token && s?.user) {
     setWho(`${s.user.username}@${s.user.orgId || "org"}`, "good");
     showSession(s.user);
-
-    if ($("serverBase") && !$("serverBase").value && s.serverBase) $("serverBase").value = s.serverBase;
-    if ($("orgId") && !$("orgId").value && s.user.orgId) $("orgId").value = s.user.orgId;
-    if ($("username") && !$("username").value) $("username").value = s.user.username || "";
-
     await loadOrgRecipients();
   } else {
     setWho("Signed out");
     showLogin();
     orgUsers = [];
+    selectedRecipients = [];
+    hideSuggest();
+    renderRecipientChips();
   }
 }
 
@@ -323,7 +316,6 @@ async function login() {
 
   ok("Logged in ✅ Public key registered.");
   await refreshSessionUI();
-  await loadOrgRecipients();
   renderRecipientChips();
 }
 
@@ -354,7 +346,6 @@ async function encryptSelected() {
   setWho("Working…", null);
 
   try {
-    // ✅ MUST be first (MV3 file handles)
     const attachments = await collectAttachmentsImmediate();
 
     const s = await getSession();
@@ -372,20 +363,16 @@ async function encryptSelected() {
       return;
     }
 
+    const attNote = attachments.length ? `\nAttachments: ${attachments.length}` : "";
+    const rcptNote = recipientUserIds.length ? `\nRecipients: ${recipientUserIds.length}` : `\nRecipients: all org users`;
     const extra =
       (typeof resp.skippedNoKey === "number" && resp.skippedNoKey > 0)
         ? `\nSkipped ${resp.skippedNoKey} (no key yet).`
         : "";
 
-    const attNote = attachments.length ? `\nAttachments: ${attachments.length}` : "";
-    const rcptNote = recipientUserIds.length
-      ? `\nRecipients: ${recipientUserIds.length}`
-      : `\nRecipients: all org users`;
-
     ok(`Link inserted ✅${attNote}${rcptNote}\nWrapped for ${resp.wrappedCount || "many"} recipient(s).${extra}`);
     setWho(`${s.user.username}@${s.user.orgId || "org"}`, "good");
 
-    // optional cleanup
     selectedFiles = [];
     updateAttachmentUI();
   } catch (e) {
@@ -417,9 +404,12 @@ $("openHome")?.addEventListener("click", openHome);
 $("btnAttach")?.addEventListener("click", openPicker);
 $("filePicker")?.addEventListener("change", (e) => addFilesFromPicker(e.target.files));
 
-$("rcptInput")?.addEventListener("input", () => {
+$("rcptInput")?.addEventListener("input", async () => {
   const q = String($("rcptInput").value || "").trim().toLowerCase();
   if (!q) return hideSuggest();
+
+  // ✅ if recipients not loaded yet, try once (helps first-time popup open)
+  if (!orgUsers.length) await loadOrgRecipients();
 
   const selectedSet = new Set(selectedRecipients.map((r) => String(r.userId)));
   const matches = orgUsers
@@ -433,7 +423,6 @@ document.addEventListener("click", (e) => {
   const box = $("rcptSuggest");
   const input = $("rcptInput");
   if (!box || !input) return;
-
   if (e.target === input || box.contains(e.target)) return;
   hideSuggest();
 });
