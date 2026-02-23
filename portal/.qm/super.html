@@ -139,6 +139,8 @@
       border-radius:14px;
       padding:12px;
     }
+
+    /* ===== NEW: Companies Overview UI ===== */
     .companyCard{
       border:1px solid var(--border);
       background:rgba(15,22,32,.9);
@@ -263,6 +265,24 @@
         </table>
 
         <div class="msg" id="listMsg"></div>
+
+        <!-- ===== NEW: Companies Overview ===== -->
+        <div class="hr"></div>
+
+        <div class="row" style="justify-content:space-between">
+          <div>
+            <div style="font-weight:800;font-size:16px">Companies Overview</div>
+            <div class="msg">Company → Orgs → Seats + key coverage + last activity.</div>
+          </div>
+          <div class="row">
+            <button class="btn" id="reloadCompaniesBtn">Reload Companies</button>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div id="companiesWrap" class="grid"></div>
+        <div class="msg" id="companiesMsg"></div>
       </div>
     </div>
   </div>
