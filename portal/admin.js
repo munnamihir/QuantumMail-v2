@@ -233,6 +233,36 @@ async function createUser() {
   await refreshUsers();
 }
 
+async function loadOrgHeader() {
+  try {
+    const orgRes = await api("/org/me");
+    const org = orgRes?.org || {};
+
+    const companyName = org.companyName || "—";
+    const orgName = org.orgName || org.orgId || getUser()?.orgId || "—";
+    const orgId = org.orgId || getUser()?.orgId || "—";
+
+    const companyLine = $("companyLine");
+    if (companyLine) {
+      companyLine.textContent = `Company: ${companyName} • Org: ${orgName} (${orgId})`;
+    }
+
+    // Optional: make top pill more informative (safe)
+    const who = $("whoText");
+    const u = getUser();
+    if (who && u?.username) {
+      who.textContent = `${u.username}@${orgId} (${u.role})`;
+    }
+  } catch (e) {
+    // If org/me fails, don't break the page; show fallback
+    const u = getUser();
+    const companyLine = $("companyLine");
+    if (companyLine) {
+      companyLine.textContent = `Org: ${u?.orgId || "—"}`;
+    }
+  }
+}
+
 /* =========================================================
    Alerts badge
 ========================================================= */
@@ -370,7 +400,7 @@ $("btnChangePw")?.addEventListener("click", () => changePassword().catch(e => se
     window.location.href = "/portal/index.html";
     return;
   }
-
+  loadOrgHeader().catch(() => {})
   refreshUsers().catch(e => err("usersErr", e.message));
   refreshAlertsBadge().catch(() => {});
 })();
