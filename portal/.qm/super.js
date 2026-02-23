@@ -1,4 +1,4 @@
-// portal/.qm/super.js
+// /portal/.qm/super.js
 (() => {
   const $ = (id) => document.getElementById(id);
 
@@ -17,6 +17,11 @@
   const reloadBtn = $("reloadBtn");
   const tbody = $("tbody");
   const listMsg = $("listMsg");
+
+  // NEW: companies
+  const reloadCompaniesBtn = $("reloadCompaniesBtn");
+  const companiesWrap = $("companiesWrap");
+  const companiesMsg = $("companiesMsg");
 
   const toastEl = $("toast");
 
@@ -157,9 +162,6 @@
     const st = String(r.status || "").toLowerCase();
     if (st !== "approved" && st !== "rejected") return `<div class="small">No actions.</div>`;
 
-    // Backend should implement:
-    // POST /super/org-requests/:id/resend-approval-email
-    // POST /super/org-requests/:id/resend-reject-email
     const resendPath = st === "approved"
       ? `/super/org-requests/${encodeURIComponent(id)}/resend-approval-email`
       : `/super/org-requests/${encodeURIComponent(id)}/resend-reject-email`;
@@ -258,11 +260,6 @@
         const prevText = approveBtn.textContent;
         approveBtn.textContent = "Approving…";
         try {
-          // Backend should now:
-          // - approve
-          // - generate setupLink
-          // - email requester automatically
-          // - return { setupLink, expiresAt, emailSent:true }
           const out = await api(`/super/org-requests/${encodeURIComponent(id)}/approve`, {
             method: "POST",
             body: { orgId, adminUsername }
@@ -271,9 +268,7 @@
           const setupLink = out?.setupLink || "";
           const expiresAt = out?.expiresAt || "";
           const emailSent = out?.emailSent === true;
-          toast(emailSent ? "Approved ✅ Email sent" : "Approved ✅ (email not sent)");
 
-          // still show setup link (optional)
           const outEl = row.querySelector(".setupOut");
           const copyEl = row.querySelector(".copyBtn");
 
@@ -294,8 +289,9 @@
           }
 
           toast(emailSent ? "Approved ✅ Email sent" : "Approved ✅ (email NOT sent)");
-          // Reload to show approved status + email timestamp if your API returns it
+
           await loadList();
+          await loadCompanies(); // NEW: refresh companies overview
         } catch (e) {
           toast(`Approve failed: ${e.message}`);
         } finally {
@@ -312,17 +308,15 @@
         const prevText = rejectBtn.textContent;
         rejectBtn.textContent = "Rejecting…";
         try {
-          // Backend should:
-          // - save reject reason
-          // - email requester automatically
-          // - return { emailSent:true }
           const out = await api(`/super/org-requests/${encodeURIComponent(id)}/reject`, {
             method: "POST",
             body: { reason }
           });
 
           toast(out?.emailSent === true ? "Rejected ✅ Email sent" : "Rejected (email not sent)");
+
           await loadList();
+          await loadCompanies(); // NEW: refresh companies overview
         } catch (e) {
           toast(`Reject failed: ${e.message}`);
         } finally {
@@ -341,6 +335,7 @@
           await api(path, { method: "POST" });
           toast("Resent ✅");
           await loadList();
+          await loadCompanies(); // NEW: refresh companies overview
         } catch (e) {
           toast(`Resend failed: ${e.message}`);
         } finally {
@@ -349,6 +344,78 @@
         }
       });
     });
+  }
+
+  // ===== NEW: Companies Overview =====
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString();
+  }
+
+  function renderCompanies(companies) {
+    if (!companiesWrap) return;
+
+    if (!Array.isArray(companies) || companies.length === 0) {
+      companiesWrap.innerHTML = `<div class="small">No approved orgs yet.</div>`;
+      return;
+    }
+
+    companiesWrap.innerHTML = companies.map((c) => {
+      const orgs = Array.isArray(c.orgs) ? c.orgs : [];
+      const orgsHtml = orgs.map((o) => `
+        <div class="orgRow">
+          <div class="orgLeft">
+            <div class="orgTitle">${esc(o.orgName || o.orgId)}</div>
+            <div class="small mono">${esc(o.orgId)}</div>
+            <div class="small">Last activity: ${esc(fmtTime(o.lastActivityAt))}</div>
+          </div>
+          <div class="kpis">
+            <span class="kpi">Seats: <b>${esc(o.seats?.totalUsers || 0)}</b></span>
+            <span class="kpi">Admins: <b>${esc(o.seats?.admins || 0)}</b></span>
+            <span class="kpi">Members: <b>${esc(o.seats?.members || 0)}</b></span>
+            <span class="kpi">Keys: <b>${esc(o.seats?.keyCoveragePct || 0)}%</b></span>
+          </div>
+        </div>
+      `).join("");
+
+      const orgCount = c.totals?.orgs ?? orgs.length;
+      const seats = c.totals?.seats ?? 0;
+      const keysAvg = c.totals?.keysPctAvg ?? 0;
+
+      return `
+        <div class="companyCard">
+          <div class="companyHead">
+            <div>
+              <div class="companyName">${esc(c.companyName || c.companyId)}</div>
+              <div class="companyMeta">
+                Orgs: <b>${esc(orgCount)}</b> •
+                Seats: <b>${esc(seats)}</b> •
+                Avg key coverage: <b>${esc(keysAvg)}%</b>
+              </div>
+              <div class="small mono" style="margin-top:6px">${esc(c.companyId)}</div>
+            </div>
+          </div>
+          <div class="orgList">${orgsHtml || `<div class="small">No orgs.</div>`}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function loadCompanies() {
+    if (companiesMsg) companiesMsg.textContent = "";
+    if (companiesWrap) companiesWrap.innerHTML = `<div class="small">Loading companies…</div>`;
+
+    try {
+      // Backend must implement:
+      // GET /super/companies/overview  -> { ok:true, companies:[...] }
+      const out = await api("/super/companies/overview");
+      renderCompanies(out?.companies || []);
+    } catch (e) {
+      if (companiesWrap) companiesWrap.innerHTML = "";
+      if (companiesMsg) companiesMsg.textContent = `Companies error: ${e.message}`;
+    }
   }
 
   async function checkAccess() {
@@ -366,6 +433,7 @@
 
       setUnlocked(user);
       await loadList();
+      await loadCompanies(); // NEW
       return true;
     } catch (e) {
       setLocked("Checking access failed");
@@ -431,6 +499,9 @@
   refreshMeBtn?.addEventListener("click", () => checkAccess());
   reloadBtn?.addEventListener("click", () => loadList());
   statusSel?.addEventListener("change", () => loadList());
+
+  // NEW
+  reloadCompaniesBtn?.addEventListener("click", () => loadCompanies());
 
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
