@@ -1,6 +1,4 @@
-// extension/background.js
-// QuantumMail (hardened, MV3-safe) — UPDATED (Recipients + Targeted Wrap + Cache)
-
+// extension/background.js (UPDATED)
 import {
   normalizeBase,
   getSession,
@@ -17,6 +15,7 @@ import {
 /* =========================
    Robust helpers
 ========================= */
+
 function shortenText(s, n = 280) {
   const str = String(s || "");
   return str.length <= n ? str : str.slice(0, n) + "…";
@@ -72,39 +71,6 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
 /* =========================
    Chrome tab messaging
 ========================= */
-async function ensureContentScript(tabId) {
-  try {
-    const r = await sendToTab(tabId, { type: "QM_PING" }, 700);
-    if (r?.ok) return true;
-  } catch {}
-
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"]
-    });
-  } catch (e) {
-    throw new Error(
-      "QuantumMail can't run on this page.\n" +
-      "Open Gmail/Outlook, then try again.\n\n" +
-      `Details: ${e?.message || e}`
-    );
-  }
-
-  try {
-    const r2 = await sendToTab(tabId, { type: "QM_PING" }, 900);
-    if (r2?.ok) return true;
-  } catch (e) {
-    throw new Error(
-      "Injected content.js but it still isn't responding.\n" +
-      "Open a compose window and refresh Gmail.\n\n" +
-      `Details: ${e?.message || e}`
-    );
-  }
-
-  return false;
-}
-
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -144,6 +110,8 @@ function aadFromTabUrl(tabUrl) {
 /* =========================
    Base64URL (safe for larger data)
 ========================= */
+
+// avoids .apply() crashes
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   let binary = "";
@@ -156,8 +124,9 @@ function bytesToB64Url(bytes) {
 }
 
 /* =========================
-   Attachment crypto (same DEK)
+   Attachment crypto
 ========================= */
+
 function attachmentToU8(a) {
   if (!a) return new Uint8Array();
   if (Array.isArray(a.bytes)) return new Uint8Array(a.bytes);
@@ -182,56 +151,15 @@ async function decryptBytesWithRawDek(rawDekBytes, ivB64Url, ctB64Url) {
 }
 
 async function rsaUnwrapDek(privateKey, wrappedDekB64Url) {
-  // Validate payload early (catches undefined / object / empty)
-  const s = String(wrappedDekB64Url || "").trim();
-  if (!s) {
-    throw new Error("Decrypt failed: server did not return wrappedDek for this user.");
-  }
-
-  let wrappedBytes;
-  try {
-    wrappedBytes = b64UrlToBytes(s);
-  } catch (e) {
-    throw new Error(
-      "Decrypt failed: wrappedDek is not valid base64url (corrupted in transit/storage)."
-    );
-  }
-
-  // RSA-2048 ciphertext must be exactly 256 bytes
-  // (If you use RSA-3072 it would be 384, RSA-4096 -> 512)
-  const expectedLen = Math.ceil((privateKey?.algorithm?.modulusLength || 2048) / 8);
-  if (wrappedBytes.byteLength !== expectedLen) {
-    throw new Error(
-      `Decrypt failed: wrappedDek length is ${wrappedBytes.byteLength} bytes, expected ${expectedLen}. ` +
-      `This usually means the wrapped key was truncated/corrupted or stored in the wrong encoding.`
-    );
-  }
-
-  try {
-    const raw = await crypto.subtle.decrypt(
-      { name: "RSA-OAEP" }, // uses the key’s hash internally
-      privateKey,
-      wrappedBytes
-    );
-    return new Uint8Array(raw);
-  } catch (e) {
-    // WebCrypto throws OperationError when decrypt fails (wrong key OR corrupted ciphertext)
-    const name = e?.name || "OperationError";
-    throw new Error(
-      `Decrypt failed (${name}). This message was encrypted for a different QuantumMail key.\n\n` +
-      `Most common reasons:\n` +
-      `• You reinstalled/reloaded the extension, switched Chrome profile, or cleared browser storage (new keypair).\n` +
-      `• Admin forced re-key after the message was created.\n\n` +
-      `Fix:\n` +
-      `• Try decrypting from the same Chrome profile/device that originally created the key.\n` +
-      `• If you only need new messages: Admin → Force Re-key → login once → re-encrypt/resend the message.`
-    );
-  }
+  const wrappedBytes = b64UrlToBytes(wrappedDekB64Url);
+  const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrappedBytes);
+  return new Uint8Array(raw);
 }
 
 /* =========================
    Session + login
 ========================= */
+
 async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const base = normalizeBase(serverBase);
 
@@ -242,41 +170,19 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 
   const token = out?.token || "";
   const user = out?.user || null;
-  if (!token || !user) throw new Error("Login failed: missing token/user.");
+  if (!token || !user?.userId) throw new Error("Login failed: missing token/user.");
 
-  await ensureKeypairAndRegister(base, token);
+  // ✅ register per-user key (critical fix)
+  await ensureKeypairAndRegister(base, token, user.userId);
+
   await setSession({ serverBase: base, token, user });
-
   return { base, token, user };
 }
 
 /* =========================
-   Org users cache (recipient list)
+   Encrypt selection org-wide
 ========================= */
-let __qmOrgUsersCache = { at: 0, users: [], key: "" };
 
-async function getOrgUsersCached(serverBase, token, ttlMs = 30_000) {
-  const now = Date.now();
-  const cacheKey = `${serverBase}::${token.slice(0, 12)}`;
-
-  if (
-    __qmOrgUsersCache.users.length &&
-    __qmOrgUsersCache.key === cacheKey &&
-    now - __qmOrgUsersCache.at < ttlMs
-  ) {
-    return __qmOrgUsersCache.users;
-  }
-
-  const out = await apiJson(serverBase, "/org/users", { token });
-  const users = Array.isArray(out?.users) ? out.users : [];
-
-  __qmOrgUsersCache = { at: now, users, key: cacheKey };
-  return users;
-}
-
-/* =========================
-   Encrypt selection (targeted recipients)
-========================= */
 async function assertContentScriptAvailable(tabId) {
   try {
     const r = await sendToTab(tabId, { type: "QM_PING" }, 900);
@@ -293,7 +199,7 @@ async function assertContentScriptAvailable(tabId) {
   }
 }
 
-async function encryptSelection({ attachments = [], recipientUserIds = null } = {}) {
+async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const s = await getSession();
   if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
@@ -308,7 +214,7 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
   const tabId = tab.id;
   const aad = aadFromTabUrl(tab.url);
 
-  await ensureContentScript(tabId);
+  await assertContentScriptAvailable(tabId);
 
   const sel = await sendToTab(tabId, { type: "QM_GET_SELECTION" });
   const plaintext = String(sel?.text || "").trim();
@@ -316,7 +222,6 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
 
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, aad);
 
-  // Encrypt attachments with SAME rawDek
   const encAttachments = [];
   for (const a of list) {
     const bytes = attachmentToU8(a);
@@ -332,13 +237,9 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
     });
   }
 
-  const users = await getOrgUsersCached(s.serverBase, s.token);
-
-  // If recipients selected: only wrap for them. Else: wrap for all org users.
-  const targetIds =
-    Array.isArray(recipientUserIds) && recipientUserIds.length
-      ? new Set(recipientUserIds.map((x) => String(x)))
-      : null;
+  // Wrap DEK for all org users
+  const usersOut = await apiJson(s.serverBase, "/org/users", { token: s.token });
+  const users = Array.isArray(usersOut?.users) ? usersOut.users : [];
 
   const wrappedKeys = {};
   let wrappedCount = 0;
@@ -346,13 +247,10 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
 
   for (const u of users) {
     if (!u?.userId) continue;
-    if (targetIds && !targetIds.has(String(u.userId))) continue;
-
     if (!u.publicKeySpkiB64) {
       skippedNoKey++;
       continue;
     }
-
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
     const wrappedDek = await rsaWrapDek(pub, rawDek);
     wrappedKeys[u.userId] = wrappedDek;
@@ -360,7 +258,7 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
   }
 
   if (wrappedCount === 0) {
-    throw new Error(targetIds ? "No selected recipients have public keys yet." : "No org users have public keys yet.");
+    throw new Error("No org users have public keys registered yet. Have at least one user login once.");
   }
 
   const msgOut = await apiJson(s.serverBase, "/api/messages", {
@@ -387,14 +285,26 @@ async function encryptSelection({ attachments = [], recipientUserIds = null } = 
 /* =========================
    Login + decrypt message
 ========================= */
+
 async function loginAndDecrypt({ msgId, serverBase, orgId, username, password }) {
-  const { base, token } = await loginAndStoreSession({ serverBase, orgId, username, password });
+  const { base, token, user } = await loginAndStoreSession({ serverBase, orgId, username, password });
 
   const payload = await apiJson(base, `/api/messages/${encodeURIComponent(msgId)}`, { token });
   if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
 
-  const kp = await getOrCreateRsaKeypair();
-  const rawDek = await rsaUnwrapDek(kp.privateKey, payload.wrappedDek);
+  // ✅ use per-user keypair
+  const kp = await getOrCreateRsaKeypair(user.userId);
+
+  let rawDek;
+  try {
+    rawDek = await rsaUnwrapDek(kp.privateKey, payload.wrappedDek);
+  } catch {
+    throw new Error(
+      "Decrypt failed: your device key does not match the key used when this link was created.\n" +
+      "This happens after reinstall/re-key/cleared storage.\n" +
+      "Ask the sender to re-encrypt and send a fresh link."
+    );
+  }
 
   const plaintext = await aesDecrypt(payload.iv, payload.ciphertext, payload.aad || "web", rawDek);
 
@@ -417,6 +327,7 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
 /* =========================
    Message router
 ========================= */
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
@@ -427,31 +338,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
-      if (msg?.type === "QM_RECIPIENTS") {
-        const s = await getSession();
-        if (!s?.token || !s?.serverBase) {
-          sendResponse({ ok: true, users: [] });
-          return;
-        }
-
-        const users = await getOrgUsersCached(s.serverBase, s.token);
-        const list = users
-          .map((u) => ({
-            userId: u.userId,
-            username: u.username,
-            hasKey: !!u.publicKeySpkiB64
-          }))
-          .filter((u) => u.userId && u.username);
-
-        sendResponse({ ok: true, users: list });
-        return;
-      }
-
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
-        const out = await encryptSelection({
-          attachments: msg.attachments || [],
-          recipientUserIds: msg.recipientUserIds || null
-        });
+        const out = await encryptSelectionOrgWide({ attachments: msg.attachments || [] });
         sendResponse({ ok: true, ...out });
         return;
       }
