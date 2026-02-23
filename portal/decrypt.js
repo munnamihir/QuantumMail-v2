@@ -1,3 +1,4 @@
+// /portal/decrypt.js
 const $ = (id) => document.getElementById(id);
 
 function getMsgIdFromPath() {
@@ -11,6 +12,7 @@ function err(msg) { $("err").textContent = msg || ""; }
 
 function setBusy(busy) {
   const btn = $("btnDecrypt");
+  if (!btn) return;
   btn.disabled = !!busy;
   btn.textContent = busy ? "Decrypting…" : "Login & Decrypt";
 }
@@ -52,10 +54,23 @@ function renderAttachments(list) {
 const msgId = getMsgIdFromPath();
 $("msgId").textContent = msgId || "-";
 
+// timers (avoid false "not detected")
+function clearTimers() {
+  if (window.__qmSlowTimer) {
+    clearTimeout(window.__qmSlowTimer);
+    window.__qmSlowTimer = null;
+  }
+  if (window.__qmHardTimer) {
+    clearTimeout(window.__qmHardTimer);
+    window.__qmHardTimer = null;
+  }
+}
+
 function requestDecrypt() {
   ok(""); err("");
   $("out").value = "";
   renderAttachments([]);
+  clearTimers();
 
   if (!msgId) { err("No message id in URL."); return; }
 
@@ -71,31 +86,34 @@ function requestDecrypt() {
   setBusy(true);
   ok("Contacting extension…");
 
+  // ✅ after 1.2s: show slow message (NOT "not detected")
+  window.__qmSlowTimer = setTimeout(() => {
+    ok("Still working… (login + decrypt can take a few seconds)");
+  }, 1200);
+
+  // ✅ after 25s: now we can reasonably say not detected / no response
+  window.__qmHardTimer = setTimeout(() => {
+    setBusy(false);
+    err(
+      "No response from QuantumMail extension.\n" +
+      "1) Install/enable the extension\n" +
+      "2) Refresh this page\n" +
+      "3) Try again"
+    );
+  }, 25000);
+
   window.postMessage(
     {
       source: "quantummail-portal",
       type: "QM_LOGIN_AND_DECRYPT_REQUEST",
       msgId,
-      serverBase: window.location.origin, // same origin API
+      serverBase: window.location.origin,
       orgId,
       username,
       password
     },
     "*"
   );
-
-  // extension-detection timeout
-  const timeout = setTimeout(() => {
-    setBusy(false);
-    err(
-      "QuantumMail extension not detected.\n" +
-      "1) Install/enable the extension\n" +
-      "2) Refresh this page\n" +
-      "3) Try again"
-    );
-  }, 5000);
-
-  window.__qmDecryptTimeout = timeout;
 }
 
 window.addEventListener("message", (event) => {
@@ -103,11 +121,8 @@ window.addEventListener("message", (event) => {
   if (data?.source !== "quantummail-extension") return;
   if (data?.type !== "QM_DECRYPT_RESULT") return;
 
-  if (window.__qmDecryptTimeout) {
-    clearTimeout(window.__qmDecryptTimeout);
-    window.__qmDecryptTimeout = null;
-  }
-
+  // ✅ any response means extension is detected — stop timers
+  clearTimers();
   setBusy(false);
 
   if (data.ok) {
