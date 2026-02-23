@@ -3,14 +3,88 @@ import { normalizeBase, getSession, clearSession } from "./qm.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_SERVER_BASE = "https://quantummail-v2.onrender.com";
-/** ===== Attachment state (appendable) ===== */
+
+/** ===== Attachment state ===== */
 let selectedFiles = []; // Array<File>
 
-let orgUsers = [];          // [{userId, username, hasKey}]
+/** ===== Recipient state ===== */
+let orgUsers = []; // [{userId, username, hasKey}]
 let selectedRecipients = []; // [{userId, username}]
 
-function esc(s){ return String(s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+function esc(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
+/* =========================
+   UI block toggles
+========================= */
+function showLogin() {
+  $("loginCard")?.classList.remove("hide");
+  $("loginCard")?.classList.add("show");
+  $("sessionCard")?.classList.remove("show");
+  $("sessionCard")?.classList.add("hide");
+}
+
+function showSession(user) {
+  $("sessionCard")?.classList.remove("hide");
+  $("sessionCard")?.classList.add("show");
+  $("loginCard")?.classList.remove("show");
+  $("loginCard")?.classList.add("hide");
+
+  const line = $("sessionLine");
+  if (line) line.textContent = `${user.username}@${user.orgId || "org"} • ${user.role || "Member"}`;
+}
+
+/* =========================
+   Status helpers
+========================= */
+function setDot(state) {
+  const dot = $("dot");
+  if (!dot) return;
+  dot.classList.remove("good", "bad");
+  if (state === "good") dot.classList.add("good");
+  if (state === "bad") dot.classList.add("bad");
+}
+
+function setWho(text, state = null) {
+  const t = $("whoText");
+  if (t) t.textContent = text || "";
+  if (state) setDot(state);
+  if (!state) setDot(null);
+}
+
+function ok(msg) {
+  // there are multiple ok/err containers in HTML, so target the ones that exist
+  const o = document.querySelectorAll("#ok, #ok_login");
+  const e = document.querySelectorAll("#err, #err_login");
+  o.forEach((x) => (x.textContent = msg || ""));
+  if (msg) e.forEach((x) => (x.textContent = ""));
+}
+
+function err(msg) {
+  const o = document.querySelectorAll("#ok, #ok_login");
+  const e = document.querySelectorAll("#err, #err_login");
+  e.forEach((x) => (x.textContent = msg || ""));
+  if (msg) o.forEach((x) => (x.textContent = ""));
+  setDot("bad");
+}
+
+/* =========================
+   BG messaging
+========================= */
+async function sendBg(type, payload = {}) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type, ...payload }, (resp) => resolve(resp));
+  });
+}
+
+/* =========================
+   Recipients UI
+========================= */
 function renderRecipientChips() {
   const host = $("rcptChips");
   if (!host) return;
@@ -41,8 +115,9 @@ function renderRecipientChips() {
 
 function hideSuggest() {
   const box = $("rcptSuggest");
-  if (box) box.style.display = "none";
-  if (box) box.innerHTML = "";
+  if (!box) return;
+  box.style.display = "none";
+  box.innerHTML = "";
 }
 
 function showSuggest(matches) {
@@ -55,26 +130,26 @@ function showSuggest(matches) {
   }
 
   box.style.display = "";
-  box.innerHTML = matches.slice(0, 8).map(u => {
-    const keyNote = u.hasKey ? "" : " • (no key yet)";
+  box.innerHTML = matches.slice(0, 8).map((u) => {
+    const tag = u.hasKey ? "key ✅" : "no key";
     return `
-      <div class="item" style="padding:8px; cursor:pointer;" data-id="${esc(u.userId)}">
-        <div class="itemMain">
-          <div class="itemTitle">${esc(u.username)}${keyNote}</div>
-          <div class="muted">userId: ${esc(u.userId)}</div>
+      <div class="sItem" data-id="${esc(u.userId)}">
+        <div>
+          <div class="sTitle">${esc(u.username)}</div>
+          <div class="sSub">${esc(u.userId)}</div>
         </div>
+        <div class="sTag">${tag}</div>
       </div>
     `;
   }).join("");
 
-  box.querySelectorAll("[data-id]").forEach(el => {
+  box.querySelectorAll("[data-id]").forEach((el) => {
     el.addEventListener("click", () => {
       const id = el.getAttribute("data-id");
-      const u = orgUsers.find(x => String(x.userId) === String(id));
+      const u = orgUsers.find((x) => String(x.userId) === String(id));
       if (!u) return;
 
-      // avoid duplicates
-      if (!selectedRecipients.some(r => String(r.userId) === String(u.userId))) {
+      if (!selectedRecipients.some((r) => String(r.userId) === String(u.userId))) {
         selectedRecipients.push({ userId: u.userId, username: u.username });
         renderRecipientChips();
       }
@@ -91,6 +166,9 @@ async function loadOrgRecipients() {
   orgUsers = Array.isArray(resp?.users) ? resp.users : [];
 }
 
+/* =========================
+   Attachments UI
+========================= */
 function fmtBytes(n) {
   const b = Number(n || 0);
   if (b < 1024) return `${b} B`;
@@ -104,20 +182,21 @@ function fmtBytes(n) {
 
 function updateAttachmentUI() {
   const chips = $("chips");
+  if (!chips) return;
   chips.innerHTML = "";
 
   const totalBytes = selectedFiles.reduce((s, f) => s + (f?.size || 0), 0);
 
-  $("attCount").textContent = String(selectedFiles.length);
+  if ($("attCount")) $("attCount").textContent = String(selectedFiles.length);
 
   if (selectedFiles.length === 0) {
-    $("attTitle").textContent = "No files attached";
-    $("attHint").textContent = "Click the pin to add one file, then click again to add more.";
+    if ($("attTitle")) $("attTitle").textContent = "No files attached";
+    if ($("attHint")) $("attHint").textContent = "Click 📎 to add files (up to 8MB total).";
     return;
   }
 
-  $("attTitle").textContent = `${selectedFiles.length} file(s) attached`;
-  $("attHint").textContent = `Total size: ${fmtBytes(totalBytes)} • Click 📎 to add more.`;
+  if ($("attTitle")) $("attTitle").textContent = `${selectedFiles.length} file(s) attached`;
+  if ($("attHint")) $("attHint").textContent = `Total size: ${fmtBytes(totalBytes)} • Click 📎 to add more.`;
 
   selectedFiles.forEach((f, idx) => {
     const chip = document.createElement("div");
@@ -144,9 +223,9 @@ function updateAttachmentUI() {
 }
 
 function openPicker() {
-  // IMPORTANT: clear input value so selecting the SAME file again still triggers "change"
   const input = $("filePicker");
-  input.value = "";
+  if (!input) return;
+  input.value = ""; // allow selecting same file again
   input.click();
 }
 
@@ -154,7 +233,6 @@ function addFilesFromPicker(fileList) {
   const incoming = Array.from(fileList || []);
   if (!incoming.length) return;
 
-  // Append, but dedupe by (name + size + lastModified)
   const key = (f) => `${f.name}::${f.size}::${f.lastModified}`;
   const existing = new Set(selectedFiles.map(key));
   for (const f of incoming) {
@@ -164,48 +242,13 @@ function addFilesFromPicker(fileList) {
       existing.add(k);
     }
   }
-
   updateAttachmentUI();
-}
-
-/* ===== UI helpers ===== */
-
-function setDot(state) {
-  const dot = $("dot");
-  if (!dot) return;
-  dot.classList.remove("good", "bad");
-  if (state === "good") dot.classList.add("good");
-  if (state === "bad") dot.classList.add("bad");
-}
-
-function setStatus(text, state = null) {
-  $("status").textContent = text || "";
-  if (state) setDot(state);
-}
-
-function ok(msg) {
-  $("ok").textContent = msg || "";
-  if (msg) $("err").textContent = "";
-}
-
-function err(msg) {
-  $("err").textContent = msg || "";
-  if (msg) $("ok").textContent = "";
-  setDot("bad");
-}
-
-async function sendBg(type, payload = {}) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type, ...payload }, (resp) => resolve(resp));
-  });
 }
 
 /**
  * IMPORTANT:
  * Read attachments immediately (before any other awaits),
  * otherwise MV3 popup can lose file handle and throw NotReadableError.
- *
- * ✅ UPDATED: reads from selectedFiles[] (not from <input>)
  */
 async function collectAttachmentsImmediate() {
   if (!selectedFiles.length) return [];
@@ -222,47 +265,53 @@ async function collectAttachmentsImmediate() {
       });
     } catch (e) {
       throw new Error(
-        `Could not read "${f.name}". Try re-selecting it, keep the popup open, and avoid restricted folders. (${e?.name || "ReadError"})`
+        `Could not read "${f.name}". Try re-selecting it and keep popup open. (${e?.name || "ReadError"})`
       );
     }
   }
   return out;
 }
 
+/* =========================
+   Session UI
+========================= */
 function fillDefaults() {
-  if (!$("orgId").value) $("orgId").value = "org_demo";
+  if ($("orgId") && !$("orgId").value) $("orgId").value = "org_demo";
 }
 
 async function refreshSessionUI() {
   const s = await getSession();
-  const who = $("who");
 
   if (s?.token && s?.user) {
-    who.textContent = `${s.user.username}@${s.user.orgId || "org"}`;
-    setStatus("Signed in", "good");
-    if (!$("serverBase").value && s.serverBase) $("serverBase").value = s.serverBase;
-    if (!$("orgId").value && s.user.orgId) $("orgId").value = s.user.orgId;
-    if (!$("username").value) $("username").value = s.user.username || "";
+    setWho(`${s.user.username}@${s.user.orgId || "org"}`, "good");
+    showSession(s.user);
+
+    if ($("serverBase") && !$("serverBase").value && s.serverBase) $("serverBase").value = s.serverBase;
+    if ($("orgId") && !$("orgId").value && s.user.orgId) $("orgId").value = s.user.orgId;
+    if ($("username") && !$("username").value) $("username").value = s.user.username || "";
+
     await loadOrgRecipients();
   } else {
-    who.textContent = "Signed out";
-    setStatus("Not signed in");
-    setDot(null);
+    setWho("Signed out");
+    showLogin();
+    orgUsers = [];
   }
 }
 
+/* =========================
+   Actions
+========================= */
 async function login() {
-  ok(""); $("err").textContent = "";
-  setStatus("Signing in…");
+  ok(""); err("");
+  setWho("Signing in…", null);
 
-  //const serverBase = normalizeBase($("serverBase").value.trim());
   const serverBase = DEFAULT_SERVER_BASE;
-  const orgId = $("orgId").value.trim();
-  const username = $("username").value.trim();
-  const password = $("password").value;
+  const orgId = $("orgId")?.value.trim() || "";
+  const username = $("username")?.value.trim() || "";
+  const password = $("password")?.value || "";
 
   if (!serverBase || !orgId || !username || !password) {
-    err("serverBase, orgId, username, and password are required.");
+    err("orgId, username, and password are required.");
     return;
   }
 
@@ -278,97 +327,109 @@ async function login() {
   renderRecipientChips();
 }
 
-async function logout() {
+async function logoutAll() {
   orgUsers = [];
   selectedRecipients = [];
   hideSuggest();
   renderRecipientChips();
-  ok(""); $("err").textContent = "";
+
+  selectedFiles = [];
+  updateAttachmentUI();
+
+  ok(""); err("");
   await clearSession();
   ok("Logged out.");
   await refreshSessionUI();
 }
 
+async function clearLoginFields() {
+  if ($("username")) $("username").value = "";
+  if ($("password")) $("password").value = "";
+  if ($("orgId")) $("orgId").value = "org_demo";
+  ok(""); err("");
+}
+
 async function encryptSelected() {
-  ok(""); $("err").textContent = "";
-  setStatus("Reading attachments…");
+  ok(""); err("");
+  setWho("Working…", null);
 
   try {
-    const recipientUserIds = selectedRecipients.map(r => r.userId);
-
-    const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments, recipientUserIds });
-    // ✅ MUST be first to avoid NotReadableError
+    // ✅ MUST be first (MV3 file handles)
     const attachments = await collectAttachmentsImmediate();
-
-    setStatus("Encrypting…");
 
     const s = await getSession();
     if (!s?.token) {
       err("Please login first.");
-      setStatus("Not signed in", "bad");
+      setWho("Signed out");
       return;
     }
 
-    const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments });
+    const recipientUserIds = selectedRecipients.map((r) => r.userId);
+    const resp = await sendBg("QM_ENCRYPT_SELECTION", { attachments, recipientUserIds });
 
     if (!resp?.ok) {
       err(resp?.error || "Encrypt failed");
-      setStatus("Error", "bad");
       return;
     }
 
     const extra =
       (typeof resp.skippedNoKey === "number" && resp.skippedNoKey > 0)
-        ? `\nSkipped ${resp.skippedNoKey} users (no public key yet).`
+        ? `\nSkipped ${resp.skippedNoKey} (no key yet).`
         : "";
 
-    const rcptNote = recipientUserIds.length ? `\nRecipients: ${recipientUserIds.length}` : "\nRecipients: (all org users)";
-    ok(`Link inserted ✅${attNote}${rcptNote}\nWrapped for ${resp.wrappedCount || "many"} recipient(s).${extra}`);
+    const attNote = attachments.length ? `\nAttachments: ${attachments.length}` : "";
+    const rcptNote = recipientUserIds.length
+      ? `\nRecipients: ${recipientUserIds.length}`
+      : `\nRecipients: all org users`;
 
-    // ✅ Clear after encrypt (optional)
+    ok(`Link inserted ✅${attNote}${rcptNote}\nWrapped for ${resp.wrappedCount || "many"} recipient(s).${extra}`);
+    setWho(`${s.user.username}@${s.user.orgId || "org"}`, "good");
+
+    // optional cleanup
     selectedFiles = [];
     updateAttachmentUI();
   } catch (e) {
     console.error(e);
     err(e?.message || String(e));
-    setStatus("Error", "bad");
   }
 }
 
 async function openHome() {
   const s = await getSession();
-  const base = s?.serverBase || normalizeBase($("serverBase").value.trim());
+  const base = s?.serverBase || normalizeBase(($("serverBase")?.value || "").trim());
   if (!base) {
-    err("Set Server Base first.");
+    err("Server base missing.");
     return;
   }
   chrome.tabs.create({ url: `${base}/portal/index.html` });
 }
 
-/* ===== wire up ===== */
+/* =========================
+   Wiring
+========================= */
+$("btnLogin")?.addEventListener("click", login);
+$("btnLogout")?.addEventListener("click", clearLoginFields);
+$("btnLogoutTop")?.addEventListener("click", logoutAll);
 
-$("btnLogin").addEventListener("click", login);
-$("btnLogout").addEventListener("click", logout);
-$("btnEncrypt").addEventListener("click", encryptSelected);
-$("openHome").addEventListener("click", openHome);
+$("btnEncrypt")?.addEventListener("click", encryptSelected);
+$("openHome")?.addEventListener("click", openHome);
 
-$("btnAttach").addEventListener("click", openPicker);
-$("filePicker").addEventListener("change", (e) => addFilesFromPicker(e.target.files));
+$("btnAttach")?.addEventListener("click", openPicker);
+$("filePicker")?.addEventListener("change", (e) => addFilesFromPicker(e.target.files));
 
 $("rcptInput")?.addEventListener("input", () => {
   const q = String($("rcptInput").value || "").trim().toLowerCase();
   if (!q) return hideSuggest();
 
-  const selectedSet = new Set(selectedRecipients.map(r => String(r.userId)));
+  const selectedSet = new Set(selectedRecipients.map((r) => String(r.userId)));
   const matches = orgUsers
-    .filter(u => !selectedSet.has(String(u.userId)))
-    .filter(u => String(u.username || "").toLowerCase().includes(q));
+    .filter((u) => !selectedSet.has(String(u.userId)))
+    .filter((u) => String(u.username || "").toLowerCase().includes(q));
 
   showSuggest(matches);
 });
 
 document.addEventListener("click", (e) => {
-  // close suggestions if clicking outside input/suggest
   const box = $("rcptSuggest");
   const input = $("rcptInput");
   if (!box || !input) return;
@@ -380,5 +441,6 @@ document.addEventListener("click", (e) => {
 (async function init() {
   fillDefaults();
   updateAttachmentUI();
+  renderRecipientChips();
   await refreshSessionUI();
 })();
