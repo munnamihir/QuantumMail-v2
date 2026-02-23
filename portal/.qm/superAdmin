@@ -19,3 +19,11 @@ SET data = jsonb_set(
 ),
 updated_at = now()
 WHERE org_id = 'org_platform'
+
+
+----to display org_data
+SELECT 
+  org_id,
+  jsonb_pretty(data) AS org_data_pretty
+FROM qm_org_store
+WHERE org_id = 'Org_deloitte';
