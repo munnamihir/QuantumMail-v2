@@ -57,10 +57,24 @@ export function b64UrlToBytes(b64url) {
   return b64ToBytes(b64);
 }
 
-// ---------- Crypto primitives ----------
-export async function getOrCreateRsaKeypair() {
+/* =========================================================
+   ✅ RSA keypairs (PER USER)
+   - fixes OperationError unwrap mismatch
+   - fixes "user B overwrote user A keys"
+========================================================= */
+
+function rsaStorageKey(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  return `qm_rsa_${id}`;
+}
+
+export async function getOrCreateRsaKeypair(userId) {
+  const key = rsaStorageKey(userId);
+  if (!key) throw new Error("Missing userId for RSA keypair.");
+
   const existing = await new Promise((resolve) => {
-    chrome.storage.local.get({ qm_rsa: null }, (v) => resolve(v.qm_rsa));
+    chrome.storage.local.get({ [key]: null }, (v) => resolve(v[key]));
   });
 
   if (existing?.privateJwk && existing?.publicJwk) {
@@ -96,7 +110,7 @@ export async function getOrCreateRsaKeypair() {
   const publicJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
 
   await new Promise((resolve) => {
-    chrome.storage.local.set({ qm_rsa: { privateJwk, publicJwk } }, () => resolve());
+    chrome.storage.local.set({ [key]: { privateJwk, publicJwk, createdAt: new Date().toISOString() } }, () => resolve());
   });
 
   return { privateKey: kp.privateKey, publicKey: kp.publicKey };
@@ -118,8 +132,14 @@ export async function importPublicSpkiB64(publicKeySpkiB64) {
   );
 }
 
-export async function ensureKeypairAndRegister(serverBase, token) {
-  const { publicKey } = await getOrCreateRsaKeypair();
+/**
+ * ✅ Register the *current user's* public key
+ * Pass userId from login response/session.
+ */
+export async function ensureKeypairAndRegister(serverBase, token, userId) {
+  if (!userId) throw new Error("ensureKeypairAndRegister: missing userId");
+
+  const { publicKey } = await getOrCreateRsaKeypair(userId);
   const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
 
   async function tryRegister(path) {
