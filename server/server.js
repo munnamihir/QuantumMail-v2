@@ -550,6 +550,91 @@ app.get("/org/me", requireAuth, async (req, res) => {
 });
 
 /* =========================================================
+   SUPERADMIN: companies overview
+   GET /super/companies/overview
+========================================================= */
+app.get("/super/companies/overview", requireAuth, requireSuperAdmin, async (req, res) => {
+  // 1) Pull approved orgs + company mapping from Postgres
+  const { rows } = await pool.query(`
+    select
+      company_id,
+      company_name,
+      approved_org_id as org_id
+    from qm_org_requests
+    where status='approved'
+      and approved_org_id is not null
+    order by company_name asc, approved_org_id asc
+  `);
+
+  // Group: company -> orgIds
+  const companiesMap = new Map();
+  for (const r of rows) {
+    const cid = String(r.company_id || "unknown").trim() || "unknown";
+    const cname = String(r.company_name || "Unknown Company").trim() || "Unknown Company";
+    const orgId = String(r.org_id || "").trim();
+    if (!orgId) continue;
+
+    if (!companiesMap.has(cid)) {
+      companiesMap.set(cid, { companyId: cid, companyName: cname, orgs: [] });
+    }
+    companiesMap.get(cid).orgs.push({ orgId });
+  }
+
+  // 2) For each org, read JSONB org and compute metrics
+  for (const c of companiesMap.values()) {
+    for (const o of c.orgs) {
+      let org;
+      try {
+        org = await getOrg(o.orgId);
+      } catch {
+        org = null;
+      }
+
+      const users = Array.isArray(org?.users) ? org.users : [];
+      const totalUsers = users.length;
+      const admins = users.filter(u => u.role === "Admin").length;
+      const members = users.filter(u => u.role === "Member").length;
+
+      const usersWithKeys = users.filter(u => !!u.publicKeySpkiB64).length;
+      const keyCoveragePct = totalUsers ? Math.round((usersWithKeys / totalUsers) * 100) : 0;
+
+      // last activity (best-effort): max(lastLoginAt) or latest audit item
+      const lastLoginAt = users
+        .map(u => Date.parse(u.lastLoginAt || ""))
+        .filter(Number.isFinite)
+        .sort((a,b)=>b-a)[0];
+
+      const audit = Array.isArray(org?.audit) ? org.audit : [];
+      const lastAuditAt = audit.length ? Date.parse(audit[0]?.at || "") : NaN;
+
+      const lastActivityAtMs = Math.max(
+        Number.isFinite(lastLoginAt) ? lastLoginAt : 0,
+        Number.isFinite(lastAuditAt) ? lastAuditAt : 0
+      );
+
+      o.orgName = org?.orgName || org?.name || o.orgId;
+      o.seats = { totalUsers, admins, members, usersWithKeys, keyCoveragePct };
+      o.lastActivityAt = lastActivityAtMs ? new Date(lastActivityAtMs).toISOString() : null;
+    }
+  }
+
+  const companies = Array.from(companiesMap.values()).map(c => ({
+    ...c,
+    totals: {
+      orgs: c.orgs.length,
+      seats: c.orgs.reduce((s, o) => s + (o.seats?.totalUsers || 0), 0),
+      admins: c.orgs.reduce((s, o) => s + (o.seats?.admins || 0), 0),
+      keysPctAvg: c.orgs.length
+        ? Math.round(c.orgs.reduce((s, o) => s + (o.seats?.keyCoveragePct || 0), 0) / c.orgs.length)
+        : 0
+    }
+  }));
+
+  res.json({ ok: true, companies });
+});
+
+
+/* =========================================================
    ADMIN: SECURITY ALERTS
    GET /admin/alerts?minutes=60
 ========================================================= */
