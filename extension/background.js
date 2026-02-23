@@ -148,9 +148,51 @@ async function decryptBytesWithRawDek(rawDekBytes, ivB64Url, ctB64Url) {
 }
 
 async function rsaUnwrapDek(privateKey, wrappedDekB64Url) {
-  const wrappedBytes = b64UrlToBytes(wrappedDekB64Url);
-  const raw = await crypto.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, wrappedBytes);
-  return new Uint8Array(raw);
+  // Validate payload early (catches undefined / object / empty)
+  const s = String(wrappedDekB64Url || "").trim();
+  if (!s) {
+    throw new Error("Decrypt failed: server did not return wrappedDek for this user.");
+  }
+
+  let wrappedBytes;
+  try {
+    wrappedBytes = b64UrlToBytes(s);
+  } catch (e) {
+    throw new Error(
+      "Decrypt failed: wrappedDek is not valid base64url (corrupted in transit/storage)."
+    );
+  }
+
+  // RSA-2048 ciphertext must be exactly 256 bytes
+  // (If you use RSA-3072 it would be 384, RSA-4096 -> 512)
+  const expectedLen = Math.ceil((privateKey?.algorithm?.modulusLength || 2048) / 8);
+  if (wrappedBytes.byteLength !== expectedLen) {
+    throw new Error(
+      `Decrypt failed: wrappedDek length is ${wrappedBytes.byteLength} bytes, expected ${expectedLen}. ` +
+      `This usually means the wrapped key was truncated/corrupted or stored in the wrong encoding.`
+    );
+  }
+
+  try {
+    const raw = await crypto.subtle.decrypt(
+      { name: "RSA-OAEP" }, // uses the key’s hash internally
+      privateKey,
+      wrappedBytes
+    );
+    return new Uint8Array(raw);
+  } catch (e) {
+    // WebCrypto throws OperationError when decrypt fails (wrong key OR corrupted ciphertext)
+    const name = e?.name || "OperationError";
+    throw new Error(
+      `Decrypt failed (${name}). This message was encrypted for a different QuantumMail key.\n\n` +
+      `Most common reasons:\n` +
+      `• You reinstalled/reloaded the extension, switched Chrome profile, or cleared browser storage (new keypair).\n` +
+      `• Admin forced re-key after the message was created.\n\n` +
+      `Fix:\n` +
+      `• Try decrypting from the same Chrome profile/device that originally created the key.\n` +
+      `• If you only need new messages: Admin → Force Re-key → login once → re-encrypt/resend the message.`
+    );
+  }
 }
 
 /* =========================
