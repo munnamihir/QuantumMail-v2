@@ -437,6 +437,29 @@ async function ensureTables() {
   await pool.query(`alter table qm_setup_tokens add column if not exists otp_sent_at timestamptz;`);
   await pool.query(`alter table qm_setup_tokens add column if not exists otp_attempts int not null default 0;`);
   await pool.query(`alter table qm_setup_tokens add column if not exists otp_last_attempt_at timestamptz;`);
+     // Companies table (SuperAdmin can list companies cleanly)
+  await pool.query(`
+    create table if not exists qm_companies (
+      company_id text primary key,
+      company_name text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  // Store company on org requests
+  await pool.query(`
+    alter table qm_org_requests
+      add column if not exists company_id text,
+      add column if not exists company_name text;
+  `);
+
+  await pool.query(`create index if not exists idx_qm_org_requests_company on qm_org_requests(company_id, created_at);`);
+     // Query orgs by companyId stored inside JSONB
+  await pool.query(`
+    create index if not exists idx_qm_org_store_company_id_json
+    on qm_org_store ((data->>'companyId'));
+  `);
 }
 
 await ensureTables();
