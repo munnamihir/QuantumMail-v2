@@ -1,4 +1,5 @@
 // extension/background.js (UPDATED)
+
 import {
   normalizeBase,
   getSession,
@@ -111,7 +112,6 @@ function aadFromTabUrl(tabUrl) {
    Base64URL (safe for larger data)
 ========================= */
 
-// avoids .apply() crashes
 function bytesToB64Url(bytes) {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   let binary = "";
@@ -172,7 +172,7 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const user = out?.user || null;
   if (!token || !user?.userId) throw new Error("Login failed: missing token/user.");
 
-  // ✅ register per-user key (critical fix)
+  // ✅ register per-user key (OperationError fix)
   await ensureKeypairAndRegister(base, token, user.userId);
 
   await setSession({ serverBase: base, token, user });
@@ -180,7 +180,29 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 }
 
 /* =========================
-   Encrypt selection org-wide
+   Org users (for autocomplete)
+========================= */
+
+async function listOrgUsersForAutocomplete() {
+  const s = await getSession();
+  if (!s?.token || !s?.serverBase) throw new Error("Please login first.");
+
+  const usersOut = await apiJson(s.serverBase, "/org/users", { token: s.token });
+  const users = Array.isArray(usersOut?.users) ? usersOut.users : [];
+
+  // Keep only what popup needs
+  return users
+    .filter(u => u?.userId && u?.username)
+    .map(u => ({
+      userId: u.userId,
+      username: u.username,
+      hasKey: !!u.publicKeySpkiB64
+    }))
+    .sort((a, b) => String(a.username).localeCompare(String(b.username)));
+}
+
+/* =========================
+   Encrypt selection (optionally recipients)
 ========================= */
 
 async function assertContentScriptAvailable(tabId) {
@@ -199,7 +221,7 @@ async function assertContentScriptAvailable(tabId) {
   }
 }
 
-async function encryptSelectionOrgWide({ attachments = [] } = {}) {
+async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = [] } = {}) {
   const s = await getSession();
   if (!s?.token || !s?.serverBase) throw new Error("Please login first in the popup.");
 
@@ -222,6 +244,7 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
 
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, aad);
 
+  // Encrypt attachments with SAME rawDek
   const encAttachments = [];
   for (const a of list) {
     const bytes = attachmentToU8(a);
@@ -237,28 +260,46 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
     });
   }
 
-  // Wrap DEK for all org users
+  // Fetch org users once
   const usersOut = await apiJson(s.serverBase, "/org/users", { token: s.token });
   const users = Array.isArray(usersOut?.users) ? usersOut.users : [];
+
+  // If recipients chosen -> restrict wrapping set
+  const restrict = Array.isArray(recipientUserIds) && recipientUserIds.length
+    ? new Set(recipientUserIds.map(String))
+    : null;
 
   const wrappedKeys = {};
   let wrappedCount = 0;
   let skippedNoKey = 0;
+  let skippedNotSelected = 0;
 
   for (const u of users) {
     if (!u?.userId) continue;
+    const uid = String(u.userId);
+
+    if (restrict && !restrict.has(uid)) {
+      skippedNotSelected++;
+      continue;
+    }
+
     if (!u.publicKeySpkiB64) {
       skippedNoKey++;
       continue;
     }
+
     const pub = await importPublicSpkiB64(u.publicKeySpkiB64);
     const wrappedDek = await rsaWrapDek(pub, rawDek);
-    wrappedKeys[u.userId] = wrappedDek;
+    wrappedKeys[uid] = wrappedDek;
     wrappedCount++;
   }
 
   if (wrappedCount === 0) {
-    throw new Error("No org users have public keys registered yet. Have at least one user login once.");
+    throw new Error(
+      restrict
+        ? "None of the selected recipients have keys registered yet."
+        : "No org users have public keys registered yet. Have at least one user login once."
+    );
   }
 
   const msgOut = await apiJson(s.serverBase, "/api/messages", {
@@ -279,7 +320,13 @@ async function encryptSelectionOrgWide({ attachments = [] } = {}) {
   const rep = await sendToTab(tabId, { type: "QM_REPLACE_SELECTION_WITH_LINK", url });
   if (!rep?.ok) throw new Error(rep?.error || "Failed to insert link into email.");
 
-  return { url, wrappedCount, skippedNoKey, warning: rep?.warning || null };
+  return {
+    url,
+    wrappedCount,
+    skippedNoKey,
+    skippedNotSelected,
+    warning: rep?.warning || null
+  };
 }
 
 /* =========================
@@ -292,7 +339,6 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
   const payload = await apiJson(base, `/api/messages/${encodeURIComponent(msgId)}`, { token });
   if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
 
-  // ✅ use per-user keypair
   const kp = await getOrCreateRsaKeypair(user.userId);
 
   let rawDek;
@@ -338,8 +384,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      // ✅ NEW: recipients list for autocomplete
+      if (msg?.type === "QM_RECIPIENTS") {
+        const users = await listOrgUsersForAutocomplete();
+        sendResponse({ ok: true, users });
+        return;
+      }
+
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
-        const out = await encryptSelectionOrgWide({ attachments: msg.attachments || [] });
+        const out = await encryptSelectionOrgWide({
+          attachments: msg.attachments || [],
+          recipientUserIds: msg.recipientUserIds || []
+        });
         sendResponse({ ok: true, ...out });
         return;
       }
