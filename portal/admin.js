@@ -278,7 +278,13 @@ async function loadProfile() {
 
   const user = me?.user;
   const orgInfo = org?.org;
-
+  const companyLine = document.getElementById("companyLine");
+  if (companyLine) {
+    const cn = orgInfo?.companyName || "—";
+    const oid = orgInfo?.orgId || user?.orgId || "—";
+    const on = orgInfo?.orgName || "—";
+    companyLine.textContent = `Company: ${cn} • Org: ${on} (${oid})`;
+  }
   $("profileMeta").textContent =
     user ? `${user.username}@${user.orgId} • ${user.role}` : "—";
 
