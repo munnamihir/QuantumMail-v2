@@ -98,6 +98,24 @@ function render(items) {
   `).join("");
 }
 
+async function loadOrgHeader() {
+  try {
+    const out = await api("/org/me");
+    const org = out?.org || {};
+
+    const cn = org.companyName || "—";
+    const on = org.orgName || org.orgId || "—";
+    const oid = org.orgId || "—";
+
+    const orgLine = $("orgLine");
+    if (orgLine) orgLine.textContent = `Company: ${cn} • Org: ${on} (${oid})`;
+  } catch (e) {
+    // don't break inbox if this fails
+    const orgLine = $("orgLine");
+    if (orgLine) orgLine.textContent = "";
+  }
+}
+
 async function refresh() {
   err("inboxErr", "");
   const out = await api("/api/inbox");
@@ -162,5 +180,6 @@ async function changePassword() {
   $("btnChangePw")?.addEventListener("click", () => changePassword().catch(e => err("pwErr", e.message)));
 
   initRoleUI().catch(() => {});
+  loadOrgHeader().catch(() => {});
   refresh().catch(e => err("inboxErr", e.message));
 })();
