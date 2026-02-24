@@ -2048,7 +2048,7 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
 });
 
 /* =========================================================
-   Portal static + routes
+   Portal static + routes + outlook addin 
 ========================================================= */
 const portalDir = path.join(__dirname, "..", "portal");
 
@@ -2057,6 +2057,9 @@ app.use("/portal", express.static(portalDir, { extensions: ["html"], etag: false
 app.get("/m/:id", (_req, res) => res.sendFile(path.join(portalDir, "decrypt.html")));
 app.get("/portal/m/:id", (req, res) => res.redirect(`/m/${req.params.id}`));
 app.get("/", (_req, res) => res.redirect("/portal/index.html"));
+
+const outlookAddinDir = path.join(__dirname, "..", "outlook-addin");
+app.use("/outlook-addin", express.static(outlookAddinDir, { etag: false, maxAge: 0 }));
 
 /* =========================================================
    Start (Render compatible)
