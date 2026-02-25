@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QuantumMail (Envelope Encryption MVP)",
-  "version": "0.3.2",
+  "version": "0.5",
   "description": "Encrypt selected email text into a secure link. Envelope encryption with per-user wrapped keys.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
