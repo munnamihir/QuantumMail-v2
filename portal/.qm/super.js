@@ -15,10 +15,13 @@
 
   const statusSel = $("statusSel");
   const reloadBtn = $("reloadBtn");
-  const tbody = $("tbody");
   const listMsg = $("listMsg");
+  const listWrap = $("listWrap");
 
-  const toastEl = $("toast");
+  // simple modal toast (uses your .modal)
+  const toastModal = $("toast");
+  const toastText = $("toastText");
+  const toastCloseBtn = $("toastCloseBtn");
 
   // Storage keys (unchanged)
   const SS_SUPER = "qm_super_token";
@@ -34,15 +37,22 @@
   const LS_BASE  = "qm_api_base";
 
   function toast(msg) {
-    if (!toastEl) return;
-    toastEl.textContent = msg;
-    toastEl.classList.add("show");
-    setTimeout(() => toastEl.classList.remove("show"), 2200);
+    if (!toastModal || !toastText) return;
+    toastText.textContent = String(msg || "");
+    toastModal.style.display = "block";
   }
+  function toastClose() {
+    if (!toastModal) return;
+    toastModal.style.display = "none";
+  }
+  toastCloseBtn?.addEventListener("click", toastClose);
+  toastModal?.addEventListener("click", (e) => {
+    if (e.target === toastModal) toastClose();
+  });
 
   function getApiBase() {
     const v = String(apiBaseEl?.value || "").trim();
-    return v ? v.replace(/\/+$/, "") : ""; // "" = same origin
+    return v ? v.replace(/\/+$/, "") : "";
   }
 
   function getToken() {
@@ -89,13 +99,6 @@
     return data;
   }
 
-  function statusTag(status) {
-    const s = String(status || "").toLowerCase();
-    if (s === "approved") return `<span class="tag tagGood">approved</span>`;
-    if (s === "rejected") return `<span class="tag tagBad">rejected</span>`;
-    return `<span class="tag tagWarn">pending</span>`;
-  }
-
   function esc(s) {
     return String(s ?? "")
       .replaceAll("&", "&amp;")
@@ -105,48 +108,51 @@
       .replaceAll("'", "&#039;");
   }
 
+  function statusBadge(status) {
+    const s = String(status || "").toLowerCase();
+    if (s === "approved") return `<span class="badge"><span class="badgeDot" style="background:rgba(43,213,118,.8)"></span><strong>approved</strong></span>`;
+    if (s === "rejected") return `<span class="badge"><span class="badgeDot" style="background:rgba(255,92,119,.85)"></span><strong>rejected</strong></span>`;
+    return `<span class="badge"><span class="badgeDot" style="background:rgba(255,255,255,.25)"></span><strong>pending</strong></span>`;
+  }
+
   function renderEmailStatus(r) {
     const sent = !!r.email_sent_at;
     const last = r.email_sent_at ? `Last: ${esc(r.email_sent_at)}` : "Not sent yet";
     const badge = sent
-      ? `<span class="tag tagGood">email sent</span>`
-      : `<span class="tag tagWarn">email pending</span>`;
+      ? `<span class="badge"><span class="badgeDot" style="background:rgba(43,213,118,.8)"></span><strong>Email:</strong> sent</span>`
+      : `<span class="badge"><span class="badgeDot"></span><strong>Email:</strong> pending</span>`;
 
     return `
-      <div style="margin-top:8px">
+      <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         ${badge}
-        <div class="small" style="margin-top:6px">${last}</div>
+        <div class="muted">${last}</div>
       </div>
     `;
   }
 
   function renderPendingActions(id) {
     return `
-      <div style="display:grid;gap:8px">
+      <div style="display:grid;gap:10px;min-width:260px">
         <div>
           <label>Approve: orgId</label>
-          <input class="orgId"  />
+          <input class="orgId" placeholder="ex: org_test_1" />
         </div>
         <div>
           <label>Approve: first admin username</label>
-          <input class="adminUsername"  />
+          <input class="adminUsername" placeholder="ex: admin" />
         </div>
-        <button class="btn btnGood approveBtn" data-id="${esc(id)}" type="button">
-          Approve + Email Setup Link
-        </button>
+        <button class="btn primary approveBtn" data-id="${esc(id)}" type="button">Approve + Email Setup Link</button>
 
-        <div class="hr"></div>
+        <div class="muted" style="margin-top:2px">— OR —</div>
 
         <div>
           <label>Reject reason</label>
-          <input class="rejectReason"  />
+          <input class="rejectReason" placeholder="Short reason (optional)" />
         </div>
-        <button class="btn btnBad rejectBtn" data-id="${esc(id)}" type="button">
-          Reject + Email Reason
-        </button>
+        <button class="btn danger rejectBtn" data-id="${esc(id)}" type="button">Reject + Email Reason</button>
 
-        <div class="small mono setupOut" style="word-break:break-all;display:none"></div>
-        <button class="btn btnGhost copyBtn" style="display:none" type="button">Copy Setup Link</button>
+        <div class="ok mono setupOut" style="word-break:break-all;display:none"></div>
+        <button class="btn secondary copyBtn" style="display:none" type="button">Copy Setup Link</button>
       </div>
     `;
   }
@@ -154,23 +160,73 @@
   function renderNonPendingActions(r) {
     const id = esc(r.id);
     const st = String(r.status || "").toLowerCase();
-    if (st !== "approved" && st !== "rejected") return `<div class="small">No actions.</div>`;
+    if (st !== "approved" && st !== "rejected") return `<div class="muted">No actions.</div>`;
 
     const resendPath = st === "approved"
       ? `/super/org-requests/${encodeURIComponent(id)}/resend-approval-email`
       : `/super/org-requests/${encodeURIComponent(id)}/resend-reject-email`;
 
     return `
-      <div style="display:grid;gap:8px">
-        <button class="btn resendBtn" data-path="${esc(resendPath)}" type="button">Resend Email</button>
-        <div class="small muted">Resends the ${esc(st)} email to requester.</div>
+      <div style="display:grid;gap:10px;min-width:260px">
+        <button class="btn" data-path="${esc(resendPath)}" type="button">Resend Email</button>
+        <div class="help">Resends the ${esc(st)} email to requester.</div>
+      </div>
+    `;
+  }
+
+  function renderItem(r) {
+    const id = esc(r.id);
+    const orgName = esc(r.org_name || "");
+    const reqName = esc(r.requester_name || "");
+    const reqEmail = esc(r.requester_email || "");
+    const notes = esc(r.notes || "");
+    const st = esc(r.status || "pending");
+
+    const approvedOrgId = esc(r.approved_org_id || "");
+    const approvedAdminUserId = esc(r.approved_admin_user_id || "");
+
+    const createdAt = esc(r.created_at || "");
+    const reviewedAt = esc(r.reviewed_at || "");
+    const rejectReason = esc(r.reject_reason || "");
+
+    const left = `
+      <div>
+        <div class="itemTitle">${orgName || "(no org name)"}</div>
+        <div class="muted mono">${id}</div>
+        <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          ${statusBadge(st)}
+          ${createdAt ? `<span class="badge"><span class="badgeDot"></span><strong>Created:</strong> ${createdAt}</span>` : ""}
+          ${reviewedAt ? `<span class="badge"><span class="badgeDot"></span><strong>Reviewed:</strong> ${reviewedAt}</span>` : ""}
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="muted"><strong style="color:var(--text)">Requester:</strong> ${reqName}</div>
+          <div class="muted mono">${reqEmail}</div>
+          ${notes ? `<div class="help" style="margin-top:8px">${notes}</div>` : ""}
+          ${st === "rejected" && rejectReason ? `<div class="err" style="margin-top:10px">Reject: ${rejectReason}</div>` : ""}
+          ${st === "approved" && approvedOrgId ? `<div class="help" style="margin-top:10px">OrgId: <span class="mono">${approvedOrgId}</span></div>` : ""}
+          ${st === "approved" && approvedAdminUserId ? `<div class="help">AdminUserId: <span class="mono">${approvedAdminUserId}</span></div>` : ""}
+
+          ${renderEmailStatus(r)}
+        </div>
+      </div>
+    `;
+
+    const right = (String(st).toLowerCase() === "pending")
+      ? renderPendingActions(id)
+      : renderNonPendingActions(r);
+
+    return `
+      <div class="item" data-id="${id}" style="align-items:flex-start">
+        <div style="flex:1;min-width:320px">${left}</div>
+        <div class="itemActions" style="align-items:flex-start">${right}</div>
       </div>
     `;
   }
 
   async function loadList() {
     if (listMsg) listMsg.textContent = "";
-    if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="small">Loading…</td></tr>`;
+    if (listWrap) listWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
 
     try {
       const status = String(statusSel?.value || "pending");
@@ -178,67 +234,24 @@
       const items = Array.isArray(data?.items) ? data.items : [];
 
       if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="small">No requests found.</td></tr>`;
+        listWrap.innerHTML = `<div class="item"><div class="muted">No requests found.</div></div>`;
         return;
       }
 
-      tbody.innerHTML = items.map((r) => {
-        const id = esc(r.id);
-        const orgName = esc(r.org_name);
-        const reqName = esc(r.requester_name);
-        const reqEmail = esc(r.requester_email);
-        const notes = esc(r.notes || "");
-        const st = esc(r.status || "pending");
-
-        const approvedOrgId = esc(r.approved_org_id || "");
-        const approvedAdminUserId = esc(r.approved_admin_user_id || "");
-
-        const createdAt = esc(r.created_at || "");
-        const reviewedAt = esc(r.reviewed_at || "");
-        const rejectReason = esc(r.reject_reason || "");
-
-        return `
-          <tr data-id="${id}">
-            <td>${statusTag(st)}</td>
-            <td>
-              <div style="font-weight:700">${orgName}</div>
-              <div class="small mono">${id}</div>
-              <div class="small">${createdAt ? `Created: ${createdAt}` : ""}</div>
-            </td>
-            <td>
-              <div style="font-weight:650">${reqName}</div>
-              <div class="small mono">${reqEmail}</div>
-              ${notes ? `<div class="small" style="margin-top:6px;color:#c7d4e8">${notes}</div>` : ""}
-              ${st === "rejected" && rejectReason ? `<div class="dangerBox small" style="margin-top:8px">Reject: ${rejectReason}</div>` : ""}
-              ${st === "approved" && approvedOrgId ? `<div class="small" style="margin-top:8px">OrgId: <span class="mono">${approvedOrgId}</span></div>` : ""}
-              ${st === "approved" && approvedAdminUserId ? `<div class="small">AdminUserId: <span class="mono">${approvedAdminUserId}</span></div>` : ""}
-              ${reviewedAt ? `<div class="small">Reviewed: ${reviewedAt}</div>` : ""}
-
-              ${renderEmailStatus(r)}
-            </td>
-            <td>
-              ${String(st).toLowerCase() === "pending"
-                ? renderPendingActions(id)
-                : renderNonPendingActions(r)
-              }
-            </td>
-          </tr>
-        `;
-      }).join("");
-
-      wireRowButtons();
+      listWrap.innerHTML = items.map(renderItem).join("");
+      wireButtons();
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="4" class="small">Failed: ${esc(e.message)}</td></tr>`;
+      listWrap.innerHTML = `<div class="item"><div class="err">Failed: ${esc(e.message)}</div></div>`;
       if (listMsg) listMsg.textContent = `Error: ${e.message}`;
     }
   }
 
-  function wireRowButtons() {
-    const rows = tbody.querySelectorAll("tr[data-id]");
-    rows.forEach((row) => {
+  function wireButtons() {
+    const items = listWrap.querySelectorAll(".item[data-id]");
+    items.forEach((row) => {
       const approveBtn = row.querySelector(".approveBtn");
       const rejectBtn = row.querySelector(".rejectBtn");
-      const resendBtn = row.querySelector(".resendBtn");
+      const resendBtn = row.querySelector("button[data-path]");
 
       approveBtn?.addEventListener("click", async () => {
         const id = row.getAttribute("data-id");
@@ -318,6 +331,7 @@
       resendBtn?.addEventListener("click", async () => {
         const path = resendBtn.getAttribute("data-path");
         if (!path) return;
+
         resendBtn.disabled = true;
         const prev = resendBtn.textContent;
         resendBtn.textContent = "Sending…";
@@ -336,7 +350,7 @@
   }
 
   async function checkAccess() {
-    if (guardMsg) guardMsg.textContent = "";
+    if (guardMsg) guardMsg.textContent = "—";
     try {
       const me = await api("/auth/me");
       const user = me?.user;
@@ -348,6 +362,7 @@
         return false;
       }
 
+      if (guardMsg) guardMsg.textContent = "OK";
       setUnlocked(user);
       await loadList();
       return true;
@@ -409,6 +424,7 @@
 
     if (tokenEl) tokenEl.value = t;
     if (apiBaseEl) apiBaseEl.value = b;
+
     toast("Loaded saved token");
   });
 
@@ -419,7 +435,7 @@
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     toast("Logging out…");
-    hardLogoutAndRedirect();
+    setTimeout(() => hardLogoutAndRedirect(), 250);
   });
 
   (function init() {
