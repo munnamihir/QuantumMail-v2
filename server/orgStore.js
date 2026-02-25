@@ -1,77 +1,88 @@
+// server/orgStore.js
 import { pool } from "./db.js";
 
-function defaultPolicies() {
-  return {
-    forceAttachmentEncryption: false,
-    disablePassphraseMode: false,
-    enforceKeyRotationDays: 0,
-    requireReauthForDecrypt: true,
-  };
-}
-
-function ensureOrgShape(org) {
-  if (!org) org = {};
-  if (!org.users) org.users = [];
-  if (!org.audit) org.audit = [];
-  if (!org.messages) org.messages = {};
-  if (!org.invites) org.invites = {};
-  if (!org.policies) org.policies = defaultPolicies();
-  if (!org.keyring) org.keyring = null;
-  return org;
-}
+/**
+ * qm_org_store schema expectation:
+ *   org_id      TEXT PRIMARY KEY
+ *   data        JSONB NOT NULL DEFAULT '{}'::jsonb
+ *   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+ *   company_id  TEXT NULL        -- optional but recommended (snake_case)
+ *
+ * IMPORTANT:
+ * - There is NO physical org_name column.
+ * - orgName lives inside data JSON: data->>'orgName'
+ */
 
 export async function peekOrg(orgId) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return null;
+  const id = String(orgId || "").trim();
+  if (!id) return null;
 
   const { rows } = await pool.query(
-    "select data from qm_org_store where org_id = $1",
-    [oid]
+    `
+    select
+      org_id,
+      data,
+      updated_at,
+      company_id
+    from qm_org_store
+    where org_id = $1
+    limit 1
+    `,
+    [id]
   );
-  if (!rows.length) return null;
 
-  return ensureOrgShape(rows[0].data);
+  return rows[0] || null;
 }
 
 export async function getOrg(orgId) {
-  const oid = String(orgId || "").trim();
-  if (!oid) return null;
+  const rec = await peekOrg(orgId);
+  if (!rec) return null;
 
-  const existing = await peekOrg(oid);
-  if (existing) return existing;
-
-  const fresh = ensureOrgShape({
-    users: [],
-    audit: [],
-    messages: {},
-    invites: {},
-    policies: defaultPolicies(),
-    keyring: null,
-  });
-
-  await pool.query(
-    `insert into qm_org_store (org_id, company_id, org_name, data)
-      values ($1, $2, $3, $4::jsonb)
-     on conflict (org_id) do nothing`,
-    [oid, JSON.stringify(fresh)]
-  );
-
-  return (await peekOrg(oid)) || fresh;
+  // normalize to a single object shape used across server
+  return {
+    orgId: rec.org_id,
+    data: rec.data || {},
+    updatedAt: rec.updated_at,
+    companyId: rec.company_id || rec?.data?.companyId || null
+  };
 }
 
-export async function saveOrg(orgId, org) {
-  const oid = String(orgId || "").trim();
-  if (!oid) throw new Error("saveOrg requires orgId");
+/**
+ * Save org JSON (and optionally companyId as a real column).
+ * This does an UPSERT so it works for new + existing orgs.
+ */
+export async function saveOrg(orgId, data, { companyId = null } = {}) {
+  const id = String(orgId || "").trim();
+  if (!id) throw new Error("saveOrg: orgId required");
 
-  const normalized = ensureOrgShape(org);
+  const obj = data && typeof data === "object" ? data : {};
 
-  await pool.query(
-    `insert into qm_org_store (org_id, data, updated_at)
-     values ($1, $2::jsonb, now())
-     on conflict (org_id)
-     do update set data = excluded.data, updated_at = now()`,
-    [oid, JSON.stringify(normalized)]
+  // Prefer storing companyId in a real column if you have it,
+  // but keep it in JSON too so older code keeps working.
+  const cid = (companyId ?? obj.companyId ?? null);
+  if (cid && !obj.companyId) obj.companyId = cid;
+
+  // If your table uses camelCase quoted column "companyId"
+  // replace company_id with "companyId" in BOTH places below.
+  const { rows } = await pool.query(
+    `
+    insert into qm_org_store (org_id, data, company_id, updated_at)
+    values ($1, $2::jsonb, $3, now())
+    on conflict (org_id)
+    do update set
+      data = excluded.data,
+      company_id = excluded.company_id,
+      updated_at = now()
+    returning org_id, data, updated_at, company_id
+    `,
+    [id, JSON.stringify(obj), cid]
   );
 
-  return true;
+  const rec = rows[0];
+  return {
+    orgId: rec.org_id,
+    data: rec.data || {},
+    updatedAt: rec.updated_at,
+    companyId: rec.company_id || rec?.data?.companyId || null
+  };
 }
