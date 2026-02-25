@@ -1,3 +1,4 @@
+// /portal/companies.js
 (() => {
   const $ = (id) => document.getElementById(id);
 
@@ -5,20 +6,27 @@
   const tokenEl = $("token");
   const saveTokenBtn = $("saveTokenBtn");
   const loadTokenBtn = $("loadTokenBtn");
-  const reloadCompaniesBtn = $("reloadCompaniesBtn");
+  const reloadBtn = $("reloadBtn");
   const logoutBtn = $("logoutBtn");
 
   const whoEl = $("who");
+  const guardMsg = $("guardMsg");
+  const mainCard = $("mainCard");
+  const msgEl = $("msg");
   const companiesWrap = $("companiesWrap");
-  const companiesMsg = $("companiesMsg");
   const toastEl = $("toast");
 
-  const SS_TOKEN = "qm_token";
+  // Storage keys (same as super.js so token carries across pages)
   const SS_SUPER = "qm_super_token";
+  const SS_TOKEN = "qm_token";
+  const SS_USER  = "qm_user";
+  const SS_ADMIN = "qm_admin_token";
   const SS_BASE  = "qm_api_base";
 
   const LS_TOKEN = "qm_token";
+  const LS_USER  = "qm_user";
   const LS_SUPER = "qm_super_token";
+  const LS_ADMIN = "qm_admin_token";
   const LS_BASE  = "qm_api_base";
 
   function toast(msg) {
@@ -46,6 +54,16 @@
     return String(tokenEl?.value || "").trim();
   }
 
+  function setLocked(msg) {
+    if (mainCard) mainCard.style.display = "none";
+    if (whoEl) whoEl.textContent = msg || "Access denied";
+  }
+
+  function setUnlocked(user) {
+    if (mainCard) mainCard.style.display = "block";
+    if (whoEl) whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
+  }
+
   async function api(path, { method = "GET", body } = {}) {
     const base = getApiBase();
     const url = base ? `${base}${path}` : path;
@@ -70,8 +88,8 @@
     }
 
     if (!res.ok) {
-      const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
-      throw new Error(msg);
+      const m = (data && data.error) ? data.error : `HTTP ${res.status}`;
+      throw new Error(m);
     }
     return data;
   }
@@ -93,6 +111,7 @@
 
     companiesWrap.innerHTML = companies.map((c) => {
       const orgs = Array.isArray(c.orgs) ? c.orgs : [];
+
       const orgsHtml = orgs.map((o) => `
         <div class="orgRow">
           <div class="orgLeft">
@@ -133,7 +152,7 @@
   }
 
   async function loadCompanies() {
-    if (companiesMsg) companiesMsg.textContent = "";
+    if (msgEl) msgEl.textContent = "";
     if (companiesWrap) companiesWrap.innerHTML = `<div class="small">Loading companies…</div>`;
 
     try {
@@ -141,26 +160,28 @@
       renderCompanies(out?.companies || []);
     } catch (e) {
       if (companiesWrap) companiesWrap.innerHTML = "";
-      if (companiesMsg) companiesMsg.textContent = `Companies error: ${e.message}`;
+      if (msgEl) msgEl.textContent = `Companies error: ${e.message}`;
     }
   }
 
   async function checkAccess() {
+    if (guardMsg) guardMsg.textContent = "";
     try {
       const me = await api("/auth/me");
       const user = me?.user;
       if (!user) throw new Error("No user returned from /auth/me");
 
       if (user.role !== "SuperAdmin") {
-        if (whoEl) whoEl.textContent = "Access denied (not SuperAdmin)";
-        throw new Error("Not SuperAdmin");
+        setLocked("Not SuperAdmin");
+        if (guardMsg) guardMsg.textContent = "Blocked: role is not SuperAdmin.";
+        return false;
       }
 
-      if (whoEl) whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
+      setUnlocked(user);
       return true;
     } catch (e) {
-      if (whoEl) whoEl.textContent = `Access check failed`;
-      if (companiesMsg) companiesMsg.textContent = `Access error: ${e.message}`;
+      setLocked("Checking access failed");
+      if (guardMsg) guardMsg.textContent = `Access check failed: ${e.message}`;
       return false;
     }
   }
@@ -168,10 +189,14 @@
   function hardLogoutAndRedirect() {
     sessionStorage.removeItem(SS_SUPER);
     sessionStorage.removeItem(SS_TOKEN);
+    sessionStorage.removeItem(SS_USER);
+    sessionStorage.removeItem(SS_ADMIN);
     sessionStorage.removeItem(SS_BASE);
 
     localStorage.removeItem(LS_SUPER);
     localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_USER);
+    localStorage.removeItem(LS_ADMIN);
     localStorage.removeItem(LS_BASE);
 
     if (tokenEl) tokenEl.value = "";
@@ -215,7 +240,7 @@
     toast("Loaded saved token");
   });
 
-  reloadCompaniesBtn?.addEventListener("click", () => loadCompanies());
+  reloadBtn?.addEventListener("click", () => loadCompanies());
 
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
