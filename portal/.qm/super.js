@@ -20,7 +20,7 @@
 
   const toastEl = $("toast");
 
-  // Storage keys
+  // Storage keys (unchanged)
   const SS_SUPER = "qm_super_token";
   const SS_TOKEN = "qm_token";
   const SS_USER  = "qm_user";
@@ -105,7 +105,6 @@
       .replaceAll("'", "&#039;");
   }
 
-  // display email status + allow resend when approved/rejected
   function renderEmailStatus(r) {
     const sent = !!r.email_sent_at;
     const last = r.email_sent_at ? `Last: ${esc(r.email_sent_at)}` : "Not sent yet";
@@ -284,7 +283,7 @@
           }
 
           toast(emailSent ? "Approved ✅ Email sent" : "Approved ✅ (email NOT sent)");
-          await loadList(); // unchanged
+          await loadList();
         } catch (e) {
           toast(`Approve failed: ${e.message}`);
         } finally {
@@ -307,7 +306,7 @@
           });
 
           toast(out?.emailSent === true ? "Rejected ✅ Email sent" : "Rejected (email not sent)");
-          await loadList(); // unchanged
+          await loadList();
         } catch (e) {
           toast(`Reject failed: ${e.message}`);
         } finally {
@@ -325,7 +324,7 @@
         try {
           await api(path, { method: "POST" });
           toast("Resent ✅");
-          await loadList(); // unchanged
+          await loadList();
         } catch (e) {
           toast(`Resend failed: ${e.message}`);
         } finally {
