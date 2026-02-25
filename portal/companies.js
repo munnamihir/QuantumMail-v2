@@ -15,7 +15,6 @@
   const msgEl = $("msg");
   const companiesWrap = $("companiesWrap");
 
-  // modal toast
   const toastModal = $("toast");
   const toastText = $("toastText");
   const toastCloseBtn = $("toastCloseBtn");
@@ -64,16 +63,6 @@
     return String(tokenEl?.value || "").trim();
   }
 
-  function setLocked(msg) {
-    if (mainCard) mainCard.style.display = "none";
-    if (whoEl) whoEl.textContent = msg || "Access denied";
-  }
-
-  function setUnlocked(user) {
-    if (mainCard) mainCard.style.display = "block";
-    if (whoEl) whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
-  }
-
   async function api(path, { method = "GET", body } = {}) {
     const base = getApiBase();
     const url = base ? `${base}${path}` : path;
@@ -104,6 +93,16 @@
     return data;
   }
 
+  function setLocked(msg) {
+    if (mainCard) mainCard.style.display = "none";
+    if (whoEl) whoEl.textContent = msg || "Access denied";
+  }
+
+  function setUnlocked(user) {
+    if (mainCard) mainCard.style.display = "block";
+    if (whoEl) whoEl.textContent = `${user.username} • ${user.role} • ${user.orgId}`;
+  }
+
   function fmtTime(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -111,49 +110,61 @@
     return d.toLocaleString();
   }
 
-  function companyCardHtml(c) {
-    const orgs = Array.isArray(c.orgs) ? c.orgs : [];
-    const orgCount = c.totals?.orgs ?? orgs.length;
+  function orgLink(companyId, org) {
+    const orgId = org.orgId || "";
+    const orgName = org.orgName || orgId;
+
+    const qs = new URLSearchParams({
+      companyId: String(companyId || ""),
+      orgId: String(orgId || "")
+    });
+
+    return `
+      <a class="btn secondary" style="width:100%;justify-content:space-between"
+         href="/portal/org.html?${qs.toString()}">
+        <span>
+          <strong>${esc(orgName)}</strong>
+          <span class="muted mono" style="display:block;margin-top:4px">${esc(orgId)}</span>
+        </span>
+        <span class="muted">Open →</span>
+      </a>
+    `;
+  }
+
+  function companyCollapsedRow(c) {
+    const companyId = c.companyId || "";
+    const companyName = c.companyName || companyId;
+
+    const orgCount = c.totals?.orgs ?? (Array.isArray(c.orgs) ? c.orgs.length : 0);
     const seats = c.totals?.seats ?? 0;
     const keysAvg = c.totals?.keysPctAvg ?? 0;
 
-    const headerBadges = `
-      <div class="orgLine" style="margin-top:10px">
-        <span class="badge"><span class="badgeDot"></span><strong>Orgs:</strong> ${esc(orgCount)}</span>
-        <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(seats)}</span>
-        <span class="badge"><span class="badgeDot"></span><strong>Avg key coverage:</strong> ${esc(keysAvg)}%</span>
-        <span class="badge"><span class="badgeDot"></span><strong>ID:</strong> <span class="mono">${esc(c.companyId)}</span></span>
-      </div>
-    `;
+    return `
+      <div class="item" data-company="${esc(companyId)}" style="align-items:flex-start">
+        <div style="flex:1;min-width:320px">
+          <div class="itemTitle">${esc(companyName)}</div>
+          <div class="muted mono">${esc(companyId)}</div>
 
-    const orgRows = orgs.map((o) => {
-      const seatsTotal = o.seats?.totalUsers || 0;
-      const admins = o.seats?.admins || 0;
-      const members = o.seats?.members || 0;
-      const keysPct = o.seats?.keyCoveragePct || 0;
-
-      return `
-        <div class="item" style="margin-top:10px">
-          <div>
-            <div class="itemTitle">${esc(o.orgName || o.orgId)}</div>
-            <div class="muted mono">${esc(o.orgId)}</div>
-            <div class="help">Last activity: ${esc(fmtTime(o.lastActivityAt))}</div>
-            <div class="orgLine">
-              <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(seatsTotal)}</span>
-              <span class="badge"><span class="badgeDot"></span><strong>Admins:</strong> ${esc(admins)}</span>
-              <span class="badge"><span class="badgeDot"></span><strong>Members:</strong> ${esc(members)}</span>
-              <span class="badge"><span class="badgeDot"></span><strong>Keys:</strong> ${esc(keysPct)}%</span>
-            </div>
+          <div class="orgLine" style="margin-top:10px">
+            <span class="badge"><span class="badgeDot"></span><strong>Orgs:</strong> ${esc(orgCount)}</span>
+            <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(seats)}</span>
+            <span class="badge"><span class="badgeDot"></span><strong>Avg key coverage:</strong> ${esc(keysAvg)}%</span>
           </div>
         </div>
-      `;
-    }).join("");
 
-    return `
-      <div class="card" style="margin-top:14px">
-        <h2 style="margin:0">${esc(c.companyName || c.companyId)}</h2>
-        ${headerBadges}
-        ${orgRows || `<div class="muted" style="margin-top:10px">No orgs.</div>`}
+        <div class="itemActions" style="align-items:flex-start">
+          <button class="btn tab toggleCompanyBtn" type="button" data-company="${esc(companyId)}">
+            Expand
+          </button>
+        </div>
+      </div>
+
+      <div class="card" id="companyPanel_${esc(companyId)}"
+           style="margin-top:10px;display:none;padding:12px">
+        <div class="muted">Orgs in this company</div>
+        <div class="list" style="margin-top:10px" id="companyOrgs_${esc(companyId)}">
+          <!-- filled by JS -->
+        </div>
       </div>
     `;
   }
@@ -162,12 +173,53 @@
     if (!companiesWrap) return;
 
     if (!Array.isArray(companies) || companies.length === 0) {
-      companiesWrap.innerHTML = `<div class="item"><div class="muted">No approved orgs yet.</div></div>`;
+      companiesWrap.innerHTML = `<div class="item"><div class="muted">No companies found.</div></div>`;
       return;
     }
 
-    // Using your "rich" look by stacking cards (company card contains org items)
-    companiesWrap.innerHTML = companies.map(companyCardHtml).join("");
+    // collapsed by default
+    companiesWrap.innerHTML = companies.map(companyCollapsedRow).join("");
+
+    // wire up expand/collapse + fill org list
+    const map = new Map(companies.map((c) => [String(c.companyId || ""), c]));
+
+    companiesWrap.querySelectorAll(".toggleCompanyBtn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const companyId = btn.getAttribute("data-company") || "";
+        const c = map.get(companyId);
+        if (!c) return;
+
+        const panel = document.getElementById(`companyPanel_${companyId}`);
+        const wrap = document.getElementById(`companyOrgs_${companyId}`);
+
+        const isOpen = panel && panel.style.display !== "none";
+        if (panel) panel.style.display = isOpen ? "none" : "block";
+        btn.textContent = isOpen ? "Expand" : "Collapse";
+
+        // lazy render orgs on first open
+        if (!isOpen && wrap && !wrap.getAttribute("data-filled")) {
+          const orgs = Array.isArray(c.orgs) ? c.orgs : [];
+          wrap.innerHTML = orgs.length
+            ? orgs.map((o) => `
+                <div class="item" style="align-items:flex-start">
+                  <div style="flex:1;min-width:280px">
+                    ${orgLink(companyId, o)}
+                    <div class="orgLine" style="margin-top:10px">
+                      <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(o.seats?.totalUsers ?? 0)}</span>
+                      <span class="badge"><span class="badgeDot"></span><strong>Admins:</strong> ${esc(o.seats?.admins ?? 0)}</span>
+                      <span class="badge"><span class="badgeDot"></span><strong>Members:</strong> ${esc(o.seats?.members ?? 0)}</span>
+                      <span class="badge"><span class="badgeDot"></span><strong>Keys:</strong> ${esc(o.seats?.keyCoveragePct ?? 0)}%</span>
+                    </div>
+                    <div class="help">Last activity: ${esc(fmtTime(o.lastActivityAt))}</div>
+                  </div>
+                </div>
+              `).join("")
+            : `<div class="item"><div class="muted">No orgs.</div></div>`;
+
+          wrap.setAttribute("data-filled", "1");
+        }
+      });
+    });
   }
 
   async function loadCompanies() {
@@ -175,6 +227,7 @@
     if (companiesWrap) companiesWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
 
     try {
+      // expected: { companies: [ {companyId, companyName, totals:{...}, orgs:[...] } ] }
       const out = await api("/super/companies/overview");
       renderCompanies(out?.companies || []);
     } catch (e) {
@@ -262,7 +315,6 @@
   });
 
   reloadBtn?.addEventListener("click", () => loadCompanies());
-
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     toast("Logging out…");
