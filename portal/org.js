@@ -164,18 +164,15 @@
 
     if (msgEl) msgEl.textContent = "";
     if (overviewBadges) overviewBadges.innerHTML = "";
-    overviewHelp.textContent = "";
+    if (overviewHelp) overviewHelp.textContent = "";
 
-    adminsWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
-    securityWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
-    activityWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
+    if (adminsWrap) adminsWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
+    if (securityWrap) securityWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
+    if (activityWrap) activityWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
 
     try {
-      // Recommended endpoint (see "Data needed" below):
-      // GET /super/orgs/{orgId}/overview
       const out = await api(`/super/orgs/${encodeURIComponent(orgId)}/overview`);
 
-      // out.org: basic info + counts
       const org = out?.org || {};
       const counts = out?.counts || {};
       const security = out?.security || {};
@@ -186,24 +183,25 @@
       if (titleEl) titleEl.textContent = `${name}`;
       if (subtitleEl) subtitleEl.textContent = `${orgId} • Company: ${companyId || org.companyId || "—"}`;
 
-      // Overview badges (the “need to know quickly” stuff)
       if (overviewBadges) {
         overviewBadges.innerHTML = [
           badge("Users", counts.totalUsers ?? 0),
           badge("Admins", counts.admins ?? 0),
           badge("Members", counts.members ?? 0),
-          badge("Key coverage", `${counts.keyCoveragePct ?? 0}%`, (counts.keyCoveragePct ?? 0) >= 90
-            ? "background:rgba(43,213,118,.8)"
-            : "background:rgba(255,92,119,.85)"
+          badge(
+            "Key coverage",
+            `${counts.keyCoveragePct ?? 0}%`,
+            (counts.keyCoveragePct ?? 0) >= 90
+              ? "background:rgba(43,213,118,.8)"
+              : "background:rgba(255,92,119,.85)"
           ),
           badge("Last activity", fmtTime(org.lastActivityAt)),
           badge("Created", fmtTime(org.createdAt))
         ].join("");
       }
 
-      overviewHelp.textContent = org.notes ? String(org.notes) : "";
+      if (overviewHelp) overviewHelp.textContent = org.notes ? String(org.notes) : "";
 
-      // Admins list
       renderList(adminsWrap, admins.map((a) => `
         <div class="item">
           <div>
@@ -215,7 +213,6 @@
         </div>
       `));
 
-      // Security panel
       renderList(securityWrap, [
         `<div class="item">
           <div>
@@ -240,7 +237,6 @@
         </div>`
       ]);
 
-      // Activity (last 30d)
       renderList(activityWrap, [
         `<div class="item">
           <div>
