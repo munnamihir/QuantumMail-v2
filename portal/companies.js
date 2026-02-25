@@ -14,9 +14,12 @@
   const mainCard = $("mainCard");
   const msgEl = $("msg");
   const companiesWrap = $("companiesWrap");
-  const toastEl = $("toast");
 
-  // Storage keys (same as super.js so token carries across pages)
+  // modal toast
+  const toastModal = $("toast");
+  const toastText = $("toastText");
+  const toastCloseBtn = $("toastCloseBtn");
+
   const SS_SUPER = "qm_super_token";
   const SS_TOKEN = "qm_token";
   const SS_USER  = "qm_user";
@@ -30,11 +33,18 @@
   const LS_BASE  = "qm_api_base";
 
   function toast(msg) {
-    if (!toastEl) return;
-    toastEl.textContent = msg;
-    toastEl.classList.add("show");
-    setTimeout(() => toastEl.classList.remove("show"), 2200);
+    if (!toastModal || !toastText) return;
+    toastText.textContent = String(msg || "");
+    toastModal.style.display = "block";
   }
+  function toastClose() {
+    if (!toastModal) return;
+    toastModal.style.display = "none";
+  }
+  toastCloseBtn?.addEventListener("click", toastClose);
+  toastModal?.addEventListener("click", (e) => {
+    if (e.target === toastModal) toastClose();
+  });
 
   function esc(s) {
     return String(s ?? "")
@@ -101,59 +111,68 @@
     return d.toLocaleString();
   }
 
+  function companyCardHtml(c) {
+    const orgs = Array.isArray(c.orgs) ? c.orgs : [];
+    const orgCount = c.totals?.orgs ?? orgs.length;
+    const seats = c.totals?.seats ?? 0;
+    const keysAvg = c.totals?.keysPctAvg ?? 0;
+
+    const headerBadges = `
+      <div class="orgLine" style="margin-top:10px">
+        <span class="badge"><span class="badgeDot"></span><strong>Orgs:</strong> ${esc(orgCount)}</span>
+        <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(seats)}</span>
+        <span class="badge"><span class="badgeDot"></span><strong>Avg key coverage:</strong> ${esc(keysAvg)}%</span>
+        <span class="badge"><span class="badgeDot"></span><strong>ID:</strong> <span class="mono">${esc(c.companyId)}</span></span>
+      </div>
+    `;
+
+    const orgRows = orgs.map((o) => {
+      const seatsTotal = o.seats?.totalUsers || 0;
+      const admins = o.seats?.admins || 0;
+      const members = o.seats?.members || 0;
+      const keysPct = o.seats?.keyCoveragePct || 0;
+
+      return `
+        <div class="item" style="margin-top:10px">
+          <div>
+            <div class="itemTitle">${esc(o.orgName || o.orgId)}</div>
+            <div class="muted mono">${esc(o.orgId)}</div>
+            <div class="help">Last activity: ${esc(fmtTime(o.lastActivityAt))}</div>
+            <div class="orgLine">
+              <span class="badge"><span class="badgeDot"></span><strong>Seats:</strong> ${esc(seatsTotal)}</span>
+              <span class="badge"><span class="badgeDot"></span><strong>Admins:</strong> ${esc(admins)}</span>
+              <span class="badge"><span class="badgeDot"></span><strong>Members:</strong> ${esc(members)}</span>
+              <span class="badge"><span class="badgeDot"></span><strong>Keys:</strong> ${esc(keysPct)}%</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="card" style="margin-top:14px">
+        <h2 style="margin:0">${esc(c.companyName || c.companyId)}</h2>
+        ${headerBadges}
+        ${orgRows || `<div class="muted" style="margin-top:10px">No orgs.</div>`}
+      </div>
+    `;
+  }
+
   function renderCompanies(companies) {
     if (!companiesWrap) return;
 
     if (!Array.isArray(companies) || companies.length === 0) {
-      companiesWrap.innerHTML = `<div class="small">No approved orgs yet.</div>`;
+      companiesWrap.innerHTML = `<div class="item"><div class="muted">No approved orgs yet.</div></div>`;
       return;
     }
 
-    companiesWrap.innerHTML = companies.map((c) => {
-      const orgs = Array.isArray(c.orgs) ? c.orgs : [];
-
-      const orgsHtml = orgs.map((o) => `
-        <div class="orgRow">
-          <div class="orgLeft">
-            <div class="orgTitle">${esc(o.orgName || o.orgId)}</div>
-            <div class="small mono">${esc(o.orgId)}</div>
-            <div class="small">Last activity: ${esc(fmtTime(o.lastActivityAt))}</div>
-          </div>
-          <div class="kpis">
-            <span class="kpi">Seats: <b>${esc(o.seats?.totalUsers || 0)}</b></span>
-            <span class="kpi">Admins: <b>${esc(o.seats?.admins || 0)}</b></span>
-            <span class="kpi">Members: <b>${esc(o.seats?.members || 0)}</b></span>
-            <span class="kpi">Keys: <b>${esc(o.seats?.keyCoveragePct || 0)}%</b></span>
-          </div>
-        </div>
-      `).join("");
-
-      const orgCount = c.totals?.orgs ?? orgs.length;
-      const seats = c.totals?.seats ?? 0;
-      const keysAvg = c.totals?.keysPctAvg ?? 0;
-
-      return `
-        <div class="companyCard">
-          <div class="companyHead">
-            <div>
-              <div class="companyName">${esc(c.companyName || c.companyId)}</div>
-              <div class="companyMeta">
-                Orgs: <b>${esc(orgCount)}</b> •
-                Seats: <b>${esc(seats)}</b> •
-                Avg key coverage: <b>${esc(keysAvg)}%</b>
-              </div>
-              <div class="small mono" style="margin-top:6px">${esc(c.companyId)}</div>
-            </div>
-          </div>
-          <div class="orgList">${orgsHtml || `<div class="small">No orgs.</div>`}</div>
-        </div>
-      `;
-    }).join("");
+    // Using your "rich" look by stacking cards (company card contains org items)
+    companiesWrap.innerHTML = companies.map(companyCardHtml).join("");
   }
 
   async function loadCompanies() {
     if (msgEl) msgEl.textContent = "";
-    if (companiesWrap) companiesWrap.innerHTML = `<div class="small">Loading companies…</div>`;
+    if (companiesWrap) companiesWrap.innerHTML = `<div class="item"><div class="muted">Loading…</div></div>`;
 
     try {
       const out = await api("/super/companies/overview");
@@ -165,7 +184,7 @@
   }
 
   async function checkAccess() {
-    if (guardMsg) guardMsg.textContent = "";
+    if (guardMsg) guardMsg.textContent = "—";
     try {
       const me = await api("/auth/me");
       const user = me?.user;
@@ -177,6 +196,7 @@
         return false;
       }
 
+      if (guardMsg) guardMsg.textContent = "OK";
       setUnlocked(user);
       return true;
     } catch (e) {
@@ -237,6 +257,7 @@
 
     if (tokenEl) tokenEl.value = t;
     if (apiBaseEl) apiBaseEl.value = b;
+
     toast("Loaded saved token");
   });
 
@@ -245,7 +266,7 @@
   logoutBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     toast("Logging out…");
-    hardLogoutAndRedirect();
+    setTimeout(() => hardLogoutAndRedirect(), 250);
   });
 
   (function init() {
