@@ -635,6 +635,123 @@ app.get("/super/companies/overview", requireAuth, requireSuperAdmin, async (req,
 
 
 /* =========================================================
+   SUPERADMIN: org overview (for /portal/org.js)
+   GET /super/orgs/:orgId/overview
+========================================================= */
+app.get("/super/orgs/:orgId/overview", requireAuth, requireSuperAdmin, async (req, res) => {
+  const orgId = String(req.params.orgId || "").trim();
+  if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+  let org;
+  try {
+    org = await getOrg(orgId);
+  } catch (e) {
+    return res.status(503).json({ error: "Org store unavailable", detail: String(e?.message || e) });
+  }
+  if (!org) return res.status(404).json({ error: "Org not found" });
+
+  const users = Array.isArray(org.users) ? org.users : [];
+  const auditItems = Array.isArray(org.audit) ? org.audit : [];
+
+  const totalUsers = users.length;
+  const admins = users.filter(u => u.role === "Admin").length;
+  const members = users.filter(u => u.role === "Member").length;
+
+  const usersWithKeys = users.filter(u => !!u.publicKeySpkiB64).length;
+  const usersMissingKeys = totalUsers - usersWithKeys;
+  const keyCoveragePct = totalUsers ? Math.round((usersWithKeys / totalUsers) * 100) : 0;
+
+  // last activity: max(lastLoginAt) vs latest audit
+  const lastLoginAtMs = users
+    .map(u => Date.parse(u.lastLoginAt || ""))
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0];
+
+  const lastAuditAtMs = auditItems.length ? Date.parse(auditItems[0]?.at || "") : NaN;
+
+  const lastActivityAtMs = Math.max(
+    Number.isFinite(lastLoginAtMs) ? lastLoginAtMs : 0,
+    Number.isFinite(lastAuditAtMs) ? lastAuditAtMs : 0
+  );
+
+  // ----- security/policy (best-effort: map from your org.policies)
+  const pol = org.policies || defaultPolicies();
+  const security = {
+    recoveryEnabled: true,            // you have recovery routes enabled globally; if you store per-org switch later, change here
+    linkTtlMinutes: 60,               // if you store TTL later, change here
+    requireDeviceKey: !!pol.requireReauthForDecrypt,
+    allowedDomains: Array.isArray(org.allowedDomains) ? org.allowedDomains : [], // optional future field
+    lastKeyRotationAt: org.keyring?.keys?.[org.keyring?.active]?.activatedAt || null,
+  };
+
+  // ----- activity last 30d from audit (matches your org.js expectation)
+  const since30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  let encrypts30d = 0, decrypts30d = 0, failures30d = 0;
+  let setupEmails30d = 0, rejectEmails30d = 0;
+
+  // avg decrypt time (if you later log decryptMs in audit)
+  let decryptMsSum = 0, decryptMsCount = 0;
+
+  for (const a of auditItems) {
+    const atMs = Date.parse(a.at || "");
+    if (!Number.isFinite(atMs) || atMs < since30d) continue;
+
+    if (a.action === "encrypt_store") encrypts30d++;
+    if (a.action === "decrypt_payload") {
+      decrypts30d++;
+      const ms = Number(a.decryptMs);
+      if (Number.isFinite(ms) && ms >= 0) { decryptMsSum += ms; decryptMsCount++; }
+    }
+    if (a.action === "decrypt_denied" || a.action === "login_failed") failures30d++;
+    if (a.action === "super_email_approved") setupEmails30d++;   // optional if you add audit entries later
+    if (a.action === "super_email_rejected") rejectEmails30d++;  // optional if you add audit entries later
+  }
+
+  const activity = {
+    encrypts30d,
+    decrypts30d,
+    failures30d,
+    avgDecryptMs: decryptMsCount ? Math.round(decryptMsSum / decryptMsCount) : null,
+    setupEmails30d,
+    rejectEmails30d,
+  };
+
+  // ----- admins list
+  const adminsList = users
+    .filter(u => u.role === "Admin")
+    .map(u => ({
+      userId: u.userId,
+      username: u.username,
+      email: u.email || "",
+      status: u.status || "Active",
+    }));
+
+  res.json({
+    ok: true,
+    org: {
+      orgId,
+      orgName: org.orgName || org.name || orgId,
+      companyId: org.companyId || null,
+      companyName: org.companyName || null,
+      createdAt: org.createdAt || null,
+      lastActivityAt: lastActivityAtMs ? new Date(lastActivityAtMs).toISOString() : null,
+      notes: org.notes || "",
+    },
+    counts: {
+      totalUsers,
+      admins,
+      members,
+      usersWithKeys,
+      usersMissingKeys,
+      keyCoveragePct,
+    },
+    security,
+    activity,
+    admins: adminsList,
+  });
+});
+
+/* =========================================================
    ADMIN: SECURITY ALERTS
    GET /admin/alerts?minutes=60
 ========================================================= */
