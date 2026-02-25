@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Companies • QuantumMail SuperAdmin</title>
+  <link rel="stylesheet" href="/portal/styles.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">QuantumMail</div>
+      <div class="nav">
+        <a class="btn btnGhost" href="/portal/super.html">Org Requests</a>
+        <a class="btn btnGhost active" href="/portal/companies.html">Companies</a>
+        <button class="btn btnGhost" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="align-items:center;justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Clients</h2>
+          <div class="small muted" id="who">—</div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <input id="apiBase" class="input" placeholder="API Base (optional)" style="width:260px" />
+          <input id="token" class="input" placeholder="SuperAdmin token" style="width:360px" />
+          <button class="btn" id="saveTokenBtn" type="button">Save</button>
+          <button class="btn" id="loadTokenBtn" type="button">Load</button>
+          <button class="btn" id="reloadCompaniesBtn" type="button">Reload</button>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div id="companiesMsg" class="small" style="margin:10px 0"></div>
+      <div id="companiesWrap"></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script src="/portal/.qm/companies.js"></script>
+</body>
+</html>
