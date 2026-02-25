@@ -11,6 +11,18 @@ body{
     radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
     var(--bg);
 }
+a.linkUnder{
+  color: rgba(233,238,252,.92);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 2px;
+  opacity: .9;
+  font-weight: 800;
+}
+a.linkUnder:hover{
+  opacity: 1;
+  text-decoration-color: rgba(110,168,254,.95);
+}
 .wrap{ max-width: 1100px; margin: 0 auto; padding: 22px 16px 42px; }
 .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom: 14px; }
 .brand{ display:flex; align-items:center; gap:12px; }
