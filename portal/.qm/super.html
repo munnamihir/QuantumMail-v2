@@ -1,293 +1,82 @@
-<!-- /portal/.qm/super.html -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QuantumMail • Super Admin</title>
-  <style>
-    :root{
-      --bg:#0b0f14;
-      --card:#0f1620;
-      --muted:#93a4b8;
-      --text:#e7eef8;
-      --border:#1d2a3a;
-      --accent:#6ee7ff;
-      --good:#34d399;
-      --bad:#fb7185;
-      --warn:#fbbf24;
-      --btn:#1b2736;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      background: radial-gradient(1200px 800px at 30% 0%, #0b1b2b 0%, var(--bg) 50%);
-      color:var(--text);
-    }
-    .wrap{max-width:1100px;margin:0 auto;padding:28px}
-    .top{
-      display:flex;align-items:center;justify-content:space-between;gap:14px;
-      margin-bottom:18px;
-    }
-    .brand{
-      display:flex;align-items:center;gap:10px;
-      letter-spacing:.4px;
-    }
-    .dot{
-      width:10px;height:10px;border-radius:999px;background:var(--accent);
-      box-shadow:0 0 24px rgba(110,231,255,.6);
-    }
-    h1{font-size:18px;margin:0}
-    .sub{color:var(--muted);font-size:13px;margin-top:4px}
-    .pill{
-      display:inline-flex;align-items:center;gap:8px;
-      border:1px solid var(--border);
-      background:rgba(15,22,32,.7);
-      padding:8px 10px;border-radius:999px;
-      color:var(--muted);font-size:12px;
-    }
-    .grid{display:grid;grid-template-columns:1fr;gap:14px}
-    .card{
-      border:1px solid var(--border);
-      background:rgba(15,22,32,.9);
-      border-radius:16px;
-      padding:14px;
-      box-shadow: 0 14px 40px rgba(0,0,0,.25);
-    }
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    label{font-size:12px;color:var(--muted)}
-    input, select, textarea{
-      width:100%;
-      padding:10px 12px;
-      border-radius:12px;
-      border:1px solid var(--border);
-      background:#0b1220;
-      color:var(--text);
-      outline:none;
-    }
-    textarea{min-height:84px;resize:vertical}
-    .btn{
-      cursor:pointer;
-      border:1px solid var(--border);
-      background:var(--btn);
-      color:var(--text);
-      padding:10px 12px;
-      border-radius:12px;
-      font-weight:600;
-    }
-    .btn:hover{filter:brightness(1.08)}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .btnGood{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35)}
-    .btnBad{background:rgba(251,113,133,.10);border-color:rgba(251,113,133,.35)}
-    .btnGhost{background:transparent}
-    .split{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:12px;
-    }
-    @media (max-width: 860px){
-      .split{grid-template-columns:1fr}
-    }
-    .table{
-      width:100%;
-      border-collapse:collapse;
-      overflow:hidden;
-      border-radius:14px;
-      border:1px solid var(--border);
-    }
-    .table th,.table td{
-      text-align:left;
-      padding:10px 10px;
-      border-bottom:1px solid var(--border);
-      font-size:13px;
-      vertical-align:top;
-    }
-    .table th{color:var(--muted);font-weight:600;background:rgba(10,18,32,.5)}
-    .table tr:hover td{background:rgba(10,18,32,.35)}
-    .tag{
-      display:inline-flex;
-      padding:3px 8px;
-      border-radius:999px;
-      font-size:12px;
-      border:1px solid var(--border);
-      color:var(--muted);
-      background:rgba(10,18,32,.4);
-    }
-    .tagGood{border-color:rgba(52,211,153,.35);color:#b7f7dd}
-    .tagBad{border-color:rgba(251,113,133,.35);color:#ffd0d8}
-    .tagWarn{border-color:rgba(251,191,36,.35);color:#ffe7a6}
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
-    .hr{height:1px;background:var(--border);margin:12px 0}
-    .msg{font-size:13px;color:var(--muted);margin-top:8px}
-    .toast{
-      position:fixed;
-      right:18px;bottom:18px;
-      background:rgba(15,22,32,.95);
-      border:1px solid var(--border);
-      padding:10px 12px;border-radius:12px;
-      color:var(--text);
-      box-shadow:0 10px 30px rgba(0,0,0,.35);
-      display:none;
-      max-width:420px;
-    }
-    .toast.show{display:block}
-    .small{font-size:12px;color:var(--muted)}
-    .dangerBox{
-      border:1px dashed rgba(251,113,133,.45);
-      background:rgba(251,113,133,.06);
-      border-radius:14px;
-      padding:12px;
-    }
-
-    /* ===== NEW: Companies Overview UI ===== */
-    .companyCard{
-      border:1px solid var(--border);
-      background:rgba(15,22,32,.9);
-      border-radius:16px;
-      padding:14px;
-      box-shadow: 0 14px 40px rgba(0,0,0,.25);
-    }
-    .companyHead{
-      display:flex;
-      justify-content:space-between;
-      gap:12px;
-      align-items:flex-start;
-    }
-    .companyName{font-weight:900}
-    .companyMeta{color:var(--muted);font-size:12px;margin-top:6px}
-    .orgList{margin-top:10px;display:grid;gap:10px}
-    .orgRow{
-      border:1px solid var(--border);
-      border-radius:14px;
-      padding:10px;
-      background:rgba(10,18,32,.35);
-      display:flex;
-      justify-content:space-between;
-      gap:12px;
-      flex-wrap:wrap;
-    }
-    .orgLeft{min-width:260px}
-    .orgTitle{font-weight:800}
-    .kpis{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .kpi{
-      display:inline-flex;gap:6px;align-items:center;
-      padding:4px 8px;border-radius:999px;
-      border:1px solid var(--border);
-      color:var(--muted);font-size:12px;
-      background:rgba(10,18,32,.35);
-    }
-  </style>
+  <title>Super Admin • QuantumMail</title>
+  <link rel="stylesheet" href="/portal/styles.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div class="brand">
-          <div class="dot"></div>
-          <div>
-            <h1>QuantumMail • Super Admin</h1>
-            <div class="sub">Hidden console for org onboarding approvals</div>
-          </div>
-        </div>
-      </div>
-      <div class="pill">
-        <span id="who">Checking access…</span>
-        <button type="button" class="btn btnGhost" id="logoutBtn" title="Logout">Logout</button>
+  <div class="page">
+
+    <!-- Top bar (kept) -->
+    <div class="topbar">
+      <div class="brand">QuantumMail</div>
+      <div class="nav">
+        <!-- NEW: link to Companies page -->
+        <a class="btn btnGhost" href="/portal/companies.html">Companies</a>
+        <button class="btn btnGhost" id="logoutBtn">Logout</button>
       </div>
     </div>
 
-    <div class="grid">
-      <div class="card" id="guardCard">
-        <div class="row" style="justify-content:space-between">
-          <div>
-            <div style="font-weight:700">Access Gate</div>
-            <div class="msg">This page is visible only to <span class="mono">SuperAdmin</span> inside your platform org.</div>
-          </div>
-          <div class="row">
-            <button class="btn" id="refreshMeBtn">Re-check</button>
-          </div>
-        </div>
-        <div class="hr"></div>
-
-        <div class="split">
-          <div>
-            <label>API Base (optional)</label>
-            <input id="apiBase" placeholder="Leave empty (same domain) recommended" />
-            <div class="small">If your portal is served from the same server, keep it empty.</div>
-          </div>
-          <div>
-            <label>SuperAdmin Bearer Token</label>
-            <input id="token" placeholder="Auto-loads from sessionStorage (qm_super_token/qm_token)" />
-            <div class="small">
-              Reads from <span class="mono">sessionStorage.qm_super_token</span> then <span class="mono">sessionStorage.qm_token</span>.
-            </div>
-          </div>
+    <!-- Guard + main -->
+    <div class="card">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <h2 style="margin:0">SuperAdmin • Org Requests</h2>
+          <div class="small muted" id="who">—</div>
+          <div class="small" id="guardMsg" style="margin-top:6px"></div>
         </div>
 
-        <div class="row" style="margin-top:10px">
-          <button class="btn btnGood" id="saveTokenBtn">Save Token</button>
-          <button class="btn" id="loadTokenBtn">Load Saved Token</button>
-          <span class="msg" id="guardMsg"></span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <input id="apiBase" class="input" placeholder="API Base (optional)" style="width:260px" />
+          <input id="token" class="input" placeholder="SuperAdmin token" style="width:360px" />
+          <button class="btn" id="saveTokenBtn" type="button">Save</button>
+          <button class="btn" id="loadTokenBtn" type="button">Load</button>
+          <button class="btn" id="refreshMeBtn" type="button">Refresh</button>
         </div>
       </div>
 
-      <div class="card" id="mainCard" style="display:none">
-        <div class="row" style="justify-content:space-between">
-          <div>
-            <div style="font-weight:800;font-size:16px">Org Requests</div>
-            <div class="msg">Review pending requests, approve to create org + first admin setup link.</div>
-          </div>
-          <div class="row">
-            <select id="statusSel" style="min-width:190px">
-              <option value="pending">pending</option>
+      <div class="hr"></div>
+
+      <!-- MAIN ORG REQUESTS CARD -->
+      <div id="mainCard">
+        <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label class="small muted">Status</label>
+            <select id="statusSel" class="input" style="width:180px">
+              <option value="pending" selected>pending</option>
               <option value="approved">approved</option>
               <option value="rejected">rejected</option>
             </select>
-            <button class="btn" id="reloadBtn">Reload</button>
+            <button class="btn" id="reloadBtn" type="button">Reload</button>
           </div>
+
+          <div class="small" id="listMsg"></div>
         </div>
 
         <div class="hr"></div>
 
-        <table class="table" id="tbl">
-          <thead>
-            <tr>
-              <th style="width:120px">Status</th>
-              <th style="width:200px">Org</th>
-              <th>Requester</th>
-              <th style="width:300px">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="tbody">
-            <tr><td colspan="4" class="small">Loading…</td></tr>
-          </tbody>
-        </table>
-
-        <div class="msg" id="listMsg"></div>
-
-        <!-- ===== NEW: Companies Overview ===== -->
-        <div class="hr"></div>
-
-        <div class="row" style="justify-content:space-between">
-          <div>
-            <div style="font-weight:800;font-size:16px">Companies Overview</div>
-            <div class="msg">Company → Orgs → Seats + key coverage + last activity.</div>
-          </div>
-          <div class="row">
-            <button class="btn" id="reloadCompaniesBtn">Reload Companies</button>
-          </div>
+        <div style="overflow:auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width:120px">Status</th>
+                <th>Org</th>
+                <th>Requester</th>
+                <th style="width:360px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr><td colspan="4" class="small">Loading…</td></tr>
+            </tbody>
+          </table>
         </div>
-
-        <div class="hr"></div>
-
-        <div id="companiesWrap" class="grid"></div>
-        <div class="msg" id="companiesMsg"></div>
       </div>
     </div>
-  </div>
 
-  <div class="toast" id="toast"></div>
+    <div id="toast" class="toast"></div>
+  </div>
 
   <script src="/portal/.qm/super.js"></script>
 </body>
