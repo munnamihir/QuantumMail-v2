@@ -3,44 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Companies • QuantumMail SuperAdmin</title>
+  <title>Companies • QuantumMail</title>
   <link rel="stylesheet" href="/portal/styles.css" />
 </head>
 <body>
   <div class="page">
+
     <div class="topbar">
       <div class="brand">QuantumMail</div>
       <div class="nav">
-        <a class="btn btnGhost" href="/portal/super.html">Org Requests</a>
-        <a class="btn btnGhost active" href="/portal/companies.html">Companies</a>
+        <a class="btn btnGhost" href="/portal/.qm/super.html">Org Requests</a>
         <button class="btn btnGhost" id="logoutBtn">Logout</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="row" style="align-items:center;justify-content:space-between">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:12px">
         <div>
-          <h2 style="margin:0">Clients</h2>
+          <h2 style="margin:0">SuperAdmin • Companies Overview</h2>
           <div class="small muted" id="who">—</div>
+          <div class="small" id="guardMsg" style="margin-top:6px"></div>
         </div>
-        <div style="display:flex;gap:10px">
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
           <input id="apiBase" class="input" placeholder="API Base (optional)" style="width:260px" />
           <input id="token" class="input" placeholder="SuperAdmin token" style="width:360px" />
           <button class="btn" id="saveTokenBtn" type="button">Save</button>
           <button class="btn" id="loadTokenBtn" type="button">Load</button>
-          <button class="btn" id="reloadCompaniesBtn" type="button">Reload</button>
+          <button class="btn" id="reloadBtn" type="button">Reload</button>
         </div>
       </div>
 
       <div class="hr"></div>
 
-      <div id="companiesMsg" class="small" style="margin:10px 0"></div>
-      <div id="companiesWrap"></div>
+      <div id="mainCard">
+        <div class="small" id="msg" style="margin:10px 0"></div>
+        <div id="companiesWrap"></div>
+      </div>
     </div>
 
     <div id="toast" class="toast"></div>
   </div>
 
-  <script src="/portal/.qm/companies.js"></script>
+  <script src="/portal/companies.js"></script>
 </body>
 </html>
