@@ -1224,13 +1224,24 @@ app.post("/public/org-requests", async (req, res) => {
    AUTH: login / me / change-password
 ========================================================= */
 app.post("/auth/login", async (req, res) => {
+  // show reason only in dev (or explicitly enabled)
+  const SHOW_REASON = (process.env.QM_DEBUG_AUTH === "1") || !IS_PROD;
+
+  const deny = (status, error, reason, extra = {}) => {
+    const payload = { error };
+    if (SHOW_REASON) payload.reason = reason;
+    // avoid leaking sensitive info in prod
+    if (SHOW_REASON && Object.keys(extra).length) payload.debug = extra;
+    return res.status(status).json(payload);
+  };
+
   try {
     const orgId = String(req.body?.orgId || "").trim();
     const username = String(req.body?.username || "").trim();
     const password = String(req.body?.password || "");
 
     if (!orgId || !username || !password) {
-      return res.status(400).json({ error: "orgId, username, password required" });
+      return deny(400, "orgId, username, password required", "missing_fields", { orgId, usernamePresent: !!username });
     }
 
     let org;
@@ -1238,28 +1249,27 @@ app.post("/auth/login", async (req, res) => {
       org = await getOrg(orgId);
     } catch (e) {
       console.error("LOGIN getOrg failed:", { orgId, err: e?.message || e });
-      return res.status(503).json({ error: "Org store unavailable. Try again." });
+      return deny(503, "Org store unavailable. Try again.", "org_store_unavailable", { orgId });
     }
 
     if (!org || !Array.isArray(org.users)) {
-      try {
-        await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" });
-      } catch {}
-      return res.status(401).json({ error: "Invalid creds" });
+      try { await audit(req, orgId, null, "login_failed", { username, reason: "org_not_found" }); } catch {}
+      return deny(401, "Invalid creds", "org_not_found", { orgId });
     }
 
     const unameLower = username.toLowerCase();
     const user = (org.users || []).find((u) => String(u.username || "").toLowerCase() === unameLower);
 
     if (!user) {
-      try {
-        await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" });
-      } catch {}
-      return res.status(401).json({ error: "Invalid creds" });
+      try { await audit(req, orgId, null, "login_failed", { username, reason: "unknown_user" }); } catch {}
+      return deny(401, "Invalid creds", "unknown_user", { orgId, username });
     }
 
     if (String(user.status || "Active") === "PendingSetup") {
-      return res.status(403).json({ error: "Account pending setup. Use setup link." });
+      return deny(403, "Account pending setup. Use setup link.", "pending_setup", {
+        orgId,
+        username: user.username
+      });
     }
 
     let okPassword = false;
@@ -1268,14 +1278,12 @@ app.post("/auth/login", async (req, res) => {
       okPassword = !!user.passwordHash && timingSafeEq(ph, user.passwordHash);
     } catch (e) {
       console.error("LOGIN password verify failed:", { orgId, username, err: e?.message || e });
-      return res.status(500).json({ error: "Password verification failed" });
+      return deny(500, "Password verification failed", "password_verify_error");
     }
 
     if (!okPassword) {
-      try {
-        await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" });
-      } catch {}
-      return res.status(401).json({ error: "Invalid creds" });
+      try { await audit(req, orgId, user.userId, "login_failed", { username: user.username, reason: "bad_password" }); } catch {}
+      return deny(401, "Invalid creds", "bad_password", { orgId, username: user.username });
     }
 
     user.lastLoginAt = nowIso();
@@ -1291,15 +1299,13 @@ app.post("/auth/login", async (req, res) => {
 
     const token = signToken(payload);
 
-    try {
-      await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role });
-    } catch {}
+    try { await audit(req, orgId, user.userId, "login", { username: user.username, role: user.role }); } catch {}
 
     try {
       await saveOrg(orgId, org);
     } catch (e) {
       console.error("LOGIN saveOrg failed:", { orgId, username, err: e?.message || e });
-      return res.status(503).json({ error: "Could not persist login state. Try again." });
+      return deny(503, "Could not persist login state. Try again.", "save_org_failed", { orgId });
     }
 
     return res.json({
@@ -1317,47 +1323,8 @@ app.post("/auth/login", async (req, res) => {
     });
   } catch (e) {
     console.error("LOGIN handler crashed:", e);
-    return res.status(500).json({ error: "Internal Server Error", detail: String(e?.message || e) });
+    return res.status(500).json({ error: "Internal Server Error" });
   }
-});
-
-app.get("/auth/me", requireAuth, (req, res) => {
-  const { user } = req.qm;
-  res.json({
-    ok: true,
-    user: {
-      userId: user.userId,
-      orgId: req.qm.tokenPayload.orgId,
-      username: user.username,
-      role: user.role,
-      status: user.status || "Active",
-    },
-  });
-});
-
-app.post("/auth/change-password", requireAuth, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user } = req.qm;
-
-  const currentPassword = String(req.body?.currentPassword || "");
-  const newPassword = String(req.body?.newPassword || "");
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: "currentPassword and newPassword required" });
-  if (newPassword.length < 12) return res.status(400).json({ error: "New password must be at least 12 characters" });
-
-  const curHash = sha256(currentPassword);
-  if (!user.passwordHash || !timingSafeEq(curHash, user.passwordHash)) {
-    await audit(req, orgId, user.userId, "change_password_failed", { reason: "bad_current_password" });
-    return res.status(401).json({ error: "Current password is incorrect" });
-  }
-
-  const nextHash = sha256(newPassword);
-  if (timingSafeEq(nextHash, user.passwordHash)) return res.status(400).json({ error: "New password must be different" });
-
-  user.passwordHash = nextHash;
-  await audit(req, orgId, user.userId, "change_password", { username: user.username, role: user.role });
-  await saveOrg(orgId, org);
-
-  res.json({ ok: true });
 });
 
 /* =========================================================
