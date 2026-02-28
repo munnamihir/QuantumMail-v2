@@ -8,6 +8,11 @@ function debounce(fn, ms = 350) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+function val(id) {
+  const el = $(id);
+  return String(el?.value ?? "").trim();
+}
+
 function clearAllMsgs() {
   ["rqOk","rqErr","jnOk","jnErr","liOk","liErr"].forEach(x => { ok(x,""); err(x,""); });
 }
