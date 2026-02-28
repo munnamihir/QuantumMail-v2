@@ -163,37 +163,75 @@ async function joinOrgSignup() {
 }
 
 async function login() {
-  ok("liOk", ""); err("liErr", "");
+  ok("liOk", "");
+  err("liErr", "");
 
-  const orgId = String($("liOrgId").value || "").trim();
-  const username = String($("liUsername").value || "").trim();
-  const password = String($("liPassword").value || "");
+  // Read values safely
+  const orgId = val("liOrgId");
+  const username = val("liUsername");
+  const password = String($("liPassword")?.value ?? ""); // keep raw
 
   if (!orgId || !username || !password) {
     err("liErr", "Org ID, username, and password are required.");
     return;
   }
 
-  const out = await api("/auth/login", { method: "POST", body: { orgId, username, password } });
-
-  localStorage.setItem("qm_token", out.token);
-  localStorage.setItem("qm_user", JSON.stringify(out.user));
-
-  localStorage.setItem("qm_role", out.user?.role || "");
-  localStorage.setItem("qm_orgId", out.user?.orgId || orgId);
-  localStorage.setItem("qm_username", out.user?.username || username);
-
-  ok("liOk", "Logged in ✅ Redirecting…");
-
-  if (out.user?.role === "SuperAdmin") {
-    window.location.href = "/portal/.qm/super.html";
-    return;
+  // Optional: prevent login until org initialized (helps explain your 401 loop)
+  try {
+    const chk = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
+    if (!chk.exists) {
+      err("liErr", "Org not found.");
+      return;
+    }
+    if (!chk.initialized) {
+      err("liErr", "Org exists but is not initialized yet. Ask Admin to finish setup (approve + setup-admin).");
+      return;
+    }
+  } catch {
+    // ignore org check failures; still attempt login
   }
-  if (out.user?.role === "Admin") {
-    window.location.href = "/portal/admin.html";
-    return;
+
+  setText("liOrgStatus", "Signing in…");
+
+  try {
+    const out = await api("/auth/login", {
+      method: "POST",
+      body: { orgId, username, password }
+    });
+
+    // Persist session
+    localStorage.setItem("qm_token", out.token);
+    localStorage.setItem("qm_user", JSON.stringify(out.user || {}));
+    localStorage.setItem("qm_role", out.user?.role || "");
+    localStorage.setItem("qm_orgId", out.user?.orgId || orgId);
+    localStorage.setItem("qm_username", out.user?.username || username);
+
+    ok("liOk", "Logged in ✅ Redirecting…");
+
+    // Redirect by role
+    const role = out.user?.role || "";
+    if (role === "SuperAdmin") {
+      window.location.href = "/portal/.qm/super.html";
+      return;
+    }
+    if (role === "Admin") {
+      window.location.href = "/portal/admin.html";
+      return;
+    }
+    window.location.href = "/portal/inbox.html";
+  } catch (e) {
+    // Better error text for common cases
+    const msg = String(e?.message || "");
+
+    if (msg.includes("Invalid creds") || msg.includes("401")) {
+      err("liErr", "Invalid username/password for this org.");
+      setText("liOrgStatus", "Login failed");
+      return;
+    }
+
+    err("liErr", msg || "Login failed");
+    setText("liOrgStatus", "Login failed");
   }
-  window.location.href = "/portal/inbox.html";
 }
 
 /* -----------------------------
