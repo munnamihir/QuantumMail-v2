@@ -1,72 +1,33 @@
-// /portal/index.js
-// ✅ FULL FILE (null-safe) — fixes: Cannot read properties of null (reading 'value')
-
 const $ = (id) => document.getElementById(id);
 
-/* =========================
-   Safe DOM helpers
-========================= */
-function mustEl(id) {
-  const el = $(id);
-  if (!el) throw new Error(`Missing required element #${id}`);
-  return el;
-}
-
-function val(id) {
-  const el = $(id);
-  return String(el?.value ?? "").trim();
-}
-
-function setText(id, text) {
-  const el = $(id);
-  if (el) el.textContent = text || "";
-}
-
-function ok(id, msg) {
-  setText(id, msg || "");
-}
-
-function err(id, msg) {
-  setText(id, msg || "");
-}
+function ok(id, msg) { const el = $(id); if (el) el.textContent = msg || ""; }
+function err(id, msg) { const el = $(id); if (el) el.textContent = msg || ""; }
 
 function debounce(fn, ms = 350) {
   let t = null;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
 function clearAllMsgs() {
-  ["rqOk", "rqErr", "jnOk", "jnErr", "liOk", "liErr"].forEach((x) => {
-    ok(x, "");
-    err(x, "");
-  });
+  ["rqOk","rqErr","jnOk","jnErr","liOk","liErr"].forEach(x => { ok(x,""); err(x,""); });
 }
 
-/* =========================
-   Tabs (null-safe)
-========================= */
 function setTab(which) {
   const isReq = which === "request";
   const isJoin = which === "join";
   const isLogin = which === "login";
 
-  $("tabRequest")?.classList.toggle("active", isReq);
-  $("tabJoin")?.classList.toggle("active", isJoin);
-  $("tabLogin")?.classList.toggle("active", isLogin);
+  $("tabRequest").classList.toggle("active", isReq);
+  $("tabJoin").classList.toggle("active", isJoin);
+  $("tabLogin").classList.toggle("active", isLogin);
 
-  if ($("requestPanel")) $("requestPanel").style.display = isReq ? "" : "none";
-  if ($("joinPanel")) $("joinPanel").style.display = isJoin ? "" : "none";
-  if ($("loginPanel")) $("loginPanel").style.display = isLogin ? "" : "none";
+  $("requestPanel").style.display = isReq ? "" : "none";
+  $("joinPanel").style.display = isJoin ? "" : "none";
+  $("loginPanel").style.display = isLogin ? "" : "none";
 
   clearAllMsgs();
 }
 
-/* =========================
-   HTTP helpers
-========================= */
 async function apiPublic(path) {
   const res = await fetch(path);
   const data = await res.json().catch(() => ({}));
@@ -85,114 +46,94 @@ async function api(path, { method = "GET", body = null, token = "" } = {}) {
   return data;
 }
 
-/* =========================
+/* -----------------------------
    Live checks (Join + Login)
-========================= */
+------------------------------ */
 const checkJoinOrgLive = debounce(async () => {
-  const orgId = val("jnOrgId");
-  if (!orgId) {
-    setText("jnOrgStatus", "");
-    return;
-  }
+  const orgId = String($("jnOrgId").value || "").trim();
+  if (!orgId) { $("jnOrgStatus").textContent = ""; return; }
 
   try {
     const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-    if (!out.exists) setText("jnOrgStatus", "Org not found. Submit a request on the first tab.");
-    else if (!out.initialized) setText("jnOrgStatus", "Org exists but not initialized yet. Admin must finish setup first.");
-    else setText("jnOrgStatus", `Org ready ✅ Users: ${out.userCount}`);
+    if (!out.exists) {
+      $("jnOrgStatus").textContent = "Org not found. Submit a request on the first tab.";
+    } else if (!out.initialized) {
+      $("jnOrgStatus").textContent = "Org exists but not initialized yet. Admin must finish setup first.";
+    } else {
+      $("jnOrgStatus").textContent = `Org ready ✅ Users: ${out.userCount}`;
+    }
   } catch (e) {
-    setText("jnOrgStatus", e?.message || "Org check failed");
+    $("jnOrgStatus").textContent = e.message || "Org check failed";
   }
 }, 400);
 
 const checkJoinUsernameLive = debounce(async () => {
-  const orgId = val("jnOrgId");
-  const username = val("jnUsername");
-  if (!orgId || !username) {
-    setText("jnUserStatus", "");
-    return;
-  }
+  const orgId = String($("jnOrgId").value || "").trim();
+  const username = String($("jnUsername").value || "").trim();
+  if (!orgId || !username) { $("jnUserStatus").textContent = ""; return; }
 
   try {
     const org = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-    if (!org.exists) {
-      setText("jnUserStatus", "Org not found.");
-      return;
-    }
-    if (!org.initialized) {
-      setText("jnUserStatus", "Org not initialized yet.");
-      return;
-    }
+    if (!org.exists) { $("jnUserStatus").textContent = "Org not found."; return; }
+    if (!org.initialized) { $("jnUserStatus").textContent = "Org not initialized yet."; return; }
 
-    const out = await apiPublic(
-      `/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`
-    );
-    setText("jnUserStatus", out.available ? "Username available ✅" : "Username already taken.");
+    const out = await apiPublic(`/org/check-username?orgId=${encodeURIComponent(orgId)}&username=${encodeURIComponent(username)}`);
+    $("jnUserStatus").textContent = out.available ? "Username available ✅" : "Username already taken.";
   } catch (e) {
-    setText("jnUserStatus", e?.message || "Username check failed");
+    $("jnUserStatus").textContent = e.message || "Username check failed";
   }
 }, 400);
 
 const checkLoginOrgLive = debounce(async () => {
-  const orgId = val("liOrgId");
-  if (!orgId) {
-    setText("liOrgStatus", "");
-    return;
-  }
+  const orgId = String($("liOrgId").value || "").trim();
+  if (!orgId) { $("liOrgStatus").textContent = ""; return; }
 
   try {
     const out = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-    if (!out.exists) setText("liOrgStatus", "Org not found.");
-    else if (!out.initialized) setText("liOrgStatus", "Org not initialized yet.");
-    else setText("liOrgStatus", `Org ready ✅ Users: ${out.userCount}`);
+    if (!out.exists) $("liOrgStatus").textContent = "Org not found.";
+    else if (!out.initialized) $("liOrgStatus").textContent = "Org not initialized yet.";
+    else $("liOrgStatus").textContent = `Org ready ✅ Users: ${out.userCount}`;
   } catch (e) {
-    setText("liOrgStatus", e?.message || "Org check failed");
+    $("liOrgStatus").textContent = e.message || "Org check failed";
   }
 }, 400);
 
-/* =========================
+/* -----------------------------
    Actions
-========================= */
+------------------------------ */
 async function submitRequest() {
-  ok("rqOk", "");
-  err("rqErr", "");
+  ok("rqOk", ""); err("rqErr", "");
 
-  const companyName = val("rqCompanyName");
-  const companyId = val("rqCompanyId");
-  const orgName = val("rqOrgName");
-  const requesterName = val("rqRequesterName");
-  const requesterEmail = val("rqRequesterEmail");
-  const notes = val("rqNotes");
-
-  if (!companyName) {
-    err("rqErr", "Company name is required.");
-    return;
-  }
+  const orgName = String($("rqOrgName").value || "").trim();
+  const requesterName = String($("rqRequesterName").value || "").trim();
+  const requesterEmail = String($("rqRequesterEmail").value || "").trim();
+  const notes = String($("rqNotes").value || "").trim();
+  const companyName = String($("rqCompanyName").value || "").trim();
+  const companyId = String($("rqCompanyId").value || "").trim();
+  
+  if (!companyName) { err("rqErr","Company name is required."); return; }
   if (!orgName || !requesterName || !requesterEmail) {
     err("rqErr", "Organization name, your name, and your email are required.");
     return;
   }
-
+  
   const out = await api("/public/org-requests", {
     method: "POST",
     body: { companyName, companyId, orgName, requesterName, requesterEmail, notes }
   });
+  
 
-  ok(
-    "rqOk",
-    `Request submitted ✅\nRequest ID: ${out.requestId}\nYou’ll receive an Admin setup link after approval.`
-  );
+  ok("rqOk", `Request submitted ✅\nRequest ID: ${out.requestId}\nYou’ll receive an Admin setup link after approval.`);
 }
 
 async function joinOrgSignup() {
-  ok("jnOk", "");
-  err("jnErr", "");
+  ok("jnOk", ""); err("jnErr", "");
 
-  const orgId = val("jnOrgId");
-  const inviteCode = val("jnInviteCode");
-  const username = val("jnUsername");
-  const password = String($("jnPassword")?.value ?? ""); // keep raw (no trim)
-  const email = val("jnEmail"); // optional
+  const orgId = String($("jnOrgId").value || "").trim();
+  const inviteCode = String($("jnInviteCode").value || "").trim();
+  const username = String($("jnUsername").value || "").trim();
+  const password = String($("jnPassword").value || "");
+  const email = String($("jnEmail")?.value || "").trim(); // optional
 
   if (!orgId || !inviteCode || !username || !password) {
     err("jnErr", "Org ID, invite code, username, and password are required.");
@@ -204,38 +145,29 @@ async function joinOrgSignup() {
   }
 
   const oc = await apiPublic(`/org/check?orgId=${encodeURIComponent(orgId)}`);
-  if (!oc.exists) {
-    err("jnErr", "Org not found. Submit a request first.");
-    return;
-  }
-  if (!oc.initialized) {
-    err("jnErr", "Org is not initialized yet. Ask your Admin / wait for setup.");
-    return;
-  }
+  if (!oc.exists) { err("jnErr", "Org not found. Submit a request first."); return; }
+  if (!oc.initialized) { err("jnErr", "Org is not initialized yet. Ask your Admin / wait for setup."); return; }
 
   const out = await api("/auth/signup", {
     method: "POST",
-    body: { signupType: "OrgType", orgId, inviteCode, username, password, email }
+    body: { signupType: "OrgType", orgId, inviteCode, username, password, email } // email will be ignored unless server supports it
   });
 
   ok("jnOk", `Account created ✅\nOrg: ${out.orgId}\nRole: ${out.role}\nNow login.`);
   setTab("login");
-
-  if ($("liOrgId")) $("liOrgId").value = out.orgId;
-  if ($("liUsername")) $("liUsername").value = username;
-  if ($("liPassword")) $("liPassword").value = "";
+  $("liOrgId").value = out.orgId;
+  $("liUsername").value = username;
+  $("liPassword").value = "";
   if ($("liEmail") && email) $("liEmail").value = email;
-
   checkLoginOrgLive();
 }
 
 async function login() {
-  ok("liOk", "");
-  err("liErr", "");
+  ok("liOk", ""); err("liErr", "");
 
-  const orgId = val("liOrgId");
-  const username = val("liUsername");
-  const password = String($("liPassword")?.value ?? "");
+  const orgId = String($("liOrgId").value || "").trim();
+  const username = String($("liUsername").value || "").trim();
+  const password = String($("liPassword").value || "");
 
   if (!orgId || !username || !password) {
     err("liErr", "Org ID, username, and password are required.");
@@ -264,15 +196,14 @@ async function login() {
   window.location.href = "/portal/inbox.html";
 }
 
-/* =========================
-   Recovery
-========================= */
+/* -----------------------------
+   Recovery (NEW)
+------------------------------ */
 async function forgotUsername() {
-  ok("liOk", "");
-  err("liErr", "");
+  ok("liOk",""); err("liErr","");
 
-  const orgId = val("liOrgId");
-  const email = val("liEmail");
+  const orgId = String($("liOrgId").value || "").trim();
+  const email = String($("liEmail").value || "").trim();
 
   if (!orgId || !email) {
     err("liErr", "Org ID and Email are required for recovery.");
@@ -288,11 +219,10 @@ async function forgotUsername() {
 }
 
 async function forgotPassword() {
-  ok("liOk", "");
-  err("liErr", "");
+  ok("liOk",""); err("liErr","");
 
-  const orgId = val("liOrgId");
-  const email = val("liEmail");
+  const orgId = String($("liOrgId").value || "").trim();
+  const email = String($("liEmail").value || "").trim();
 
   if (!orgId || !email) {
     err("liErr", "Org ID and Email are required for password reset.");
@@ -307,33 +237,29 @@ async function forgotPassword() {
   ok("liOk", out.message || "If an account exists, you’ll receive a reset link shortly.");
 }
 
-/* =========================
-   Wiring (null-safe)
-========================= */
-$("tabRequest")?.addEventListener("click", () => setTab("request"));
-$("tabJoin")?.addEventListener("click", () => setTab("join"));
-$("tabLogin")?.addEventListener("click", () => setTab("login"));
+/* -----------------------------
+   Wiring
+------------------------------ */
+$("tabRequest").addEventListener("click", () => setTab("request"));
+$("tabJoin").addEventListener("click", () => setTab("join"));
+$("tabLogin").addEventListener("click", () => setTab("login"));
 
-$("btnRequest")?.addEventListener("click", () => submitRequest().catch((e) => err("rqErr", e.message)));
-$("btnJoin")?.addEventListener("click", () => joinOrgSignup().catch((e) => err("jnErr", e.message)));
-$("btnLogin")?.addEventListener("click", () => login().catch((e) => err("liErr", e.message)));
+$("btnRequest").addEventListener("click", () => submitRequest().catch(e => err("rqErr", e.message)));
+$("btnJoin").addEventListener("click", () => joinOrgSignup().catch(e => err("jnErr", e.message)));
+$("btnLogin").addEventListener("click", () => login().catch(e => err("liErr", e.message)));
 
-$("btnForgotUsername")?.addEventListener("click", () => forgotUsername().catch((e) => err("liErr", e.message)));
-$("btnForgotPassword")?.addEventListener("click", () => forgotPassword().catch((e) => err("liErr", e.message)));
+$("btnForgotUsername")?.addEventListener("click", () => forgotUsername().catch(e => err("liErr", e.message)));
+$("btnForgotPassword")?.addEventListener("click", () => forgotPassword().catch(e => err("liErr", e.message)));
 
-$("jnOrgId")?.addEventListener("input", () => {
-  checkJoinOrgLive();
-  checkJoinUsernameLive();
-});
+$("jnOrgId")?.addEventListener("input", () => { checkJoinOrgLive(); checkJoinUsernameLive(); });
 $("jnUsername")?.addEventListener("input", () => checkJoinUsernameLive());
 
 $("liOrgId")?.addEventListener("input", () => checkLoginOrgLive());
 
-/* =========================
+/* -----------------------------
    Boot
-========================= */
+------------------------------ */
 (function boot() {
-  // default tab
   setTab("request");
 
   // Auto-tab via URL: /portal/index.html?tab=login&orgId=org_demo
