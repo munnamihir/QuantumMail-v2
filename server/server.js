@@ -1086,9 +1086,20 @@ app.get("/org/check", async (req, res) => {
   const org = await peekOrg(orgId);
   const exists = !!org;
   const userCount = exists ? org.users?.length || 0 : 0;
-  const hasAdmin = exists ? !!(org.users || []).find((u) => u.role === "Admin") : false;
+  const hasPrivilegedUser = exists
+  ? !!(org.users || []).find(
+      (u) => u.role === "Admin" || u.role === "SuperAdmin" 
+    )
+  : false;
 
-  res.json({ ok: true, orgId, exists, initialized: exists && userCount > 0 && hasAdmin, userCount, hasAdmin });
+   res.json({
+     ok: true,
+     orgId,
+     exists,
+     initialized: exists && userCount > 0 && hasPrivilegedUser,
+     userCount,
+     hasAdmin: hasPrivilegedUser
+   });
 });
 
 app.get("/org/check-username", async (req, res) => {
