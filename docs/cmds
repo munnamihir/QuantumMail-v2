@@ -42,3 +42,34 @@ curl -s -X POST http://localhost:5173/admin/users \
 Rotate Key:
 curl -s -X POST http://localhost:5173/admin/keys/rotate \
   -H "Authorization: Bearer <ADMIN_TOKEN>"
+
+
+
+
+--------------------------------------------------------
+
+(async () => {
+  const url = "https://quantummail-v2.onrender.com/bootstrap/superadmin";
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-QM-Bootstrap": "2uH8f9m1Qm0bJ7pG6cYdXHnQeVqLx3r5kP9zT1wS4aN8cR6vY0sD7hJ2mK5pL9xQ"
+    },
+    body: JSON.stringify({
+      username: "mihir",
+      password: "YourPasswordHere"
+    })
+  });
+
+  // IMPORTANT: don't call resp.json() blindly (502 returns HTML/empty)
+  const text = await resp.text();
+  console.log("status:", resp.status);
+  console.log("raw:", text);
+
+  try { console.log("json:", JSON.parse(text)); }
+  catch { console.log("not json"); }
+})();
+
+
