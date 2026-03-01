@@ -92,8 +92,17 @@
       try { data = await res.text(); } catch {}
     }
 
-    if (!res.ok) {
+    /*if (!res.ok) {
       const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
+      throw new Error(msg);
+    }*/
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      if (data) {
+        if (typeof data === "string") msg = data;
+        else if (data.error) msg = data.error;
+        else msg = JSON.stringify(data);
+      }
       throw new Error(msg);
     }
     return data;
