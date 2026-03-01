@@ -245,6 +245,27 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
+// AUTH: who am I?
+// GET /auth/me
+app.get("/auth/me", requireAuth, async (req, res) => {
+  const { user } = req.qm;
+  const orgId = req.qm.tokenPayload.orgId;
+
+  res.json({
+    ok: true,
+    user: {
+      userId: user.userId,
+      orgId,
+      username: user.username,
+      role: user.role,
+      status: user.status || "Active",
+      hasPublicKey: !!user.publicKeySpkiB64,
+      lastLoginAt: user.lastLoginAt || null,
+      publicKeyRegisteredAt: user.publicKeyRegisteredAt || null,
+    },
+  });
+});
+
 /* =========================================================
    Bootstrap protection (header secret)
 ========================================================= */
