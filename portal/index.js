@@ -118,7 +118,14 @@ async function submitRequest() {
   const requesterEmail = String($("rqRequesterEmail").value || "").trim();
   const notes = String($("rqNotes").value || "").trim();
   const companyName = String($("rqCompanyName").value || "").trim();
-  const companyId = String($("rqCompanyId").value || "").trim();
+  function toCompanyId(name) {
+    return "comp_" + name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")   // replace spaces & special chars with _
+      .replace(/^_+|_+$/g, "");     // trim leading/trailing _
+  }
+  
+  const companyId = toCompanyId(companyName);
   
   if (!companyName) { err("rqErr","Company name is required."); return; }
   if (!orgName || !requesterName || !requesterEmail) {
