@@ -1799,10 +1799,10 @@ app.post("/super/org-requests/:id/approve", requireAuth, requireSuperAdmin, asyn
   const companyName = String(reqRow.company_name || "").trim() || "Unknown Company";
 
   await pool.query(
-    `insert into qm_companies (company_id, company_name, updated_at)
+    `insert into qm_companies (company_id, company_name, created_at)
      values ($1, $2, now())
      on conflict (company_id)
-     do update set company_name = excluded.company_name, updated_at = now()`,
+     do update set company_name = excluded.company_name, created_at = now()`,
     [companyId, companyName]
   );
 
