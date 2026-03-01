@@ -1,5 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
+function setText(id, msg) {
+  const el = $(id);
+  if (el) el.textContent = msg == null ? "" : String(msg);
+}
 function ok(id, msg) { const el = $(id); if (el) el.textContent = msg || ""; }
 function err(id, msg) { const el = $(id); if (el) el.textContent = msg || ""; }
 
