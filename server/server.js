@@ -1125,12 +1125,24 @@ app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, as
     return res.status(400).json({ error: "username + password (>=12 chars) required" });
   }
 
-  const org = await getOrg(PLATFORM_ORG_ID);
-  org.users = org.users || [];
-  org.audit = org.audit || [];
+  // SAFE: org may not exist yet
+  let org = await peekOrg(PLATFORM_ORG_ID);
+  if (!org) {
+    org = {
+      orgId: PLATFORM_ORG_ID,
+      orgName: "QuantumMail Platform",
+      users: [],
+      audit: [],
+      policies: defaultPolicies(),
+      createdAt: nowIso(),
+    };
+  }
+
+  org.users = Array.isArray(org.users) ? org.users : [];
+  org.audit = Array.isArray(org.audit) ? org.audit : [];
   org.policies = org.policies || defaultPolicies();
 
-  const exists = org.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  const exists = org.users.find((u) => String(u.username || "").toLowerCase() === username.toLowerCase());
   if (exists) return res.status(409).json({ error: "User already exists" });
 
   const userId = nanoid(10);
@@ -1147,11 +1159,12 @@ app.post("/bootstrap/superadmin", rateLimitBootstrap, requireBootstrapSecret, as
   });
 
   org.audit.unshift({ id: nanoid(10), at: nowIso(), action: "bootstrap_superadmin", userId, username });
+  if (org.audit.length > 2000) org.audit.length = 2000;
+
   await saveOrg(PLATFORM_ORG_ID, org);
 
   res.json({ ok: true, platformOrgId: PLATFORM_ORG_ID, userId, username });
 });
-
 /* =========================================================
    BOOTSTRAP: seed first Admin for an org
    POST /dev/seed-admin
