@@ -1,88 +1,58 @@
 // server/orgStore.js
 import { pool } from "./db.js";
 
-/**
- * qm_org_store schema expectation:
- *   org_id      TEXT PRIMARY KEY
- *   data        JSONB NOT NULL DEFAULT '{}'::jsonb
- *   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
- *   company_id  TEXT NULL        -- optional but recommended (snake_case)
- *
- * IMPORTANT:
- * - There is NO physical org_name column.
- * - orgName lives inside data JSON: data->>'orgName'
- */
+function canonicalOrgJson(x) {
+  let o = x;
+
+  // if this is a db row shape: { org_id, data, updated_at }
+  if (o && o.data && !o.orgId && (o.org_id || o.orgId === undefined)) {
+    o = o.data;
+  }
+
+  // unwrap repeated { data: { data: {...}} } nesting (yours has this)
+  for (let i = 0; i < 10; i++) {
+    if (o && typeof o === "object" && o.data && typeof o.data === "object") {
+      // only unwrap if this layer doesn't already look like an org
+      if (!Array.isArray(o.users) && !o.orgId) o = o.data;
+      else break;
+    } else break;
+  }
+
+  return o;
+}
 
 export async function peekOrg(orgId) {
-  const id = String(orgId || "").trim();
-  if (!id) return null;
-
   const { rows } = await pool.query(
-    `
-    select
-      org_id,
-      data,
-      updated_at,
-      company_id
-    from qm_org_store
-    where org_id = $1
-    limit 1
-    `,
-    [id]
+    `select data from qm_org_store where org_id=$1 limit 1`,
+    [orgId]
   );
-
-  return rows[0] || null;
+  if (!rows.length) return null;
+  return canonicalOrgJson(rows[0].data);
 }
 
 export async function getOrg(orgId) {
-  const rec = await peekOrg(orgId);
-  if (!rec) return null;
-
-  // normalize to a single object shape used across server
-  return {
-    orgId: rec.org_id,
-    data: rec.data || {},
-    updatedAt: rec.updated_at,
-    companyId: rec.company_id || rec?.data?.companyId || null
-  };
+  const { rows } = await pool.query(
+    `select data from qm_org_store where org_id=$1 limit 1`,
+    [orgId]
+  );
+  if (!rows.length) {
+    // create empty org if missing (optional)
+    const org = { orgId, users: [], audit: [], createdAt: new Date().toISOString() };
+    await pool.query(
+      `insert into qm_org_store (org_id, data, updated_at) values ($1,$2::jsonb, now())`,
+      [orgId, JSON.stringify(org)]
+    );
+    return org;
+  }
+  return canonicalOrgJson(rows[0].data);
 }
 
-/**
- * Save org JSON (and optionally companyId as a real column).
- * This does an UPSERT so it works for new + existing orgs.
- */
-export async function saveOrg(orgId, data, { companyId = null } = {}) {
-  const id = String(orgId || "").trim();
-  if (!id) throw new Error("saveOrg: orgId required");
-
-  const obj = data && typeof data === "object" ? data : {};
-
-  // Prefer storing companyId in a real column if you have it,
-  // but keep it in JSON too so older code keeps working.
-  const cid = (companyId ?? obj.companyId ?? null);
-  if (cid && !obj.companyId) obj.companyId = cid;
-
-  // If your table uses camelCase quoted column "companyId"
-  // replace company_id with "companyId" in BOTH places below.
-  const { rows } = await pool.query(
-    `
-    insert into qm_org_store (org_id, data, company_id, updated_at)
-    values ($1, $2::jsonb, $3, now())
-    on conflict (org_id)
-    do update set
-      data = excluded.data,
-      company_id = excluded.company_id,
-      updated_at = now()
-    returning org_id, data, updated_at, company_id
-    `,
-    [id, JSON.stringify(obj), cid]
+export async function saveOrg(orgId, org) {
+  const canonical = canonicalOrgJson(org);
+  await pool.query(
+    `insert into qm_org_store (org_id, data, updated_at)
+     values ($1, $2::jsonb, now())
+     on conflict (org_id) do update set data = excluded.data, updated_at = now()`,
+    [orgId, JSON.stringify(canonical)]
   );
-
-  const rec = rows[0];
-  return {
-    orgId: rec.org_id,
-    data: rec.data || {},
-    updatedAt: rec.updated_at,
-    companyId: rec.company_id || rec?.data?.companyId || null
-  };
 }
