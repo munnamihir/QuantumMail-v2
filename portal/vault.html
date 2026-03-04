@@ -3,40 +3,95 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QuantumMail - Recovery Vault</title>
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
-  <h2>Recovery Vault (Token + 1 Trusted Device)</h2>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>QuantumMail</h1>
+          <div class="muted">Recovery Vault • Token + 1 Trusted Device</div>
+          <div class="orgLine">
+            <span class="badge">
+              <span class="badgeDot"></span>
+              <strong>Goal:</strong> Recover access without server-held keys
+            </span>
+            <span class="badge">
+              <span class="badgeDot"></span>
+              <strong>Flow:</strong> New device starts → Trusted device approves → New device finishes
+            </span>
+          </div>
+        </div>
+      </div>
 
-  <section class="card">
-    <h3>1) Enable Vault (do this once)</h3>
-    <p>This generates a Recovery Token. Save it somewhere safe. You’ll need it to recover after reinstall/cleared storage.</p>
-    <button id="enableBtn">Enable Recovery Vault</button>
+      <div class="right">
+        <a class="btn secondary" href="#" onclick="location.reload(); return false;">Reload</a>
+      </div>
+    </div>
 
-    <h4>Recovery Token (save this once)</h4>
-    <pre id="tokenOut">(not generated)</pre>
-  </section>
+    <div class="row">
+      <div class="card">
+        <h2>1) Enable Vault (one-time)</h2>
+        <div class="muted">
+          This generates a Recovery Token. Save it somewhere safe. You’ll need it if you reinstall or clear storage.
+        </div>
 
-  <section class="card">
-    <h3>2) Recover after reinstall / cleared storage</h3>
-    <p>Step A: Start a recovery request using your token.</p>
-    <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|SECRET" style="width: 100%;" />
-    <button id="startBtn">Start Recovery Request</button>
+        <div class="actions">
+          <button class="primary" id="enableBtn">Enable Recovery Vault</button>
+        </div>
 
-    <h4>Pending Request</h4>
-    <pre id="reqOut">(none)</pre>
+        <label>Recovery Token (only shown once)</label>
+        <pre id="tokenOut">(not generated)</pre>
 
-    <p>Step B: On another trusted device, approve the request.</p>
-    <button id="approveBtn" disabled>Approve This Request (on trusted device)</button>
+        <div class="help">
+          Tip: Store this token in a password manager or offline note. Anyone with the token + a trusted device approval can recover.
+        </div>
+      </div>
 
-    <p>Step C: Back on the new device, finish recovery (fetch vault + restore key).</p>
-    <button id="finishBtn" disabled>Finish Recovery</button>
-  </section>
+      <div class="card">
+        <h2>2) Recover after reinstall</h2>
 
-  <div class="card">
-    <strong>Status:</strong>
-    <div id="status">Ready.</div>
+        <label>Step A — On NEW device: paste token</label>
+        <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|SECRET" />
+
+        <div class="actions">
+          <button class="primary" id="startBtn">Start Recovery Request (NEW device)</button>
+          <button class="secondary" id="finishBtn" disabled>Finish Recovery (NEW device)</button>
+        </div>
+
+        <label>Started Request (NEW device)</label>
+        <pre id="reqOut">(none)</pre>
+
+        <hr />
+
+        <label>Step B — On TRUSTED device: load pending → approve</label>
+        <div class="actions">
+          <button class="secondary" id="loadPendingBtn">Load Pending Requests (Trusted device)</button>
+          <button class="danger" id="approveBtn" disabled>Approve Request (Trusted device)</button>
+        </div>
+
+        <label>Pending Request (Trusted device)</label>
+        <pre id="pendingOut">(none)</pre>
+
+        <div class="help">
+          If you’re on the new device and you click “Load Pending Requests”, you may see nothing (that’s okay).
+          Approval should happen on the device that still has your trusted identity.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Status</h2>
+      <div id="status" class="muted">Ready.</div>
+    </div>
+
+    <div class="foot muted">
+      Need help? If the extension bridge isn’t detected, reload the extension and hard refresh this page.
+    </div>
   </div>
 
   <script src="vault.js"></script>
