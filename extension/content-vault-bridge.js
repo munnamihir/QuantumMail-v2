@@ -14,7 +14,7 @@
   }
 
   // Load module helpers dynamically
-  const qmVaultUrl = chrome.runtime.getURL("extension/qmVault.js");
+  const qmVaultUrl = chrome.runtime.getURL("qmVault.js");
   const qmVault = await import(qmVaultUrl);
 
   window.addEventListener("message", async (event) => {
