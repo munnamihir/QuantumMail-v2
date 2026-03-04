@@ -11,6 +11,14 @@ import { apiJson } from "./qm.js";
  *   (b) approval signature from another trusted device
  */
 
+async function ensureLocalDeviceIdOnly() {
+  const existing = await getLocal("qm_device_id");
+  if (existing) return existing;
+  const device_id = randId("d_");
+  await setLocal({ qm_device_id: device_id });
+  return device_id;
+}
+
 function b64(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
@@ -162,7 +170,7 @@ export async function startRecoveryRequest(apiBase, tokenString) {
   const token_id = parts[1];
   const token_secret = parts[2];
 
-  const { device_id } = await ensureDeviceIdentity(apiBase);
+  const device_id = await ensureLocalDeviceIdOnly();
   const token_verifier_hash = await sha256Hex("qm|v2|" + token_id + "|" + token_secret);
 
   const out = await apiJson(apiBase, "/api/recovery/quorum/start", {
