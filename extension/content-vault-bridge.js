@@ -8,10 +8,18 @@ console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
   }
 
   async function getApiBase() {
-    const { qm_api_base } = await chrome.storage.local.get(["qm_api_base"]);
-    if (!qm_api_base) throw new Error("Missing qm_api_base in extension storage. Set API base / login once.");
-    return qm_api_base;
-  }
+  // 1) Prefer your existing session in chrome.storage.sync (serverBase)
+  const sync = await chrome.storage.sync.get(["serverBase"]);
+  const serverBase = (sync.serverBase || "").trim();
+  if (serverBase) return serverBase.replace(/\/+$/, "");
+
+  // 2) Fallback: legacy/local key if you ever set it
+  const local = await chrome.storage.local.get(["qm_api_base"]);
+  const apiBase = (local.qm_api_base || "").trim();
+  if (apiBase) return apiBase.replace(/\/+$/, "");
+
+  throw new Error("Missing API base. Set session.serverBase (sync) by logging in, or set qm_api_base (local).");
+}
 
   // Load module helpers dynamically
   const qmVaultUrl = chrome.runtime.getURL("qmVault.js");
