@@ -1,5 +1,5 @@
 // extension/qmVault.js
-import { apiJson } from "qm.js";
+import { apiJson } from "./qm.js";
 
 /**
  * Token + 1 device quorum recovery
