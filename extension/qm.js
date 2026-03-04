@@ -23,16 +23,12 @@ export async function apiJson(apiBase, path, opts = {}) {
   const base = String(apiBase || "").replace(/\/+$/, "");
   const url = base + path;
 
+  // ✅ use your existing getSession() from chrome.storage.sync
   const session = await getSession();
-  const token =
-    session?.token ||
-    session?.accessToken ||
-    session?.jwt ||
-    session?.bearer ||
-    null;
+  const token = session?.token || "";
 
   if (!token) {
-    throw new Error("Not logged in: missing session token in extension storage.");
+    throw new Error("Missing Bearer token. Login first so session.token is set.");
   }
 
   const headers = {
@@ -47,9 +43,15 @@ export async function apiJson(apiBase, path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
 
-  const text = await res.text().catch(() => "");
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  const raw = await res.text().catch(() => "");
+  let data;
+  try {
+    data = (res.headers.get("content-type") || "").includes("application/json")
+      ? JSON.parse(raw || "{}")
+      : raw;
+  } catch {
+    data = raw;
+  }
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
