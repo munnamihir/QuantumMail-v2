@@ -1,16 +1,44 @@
-<h2>Recovery Vault</h2>
+<!-- portal/vault.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>QuantumMail - Recovery Vault</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h2>Recovery Vault (Token + 1 Trusted Device)</h2>
 
-<button id="enableBtn">Enable Recovery Vault</button>
+  <section class="card">
+    <h3>1) Enable Vault (do this once)</h3>
+    <p>This generates a Recovery Token. Save it somewhere safe. You’ll need it to recover after reinstall/cleared storage.</p>
+    <button id="enableBtn">Enable Recovery Vault</button>
 
-<h3>Recovery Token (save this once)</h3>
-<pre id="tokenOut">(not generated)</pre>
+    <h4>Recovery Token (save this once)</h4>
+    <pre id="tokenOut">(not generated)</pre>
+  </section>
 
-<hr/>
+  <section class="card">
+    <h3>2) Recover after reinstall / cleared storage</h3>
+    <p>Step A: Start a recovery request using your token.</p>
+    <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|SECRET" style="width: 100%;" />
+    <button id="startBtn">Start Recovery Request</button>
 
-<h3>Recover after reinstall / cleared storage</h3>
-<textarea id="tokenIn" rows="3" style="width:520px" placeholder="qm-rrt-1|rrt_xxx|..."></textarea><br/>
-<button id="recoverBtn">Recover Access</button>
+    <h4>Pending Request</h4>
+    <pre id="reqOut">(none)</pre>
 
-<p id="status"></p>
+    <p>Step B: On another trusted device, approve the request.</p>
+    <button id="approveBtn" disabled>Approve This Request (on trusted device)</button>
 
-<script src="/assets/vault.js"></script>
+    <p>Step C: Back on the new device, finish recovery (fetch vault + restore key).</p>
+    <button id="finishBtn" disabled>Finish Recovery</button>
+  </section>
+
+  <div class="card">
+    <strong>Status:</strong>
+    <div id="status">Ready.</div>
+  </div>
+
+  <script src="vault.js"></script>
+</body>
+</html>
