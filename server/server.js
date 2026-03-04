@@ -13,6 +13,7 @@ import { approvalEmail, rejectionEmail } from "./emailTemplates.js";
 import { recoveryRoutes } from "./routes/recovery.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { recoveryQuorumRoutes } from "./routes/recoveryQuorum.js";
+import { recoveryVaultRoutes } from "./routes/recoveryVault.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -155,7 +156,12 @@ app.use(recoveryRoutes({
 }));
 
 app.use("/api/devices", requireAuth, deviceRoutes);
-app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
+
+// ✅ vault routes: /api/recovery/init, /api/recovery/vault
+app.use("/api/recovery", requireAuth, recoveryVaultRoutes);
+
+// ✅ quorum routes: /api/recovery/quorum/start, approve, fetch
+app.use("/api/recovery/quorum", requireAuth, recoveryQuorumRoutes);
 
 /* =========================================================
    No-cache for portal + /m
