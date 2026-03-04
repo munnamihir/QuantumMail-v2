@@ -1,7 +1,7 @@
 // extension/content-vault-bridge.js
 // Classic content script (no top-level imports).
 // We dynamically import module code using chrome.runtime.getURL().
-
+console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
 (async () => {
   function reply(type, payload) {
     window.postMessage({ source: "qm-ext", type, payload }, "*");
