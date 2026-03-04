@@ -154,8 +154,8 @@ app.use(recoveryRoutes({
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "" 
 }));
 
-app.use("/api/devices", requireAuth, deviceRoutes);
-app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
+app.use("/routes/devices", requireAuth, deviceRoutes);
+app.use("/routes/recovery", requireAuth, recoveryQuorumRoutes);
 
 /* =========================================================
    No-cache for portal + /m
