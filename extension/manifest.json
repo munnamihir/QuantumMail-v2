@@ -27,7 +27,8 @@
         "https://*.onrender.com/*"
       ],
       "js": ["content.js", "content-vault-bridge.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "type": "module"
     }
   ]
 }
