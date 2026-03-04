@@ -215,6 +215,7 @@ export async function finishRecoveryFetch(apiBase, request_id, token_id, token_s
   if (wk.length !== 32) throw new Error("Recovered WK has wrong length.");
 
   await setLocal({ qm_wk_b64: b64(wk) });
+  await ensureDeviceIdentity(apiBase);
   return true;
 }
 
