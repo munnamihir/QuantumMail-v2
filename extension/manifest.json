@@ -18,6 +18,20 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "web_accessible_resources": [
+  {
+    "resources": [
+      "qmVault.js",
+      "qm.js"
+    ],
+    "matches": [
+      "https://mail.google.com/*",
+      "https://outlook.office.com/*",
+      "https://outlook.live.com/*",
+      "https://*.onrender.com/*"
+    ]
+  }
+],
   "content_scripts": [
     {
       "matches": [
