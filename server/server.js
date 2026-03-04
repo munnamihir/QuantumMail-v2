@@ -161,7 +161,7 @@ app.use("/api/devices", requireAuth, deviceRoutes);
 app.use("/api/recovery", requireAuth, recoveryVaultRoutes);
 
 // ✅ quorum routes: /api/recovery/quorum/start, approve, fetch
-app.use("/api/recovery/quorum", requireAuth, recoveryQuorumRoutes);
+app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
 
 /* =========================================================
    No-cache for portal + /m
