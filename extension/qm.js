@@ -17,6 +17,23 @@ export function normalizeBase(url) {
   return s.replace(/\/+$/, "");
 }
 
+export async function apiJson(base, path, opts = {}) {
+  const res = await fetch(base + path, {
+    method: opts.method || "GET",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`HTTP ${res.status}: ${txt}`);
+  }
+
+  return res.json();
+}
+
 export async function getSession() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(DEFAULTS, (v) => resolve(v || DEFAULTS));
