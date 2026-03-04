@@ -1,5 +1,4 @@
 // portal/vault.js
-
 function sendToExtension(type, payload) {
   window.postMessage({ source: "qm-portal", type, payload }, "*");
 }
@@ -8,38 +7,45 @@ function $(id) {
   return document.getElementById(id);
 }
 
-function setStatus(s, kind = "muted") {
+function setStatus(s) {
   const el = $("status");
-  el.textContent = s;
-
-  el.classList.remove("ok", "err", "muted");
-  if (kind === "ok") el.classList.add("ok");
-  else if (kind === "err") el.classList.add("err");
-  else el.classList.add("muted");
+  if (el) el.textContent = String(s || "");
 }
 
-function pretty(obj) {
-  return JSON.stringify(obj, null, 2);
+function parseToken(tokenString) {
+  const parts = String(tokenString || "").trim().split("|");
+  if (parts.length !== 3 || parts[0] !== "qm-rrt-2") return null;
+  return { token_id: parts[1], token_secret: parts[2] };
 }
 
-let lastRecovery = null; // { request_id, nonce_b64, token_id, token_secret }
-let lastPending = null;  // { request_id, nonce_b64 }
+function setField(id, val) {
+  const el = $(id);
+  if (el) el.value = val ?? "";
+}
 
-function setPendingUI(pending) {
-  lastPending = pending || null;
-  if (!pending) {
-    $("pendingOut").textContent = "(none)";
-    $("approveBtn").disabled = true;
-    return;
+function getField(id) {
+  const el = $(id);
+  return el ? String(el.value || "").trim() : "";
+}
+
+function setPre(id, obj) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+}
+
+function enableBtn(id, enabled) {
+  const el = $(id);
+  if (el) el.disabled = !enabled;
+}
+
+function setStep(step) {
+  // steps: "ready" | "vault_enabled" | "started" | "approved" | "finished"
+  // purely UI toggles; no logic depends on this
+  if (step === "ready") {
+    enableBtn("approveBtn", true);
+    enableBtn("finishBtn", true);
   }
-  $("pendingOut").textContent = pretty(pending);
-  $("approveBtn").disabled = false;
-}
-
-function clearRecoveryUI() {
-  lastRecovery = null;
-  $("reqOut").textContent = "(none)";
-  $("finishBtn").disabled = true;
 }
 
 window.addEventListener("message", (event) => {
@@ -47,101 +53,90 @@ window.addEventListener("message", (event) => {
   if (!msg || msg.source !== "qm-ext") return;
 
   if (msg.type === "vault_enabled") {
-    $("tokenOut").textContent = msg.payload.token_display;
-    setStatus("Vault enabled ✅ Save your token NOW (this is the only time you’ll see it).", "ok");
+    const tok = msg.payload?.token_display || "(no token returned)";
+    setPre("tokenOut", tok);
+    setStatus("Vault enabled. Save your token NOW (only time you’ll see it).");
+    setStep("vault_enabled");
   }
 
   if (msg.type === "recovery_started") {
-    lastRecovery = msg.payload;
+    const payload = msg.payload || {};
+    const request_id = payload.request_id;
+    const nonce_b64 = payload.nonce_b64;
 
-    $("reqOut").textContent = pretty({
-      request_id: lastRecovery.request_id,
-      nonce_b64: lastRecovery.nonce_b64
-    });
+    // Put into UI fields so user can copy to trusted device
+    setField("reqId", request_id || "");
+    setField("nonce", nonce_b64 || "");
 
-    // ✅ IMPORTANT: do NOT enable approve here
-    // Approve is meant for TRUSTED DEVICE page.
-    $("finishBtn").disabled = false;
-
-    setStatus(
-      "Recovery request started ✅ Now open this Vault page on a TRUSTED device/profile and click “Load Pending Requests” → Approve. Then come back here and click Finish.",
-      "ok"
-    );
-  }
-
-  if (msg.type === "pending_loaded") {
-    // payload: { request_id, nonce_b64 } or null
-    setPendingUI(msg.payload?.pending || null);
-    if (msg.payload?.pending) {
-      setStatus("Pending request loaded. If this is your TRUSTED device, you can approve it.", "ok");
-    } else {
-      setStatus("No pending requests found for your account.", "muted");
-    }
+    setPre("reqOut", { request_id, nonce_b64 });
+    setStatus("Recovery request started. Copy Request ID + Nonce to your trusted device and approve there.");
+    setStep("started");
   }
 
   if (msg.type === "recovery_approved") {
-    setStatus("Approved ✅ Now go back to the NEW device/profile and click Finish Recovery.", "ok");
+    setStatus("Approved ✅ Now go back to the NEW device and click Finish Recovery.");
+    setStep("approved");
   }
 
   if (msg.type === "vault_recovered") {
-    setStatus("Recovery successful ✅ You can decrypt old links again.", "ok");
+    setStatus("Recovery successful ✅ You can decrypt old links again.");
+    setStep("finished");
   }
 
   if (msg.type === "vault_error") {
-    setStatus("Error: " + msg.payload.error, "err");
+    setStatus("Error: " + (msg.payload?.error || "unknown"));
   }
 });
 
-/* =========================
-   Button handlers
-========================= */
+/** =========================
+ * UI actions
+ * ========================= */
 
 $("enableBtn").onclick = () => {
-  setStatus("Enabling vault…");
+  setStatus("Enabling vault...");
   sendToExtension("enable_vault", {});
 };
 
 $("startBtn").onclick = () => {
-  const token = $("tokenIn").value.trim();
-  if (!token) return setStatus("Paste your token first.", "err");
+  const token = getField("tokenIn");
+  const parsed = parseToken(token);
+  if (!parsed) return setStatus("Paste a valid token: qm-rrt-2|token_id|token_secret");
 
-  clearRecoveryUI();
-  setPendingUI(null);
-
-  setStatus("Starting recovery request…");
+  setStatus("Starting recovery request on this NEW device...");
+  // Start creates request_id + nonce. That’s what you paste into trusted device.
   sendToExtension("start_recovery", { token });
 };
 
-$("loadPendingBtn").onclick = () => {
-  setStatus("Loading pending requests…");
-  sendToExtension("recovery_pending", {});
-};
-
+// This is used on TRUSTED DEVICE.
+// It should NOT rely on "lastRecovery" from the device that started it.
 $("approveBtn").onclick = () => {
-  if (!lastPending) return setStatus("No pending request loaded to approve.", "err");
-
-  setStatus("Approving recovery request (this must be on a TRUSTED device)…");
-  sendToExtension("approve_recovery", {
-    request_id: lastPending.request_id,
-    nonce_b64: lastPending.nonce_b64
-  });
+  const request_id = getField("reqId");
+  const nonce_b64 = getField("nonce");
+  if (!request_id || !nonce_b64) {
+    return setStatus("Paste Request ID + Nonce (from the new device) before approving.");
+  }
+  setStatus("Approving request on this TRUSTED device...");
+  sendToExtension("approve_recovery", { request_id, nonce_b64 });
 };
 
+// This is used on NEW DEVICE after trusted device approved.
+// It uses token + request_id (nonce not required for finish).
 $("finishBtn").onclick = () => {
-  if (!lastRecovery) return setStatus("No recovery request to finish.", "err");
+  const token = getField("tokenIn");
+  const parsed = parseToken(token);
+  if (!parsed) return setStatus("Paste a valid token: qm-rrt-2|token_id|token_secret");
 
-  setStatus("Finishing recovery (fetching vault + restoring key)…");
+  const request_id = getField("reqId");
+  if (!request_id) return setStatus("Request ID required. Paste it from Step A output.");
+
+  setStatus("Finishing recovery on NEW device (fetching vault + restoring key)...");
   sendToExtension("finish_recovery", {
-    request_id: lastRecovery.request_id,
-    token_id: lastRecovery.token_id,
-    token_secret: lastRecovery.token_secret
+    request_id,
+    token_id: parsed.token_id,
+    token_secret: parsed.token_secret
   });
 };
 
-/* =========================
-   Initial UI state
-========================= */
-$("approveBtn").disabled = true;
-$("finishBtn").disabled = true;
-setPendingUI(null);
-clearRecoveryUI();
+// initial state
+setStep("ready");
+setStatus("Ready.");
