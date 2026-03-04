@@ -17,21 +17,51 @@ export function normalizeBase(url) {
   return s.replace(/\/+$/, "");
 }
 
-export async function apiJson(base, path, opts = {}) {
-  const res = await fetch(base + path, {
+// extension/qm.js
+
+export async function getSession() {
+  // Adjust these keys if your repo uses different names
+  const r = await chrome.storage.local.get(["qm_session"]);
+  return r.qm_session || null;
+}
+
+export async function apiJson(apiBase, path, opts = {}) {
+  const base = String(apiBase || "").replace(/\/+$/, "");
+  const url = base + path;
+
+  const session = await getSession();
+  const token =
+    session?.token ||
+    session?.accessToken ||
+    session?.jwt ||
+    session?.bearer ||
+    null;
+
+  if (!token) {
+    throw new Error("Not logged in: missing session token in extension storage.");
+  }
+
+  const headers = {
+    "Content-Type": "application/json",
+    ...(opts.headers || {}),
+    Authorization: `Bearer ${token}`
+  };
+
+  const res = await fetch(url, {
     method: opts.method || "GET",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
 
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+
   if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`HTTP ${res.status}: ${txt}`);
+    throw new Error(`HTTP ${res.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
   }
 
-  return res.json();
+  return data;
 }
 
 export async function getSession() {
