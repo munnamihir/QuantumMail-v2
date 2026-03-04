@@ -11,6 +11,7 @@ import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
 import { sendMail } from "./mailer.js"; // single source of truth for email sending
 import { approvalEmail, rejectionEmail } from "./emailTemplates.js";
 import { recoveryRoutes } from "./routes/recovery.js";
+import { recoveryVaultRoutes } from "./routes/recoveryVault.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -771,6 +772,9 @@ app.get("/super/orgs/:orgId/overview", requireAuth, requireSuperAdmin, async (re
     admins: adminsList,
   });
 });
+
+app.use("/api/recovery", recoveryVaultRoutes);
+
 
 /* =========================================================
    ADMIN: SECURITY ALERTS
