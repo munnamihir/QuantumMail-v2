@@ -11,7 +11,8 @@ import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
 import { sendMail } from "./mailer.js"; // single source of truth for email sending
 import { approvalEmail, rejectionEmail } from "./emailTemplates.js";
 import { recoveryRoutes } from "./routes/recovery.js";
-import { recoveryVaultRoutes } from "./routes/recoveryVault.js";
+import { deviceRoutes } from "./routes/devices.js";
+import { recoveryQuorumRoutes } from "./routes/recoveryQuorum.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -153,6 +154,8 @@ app.use(recoveryRoutes({
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "" 
 }));
 
+app.use("/api/devices", requireAuth, deviceRoutes);
+app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
 
 /* =========================================================
    No-cache for portal + /m
@@ -773,7 +776,6 @@ app.get("/super/orgs/:orgId/overview", requireAuth, requireSuperAdmin, async (re
   });
 });
 
-app.use("/api/recovery", recoveryVaultRoutes);
 
 
 /* =========================================================
