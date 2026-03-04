@@ -19,12 +19,6 @@ export function normalizeBase(url) {
 
 // extension/qm.js
 
-export async function getSession() {
-  // Adjust these keys if your repo uses different names
-  const r = await chrome.storage.local.get(["qm_session"]);
-  return r.qm_session || null;
-}
-
 export async function apiJson(apiBase, path, opts = {}) {
   const base = String(apiBase || "").replace(/\/+$/, "");
   const url = base + path;
