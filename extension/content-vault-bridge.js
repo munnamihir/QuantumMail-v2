@@ -50,6 +50,13 @@ console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
         return;
       }
 
+
+      if (msg.type === "recovery_pending") {
+        const out = await qmVault.getPendingRecovery(apiBase);
+        reply("pending_loaded", { pending: out || null });
+        return;
+      }
+      
       if (msg.type === "approve_recovery") {
         const { request_id, nonce_b64 } = msg.payload || {};
         await qmVault.approveRecoveryRequest(apiBase, request_id, nonce_b64);
