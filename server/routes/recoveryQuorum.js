@@ -128,6 +128,17 @@ recoveryQuorumRoutes.post("/quorum/approve", requireAuth, async (req, res) => {
     return res.status(410).json({ error: "expired" });
   }
 
+
+  const rq = await pool.query(
+    `select request_id, user_id, nonce_b64, status, created_at, requester_device_id
+     from qm_recovery_requests where request_id=$1 and user_id=$2`,
+    [request_id, userId]
+  );
+
+  if (device_id === reqRow.requester_device_id) {
+    return res.status(403).json({ error: "self_approval_not_allowed" });
+  }
+  
   // load device pubkey
   const dev = await pool.query(
     `select pub_jwk, revoked from qm_devices where user_id=$1 and device_id=$2`,
