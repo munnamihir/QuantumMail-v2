@@ -485,6 +485,23 @@ async function ensureTables() {
       add column if not exists company_name text;
   `);
 
+await pool.query(`
+  create table if not exists qm_recovery_vault (
+    user_id text primary key,
+    token_id text not null,
+    token_verifier_hash text not null,
+    enc_wk_b64 text not null,
+    iv_b64 text not null,
+    wk_version int not null default 1,
+    updated_at timestamptz not null default now()
+  );
+`);
+
+await pool.query(`
+  create index if not exists idx_qm_recovery_vault_token
+  on qm_recovery_vault(token_id);
+`);
+   
   await pool.query(`create index if not exists idx_qm_org_requests_company on qm_org_requests(company_id, created_at);`);
      // Query orgs by companyId stored inside JSONB
   await pool.query(`
