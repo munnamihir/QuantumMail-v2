@@ -19,6 +19,13 @@ async function ensureLocalDeviceIdOnly() {
   return device_id;
 }
 
+export async function getPendingRecovery(apiBase) {
+  // expected to return { request_id, nonce_b64 } or null
+  const out = await apiJson(apiBase, "/api/recovery/quorum/pending", { method: "GET" });
+  if (!out || !out.request_id) return null;
+  return { request_id: out.request_id, nonce_b64: out.nonce_b64 };
+}
+
 function b64(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
