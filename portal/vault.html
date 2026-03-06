@@ -1,112 +1,101 @@
-<!-- portal/vault.html -->
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QuantumMail - Recovery Vault</title>
+  <title>QuantumMail - Trusted Devices & Recovery Vault</title>
   <link rel="stylesheet" href="ui.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="top">
       <div class="brand">
-        <div class="logo" aria-hidden="true"></div>
+        <div class="logo"></div>
         <div>
-          <h1>QuantumMail</h1>
-          <div class="muted">Recovery Vault · Token + 1 Trusted Device (Quorum)</div>
-          <div class="orgLine">
-            <span class="badge"><span class="badgeDot"></span><strong>Goal:</strong> recover access after reinstall/cleared storage</span>
-          </div>
+          <h1>QuantumMail Security</h1>
+          <div class="muted">Trusted devices and token + 1 device recovery</div>
         </div>
-      </div>
-
-      <div class="right">
-        <a class="btn secondary" href="index.html">← Back</a>
       </div>
     </div>
 
-    <!-- STEP 1 -->
-    <section class="card">
-      <h2>Step 1 · Enable Vault (one-time)</h2>
-      <div class="muted">
-        This generates a Recovery Token. Save it somewhere safe — you’ll need it if you reinstall the extension or clear storage.
+    <div class="card">
+      <h2>Trust this device</h2>
+      <p class="muted">
+        This device is not trusted automatically. Trust it only if you want to use it later for approving recovery on new devices.
+      </p>
+
+      <div class="row">
+        <div>
+          <label for="deviceLabel">Device label</label>
+          <input id="deviceLabel" placeholder="Mihir MacBook Pro" />
+        </div>
+        <div>
+          <label for="deviceType">Device type</label>
+          <select id="deviceType">
+            <option value="desktop">Desktop / Laptop</option>
+            <option value="mobile">Mobile</option>
+            <option value="tablet">Tablet</option>
+          </select>
+        </div>
       </div>
+
+      <div class="actions">
+        <button id="trustBtn" class="primary">Trust this device</button>
+        <button id="refreshDevicesBtn" class="secondary">Refresh devices</button>
+      </div>
+
+      <div id="trustMsg" class="ok"></div>
+      <div id="trustErr" class="err"></div>
+    </div>
+
+    <div class="card">
+      <h2>Trusted devices</h2>
+      <div id="devicesList" class="list"></div>
+    </div>
+
+    <div class="card">
+      <h2>Enable Recovery Vault</h2>
+      <p class="muted">
+        Generate your recovery token once. Save it safely. You will need this token plus one trusted device to recover on a new device later.
+      </p>
 
       <div class="actions">
         <button id="enableBtn" class="primary">Enable Recovery Vault</button>
       </div>
 
-      <div class="row">
-        <div>
-          <label>Recovery Token (shown only once)</label>
-          <pre id="tokenOut">(not generated)</pre>
-          <div class="help">Tip: store it in a password manager or a secure offline note.</div>
-        </div>
-      </div>
-    </section>
+      <label>Recovery token</label>
+      <pre id="tokenOut">(not generated)</pre>
+      <div id="vaultMsg" class="ok"></div>
+      <div id="vaultErr" class="err"></div>
+    </div>
 
-    <!-- STEP 2 -->
-    <section class="card" style="margin-top:12px;">
-      <h2>Step 2 · Recover after reinstall / cleared storage</h2>
-      <div class="muted">
-        This is a 3-part flow across devices:
-        <br/>A) New device starts request → B) Trusted device approves → C) New device finishes.
-      </div>
+    <div class="card">
+      <h2>Recover on a new device</h2>
 
-      <div class="row">
-        <div>
-          <label>Your Recovery Token</label>
-          <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|SECRET" />
-          <div class="help">Required on the NEW device to start and finish.</div>
-        </div>
-      </div>
+      <label for="tokenIn">Recovery token</label>
+      <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|secret" />
 
       <div class="actions">
-        <button id="startBtn" class="primary">A) Start Recovery Request (NEW device)</button>
+        <button id="startBtn" class="primary">Start Recovery</button>
+        <button id="finishBtn" class="secondary" disabled>Finish Recovery</button>
       </div>
 
-      <div class="row">
-        <div>
-          <label>Request ID (copy to trusted device)</label>
-          <input id="reqId" placeholder="request_id will appear here" />
-        </div>
-        <div>
-          <label>Nonce (copy to trusted device)</label>
-          <input id="nonce" placeholder="nonce will appear here" />
-        </div>
-      </div>
+      <label>Recovery request</label>
+      <pre id="reqOut">(none)</pre>
+      <div id="recoverMsg" class="ok"></div>
+      <div id="recoverErr" class="err"></div>
+    </div>
 
-      <div class="row">
-        <div>
-          <label>Pending Request (for copy/paste)</label>
-          <pre id="reqOut">(none)</pre>
-          <div class="help">
-            Copy <strong>Request ID</strong> + <strong>Nonce</strong> into the same page opened in your trusted device/profile, then click Approve.
-          </div>
-        </div>
-      </div>
+    <div class="card">
+      <h2>Approve pending recovery requests</h2>
 
       <div class="actions">
-        <button id="approveBtn" class="secondary">B) Approve (TRUSTED device)</button>
-        <button id="finishBtn" class="primary">C) Finish Recovery (NEW device)</button>
+        <button id="loadPendingBtn" class="secondary">Load pending requests</button>
       </div>
 
-      <div class="help">
-        ✅ You should approve on a <strong>different device/profile</strong> than the one that started recovery.
-      </div>
-    </section>
-
-    <!-- STATUS -->
-    <section class="card" style="margin-top:12px;">
-      <div class="badge" style="max-width:100%;">
-        <span class="badgeDot"></span>
-        <strong>Status</strong>
-      </div>
-      <div id="status" class="muted" style="margin-top:10px;">Ready.</div>
-    </section>
-
-    <div class="foot muted">QuantumMail · Recovery Vault</div>
+      <div id="pendingList" class="list"></div>
+      <div id="approveMsg" class="ok"></div>
+      <div id="approveErr" class="err"></div>
+    </div>
   </div>
 
   <script src="vault.js"></script>
