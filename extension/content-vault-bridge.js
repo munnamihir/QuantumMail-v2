@@ -83,7 +83,8 @@
           apiBase,
           msg.payload?.request_id,
           msg.payload?.token_id,
-          msg.payload?.token_secret
+          msg.payload?.token_secret,
+          msg.payload?.token_prefix || "qm-rrt-3"
         );
         reply("vault_recovered", {});
         return;
