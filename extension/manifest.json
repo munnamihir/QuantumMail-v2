@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "QuantumMail (Envelope Encryption MVP)",
-  "version": "0.5",
+  "version": "0.6",
   "description": "Encrypt selected email text into a secure link. Envelope encryption with per-user wrapped keys.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": [
     "https://mail.google.com/*",
     "https://outlook.office.com/*",
     "https://outlook.live.com/*",
+    "https://quantummail-v2.onrender.com/*",
     "https://*.onrender.com/*"
   ],
   "action": {
@@ -18,30 +19,29 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "web_accessible_resources": [
-  {
-    "resources": [
-      "qmVault.js",
-      "qm.js"
-    ],
-    "matches": [
-      "https://mail.google.com/*",
-      "https://outlook.office.com/*",
-      "https://outlook.live.com/*",
-      "https://*.onrender.com/*"
-    ]
-  }
-],
   "content_scripts": [
     {
       "matches": [
         "https://mail.google.com/*",
         "https://outlook.office.com/*",
         "https://outlook.live.com/*",
+        "https://quantummail-v2.onrender.com/*",
         "https://*.onrender.com/*"
       ],
       "js": ["content.js", "content-vault-bridge.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["qmVault.js", "qm.js"],
+      "matches": [
+        "https://mail.google.com/*",
+        "https://outlook.office.com/*",
+        "https://outlook.live.com/*",
+        "https://quantummail-v2.onrender.com/*",
+        "https://*.onrender.com/*"
+      ]
     }
   ]
 }
