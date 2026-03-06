@@ -10,42 +10,47 @@ function requireAuth(req, res, next) {
 }
 
 deviceRoutes.post("/register", requireAuth, async (req, res) => {
-  const userId = req.qm.user.userId;
-  const {
-    device_id,
-    label,
-    device_type = "desktop",
-    pub_jwk
-  } = req.body || {};
+  try {
+    const userId = req.qm.user.userId;
+    const {
+      device_id,
+      label,
+      device_type = "desktop",
+      pub_jwk
+    } = req.body || {};
 
-  if (!device_id || !pub_jwk) {
-    return res.status(400).json({ error: "device_id and pub_jwk required" });
+    if (!device_id || !pub_jwk) {
+      return res.status(400).json({ error: "device_id and pub_jwk required" });
+    }
+
+    const q = `
+      insert into qm_devices
+        (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
+      values
+        ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
+      on conflict (user_id, device_id) do update set
+        label = excluded.label,
+        device_type = excluded.device_type,
+        pub_jwk = excluded.pub_jwk,
+        last_seen_at = now(),
+        revoked = false
+      returning user_id, device_id, label, device_type, created_at, last_seen_at, revoked
+    `;
+
+    const vals = [
+      userId,
+      String(device_id),
+      String(label || ""),
+      String(device_type || "desktop"),
+      JSON.stringify(pub_jwk)
+    ];
+
+    const { rows } = await pool.query(q, vals);
+    res.json({ ok: true, device: rows[0] });
+  } catch (e) {
+    console.error("POST /api/devices/register failed:", e);
+    res.status(500).json({ error: "device_register_failed", detail: String(e?.message || e) });
   }
-
-  const q = `
-    insert into qm_devices
-      (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
-    values
-      ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
-    on conflict (user_id, device_id) do update set
-      label = excluded.label,
-      device_type = excluded.device_type,
-      pub_jwk = excluded.pub_jwk,
-      last_seen_at = now(),
-      revoked = false
-    returning user_id, device_id, label, device_type, created_at, last_seen_at, revoked
-  `;
-
-  const vals = [
-    userId,
-    String(device_id),
-    String(label || ""),
-    String(device_type || "desktop"),
-    JSON.stringify(pub_jwk)
-  ];
-
-  const { rows } = await pool.query(q, vals);
-  res.json({ ok: true, device: rows[0] });
 });
 
 deviceRoutes.get("/list", requireAuth, async (req, res) => {
