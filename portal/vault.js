@@ -130,7 +130,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (msg.type === "vault_recovered") {
-    $("recoverMsg").textContent = "Recovery successful. You can now trust this device if you want to use it later.";
+    $("recoverMsg").textContent = "Recovery successful. RSA + vault keys restored on this device.";
     return;
   }
 
@@ -181,7 +181,8 @@ $("finishBtn").onclick = () => {
   sendToExtension("finish_recovery", {
     request_id: lastRecovery.request_id,
     token_id: lastRecovery.token_id,
-    token_secret: lastRecovery.token_secret
+    token_secret: lastRecovery.token_secret,
+    token_prefix: lastRecovery.token_prefix || "qm-rrt-3"
   });
 };
 
