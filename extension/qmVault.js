@@ -4,6 +4,7 @@ import { apiJson, getSession } from "./qm.js";
 function b64(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
+
 function unb64(s) {
   return Uint8Array.from(atob(String(s || "")), (c) => c.charCodeAt(0));
 }
@@ -16,11 +17,19 @@ async function sha256Hex(str) {
 
 async function hkdfKeyFromToken(tokenId, tokenSecret) {
   const ikm = new TextEncoder().encode(tokenSecret);
-  const salt = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("qm-recovery|" + tokenId));
+  const salt = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode("qm-recovery|" + tokenId)
+  );
 
   const baseKey = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt, info: new TextEncoder().encode("qm-wk-wrap-v2") },
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt,
+      info: new TextEncoder().encode("qm-vault-wrap-v3")
+    },
     baseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -77,13 +86,11 @@ async function ensureLocalDeviceIdentity() {
 
 export async function trustCurrentDevice(apiBase, label = "", deviceType = "desktop") {
   const ident = await ensureLocalDeviceIdentity();
-
   const session = await getSession();
+
   const defaultLabel =
     label ||
-    session?.user?.username
-      ? `${session.user.username} device`
-      : navigator.userAgent.slice(0, 48);
+    (session?.user?.username ? `${session.user.username} device` : navigator.userAgent.slice(0, 48));
 
   const out = await apiJson(apiBase, "/api/devices/register", {
     method: "POST",
@@ -120,6 +127,23 @@ export async function ensureWrapKey() {
   return wk;
 }
 
+async function getUserId() {
+  const session = await getSession();
+  const userId = session?.user?.userId || session?.userId || session?.user?.id || "";
+  if (!userId) throw new Error("Missing userId in session.");
+  return userId;
+}
+
+async function getStoredRsaBundle() {
+  const userId = await getUserId();
+  const key = `qm_rsa_${userId}`;
+  const bundle = await getLocal(key);
+  if (!bundle?.privateJwk || !bundle?.publicJwk) {
+    throw new Error("RSA keypair not found locally. Generate/login first on the original device.");
+  }
+  return { key, bundle };
+}
+
 export async function setupRecoveryVault(apiBase) {
   const init = await apiJson(apiBase, "/api/recovery/init", { method: "POST", body: {} });
   const token_id = init.token_id;
@@ -128,19 +152,29 @@ export async function setupRecoveryVault(apiBase) {
   const token_secret = b64(secretBytes).replace(/=+$/, "");
 
   const wk = await ensureWrapKey();
-  const key = await hkdfKeyFromToken(token_id, token_secret);
-  const { iv, ct } = await aesGcmEncrypt(key, wk);
+  const { key: rsaStorageKey, bundle: rsaBundle } = await getStoredRsaBundle();
 
-  const token_verifier_hash = await sha256Hex("qm|v2|" + token_id + "|" + token_secret);
+  const vaultPayload = {
+    version: 3,
+    wk_b64: b64(wk),
+    rsa_storage_key: rsaStorageKey,
+    rsa_bundle: rsaBundle
+  };
+
+  const key = await hkdfKeyFromToken(token_id, token_secret);
+  const vaultBytes = new TextEncoder().encode(JSON.stringify(vaultPayload));
+  const { iv, ct } = await aesGcmEncrypt(key, vaultBytes);
+
+  const token_verifier_hash = await sha256Hex("qm|v3|" + token_id + "|" + token_secret);
 
   await apiJson(apiBase, "/api/recovery/vault", {
     method: "PUT",
     body: {
       token_id,
       token_verifier_hash,
-      enc_wk_b64: b64(ct),
+      enc_wk_b64: b64(ct),   // keeping same server field name; now contains whole vault blob
       iv_b64: b64(iv),
-      wk_version: 2
+      wk_version: 3
     }
   });
 
@@ -152,21 +186,23 @@ export async function setupRecoveryVault(apiBase) {
   return {
     token_id,
     token_secret,
-    display: `qm-rrt-2|${token_id}|${token_secret}`
+    display: `qm-rrt-3|${token_id}|${token_secret}`
   };
 }
 
 export async function startRecoveryRequest(apiBase, tokenString) {
   const parts = String(tokenString || "").split("|");
-  if (parts.length !== 3 || parts[0] !== "qm-rrt-2") {
-    throw new Error("Bad token format. Expected: qm-rrt-2|token_id|token_secret");
+  if (parts.length !== 3 || (parts[0] !== "qm-rrt-2" && parts[0] !== "qm-rrt-3")) {
+    throw new Error("Bad token format. Expected: qm-rrt-3|token_id|token_secret");
   }
 
   const token_id = parts[1];
   const token_secret = parts[2];
 
   const ident = await ensureLocalDeviceIdentity();
-  const token_verifier_hash = await sha256Hex("qm|v2|" + token_id + "|" + token_secret);
+  const token_verifier_hash = await sha256Hex(
+    `${parts[0] === "qm-rrt-3" ? "qm|v3|" : "qm|v2|"}${token_id}|${token_secret}`
+  );
 
   const out = await apiJson(apiBase, "/api/recovery/quorum/start", {
     method: "POST",
@@ -181,7 +217,8 @@ export async function startRecoveryRequest(apiBase, tokenString) {
     request_id: out.request_id,
     nonce_b64: out.nonce_b64,
     token_id,
-    token_secret
+    token_secret,
+    token_prefix: parts[0]
   };
 }
 
@@ -199,7 +236,6 @@ async function signWithDevice(priv_jwk, msg) {
 
 export async function approveRecoveryRequest(apiBase, request_id, nonce_b64) {
   const ident = await ensureLocalDeviceIdentity();
-
   const msg = `qm-recover-v1|${request_id}|${nonce_b64}`;
   const sig_b64 = await signWithDevice(ident.priv_jwk, msg);
 
@@ -215,8 +251,9 @@ export async function approveRecoveryRequest(apiBase, request_id, nonce_b64) {
   return true;
 }
 
-export async function finishRecoveryFetch(apiBase, request_id, token_id, token_secret) {
-  const token_verifier_hash = await sha256Hex("qm|v2|" + token_id + "|" + token_secret);
+export async function finishRecoveryFetch(apiBase, request_id, token_id, token_secret, tokenPrefix = "qm-rrt-3") {
+  const verifierPrefix = tokenPrefix === "qm-rrt-2" ? "qm|v2|" : "qm|v3|";
+  const token_verifier_hash = await sha256Hex(`${verifierPrefix}${token_id}|${token_secret}`);
 
   const out = await apiJson(apiBase, "/api/recovery/quorum/fetch", {
     method: "POST",
@@ -229,10 +266,23 @@ export async function finishRecoveryFetch(apiBase, request_id, token_id, token_s
 
   const v = out.vault;
   const key = await hkdfKeyFromToken(v.token_id, token_secret);
-  const wk = await aesGcmDecrypt(key, unb64(v.iv_b64), unb64(v.enc_wk_b64));
+  const vaultBytes = await aesGcmDecrypt(key, unb64(v.iv_b64), unb64(v.enc_wk_b64));
 
-  if (wk.length !== 32) throw new Error("Recovered WK has wrong length.");
+  let vault;
+  try {
+    vault = JSON.parse(new TextDecoder().decode(vaultBytes));
+  } catch {
+    throw new Error("Recovered vault payload is invalid.");
+  }
 
-  await setLocal({ qm_wk_b64: b64(wk) });
+  if (!vault?.wk_b64 || !vault?.rsa_storage_key || !vault?.rsa_bundle) {
+    throw new Error("Recovered vault is missing WK or RSA bundle.");
+  }
+
+  await setLocal({
+    qm_wk_b64: vault.wk_b64,
+    [vault.rsa_storage_key]: vault.rsa_bundle
+  });
+
   return true;
 }
