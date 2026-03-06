@@ -6,40 +6,46 @@ export const DEFAULTS = {
   user: null
 };
 
-// ✅ FIX: accept "quantummail.onrender.com" and turn into "https://quantummail.onrender.com"
 export function normalizeBase(url) {
   let s = String(url || "").trim();
-
-  // add scheme if missing
   if (s && !/^https?:\/\//i.test(s)) s = "https://" + s;
-
-  // strip trailing slashes
   return s.replace(/\/+$/, "");
 }
 
-// extension/qm.js
+export async function getSession() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(DEFAULTS, (v) => resolve(v || DEFAULTS));
+  });
+}
+
+export async function setSession(patch) {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set(patch, () => resolve());
+  });
+}
+
+export async function clearSession() {
+  return setSession({ ...DEFAULTS });
+}
 
 export async function apiJson(apiBase, path, opts = {}) {
-  const base = String(apiBase || "").replace(/\/+$/, "");
+  const base = normalizeBase(apiBase);
   const url = base + path;
 
-  // ✅ use your existing getSession() from chrome.storage.sync
   const session = await getSession();
-  const token = session?.token || "";
+  const token = String(session?.token || "").trim();
 
   if (!token) {
     throw new Error("Missing Bearer token. Login first so session.token is set.");
   }
 
-  const headers = {
-    "Content-Type": "application/json",
-    ...(opts.headers || {}),
-    Authorization: `Bearer ${token}`
-  };
-
   const res = await fetch(url, {
     method: opts.method || "GET",
-    headers,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(opts.headers || {})
+    },
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
 
@@ -58,22 +64,6 @@ export async function apiJson(apiBase, path, opts = {}) {
   }
 
   return data;
-}
-
-export async function getSession() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(DEFAULTS, (v) => resolve(v || DEFAULTS));
-  });
-}
-
-export async function setSession(patch) {
-  return new Promise((resolve) => {
-    chrome.storage.sync.set(patch, () => resolve());
-  });
-}
-
-export async function clearSession() {
-  return setSession({ ...DEFAULTS });
 }
 
 // ---------- Base64 helpers ----------
@@ -99,12 +89,6 @@ export function b64UrlToBytes(b64url) {
   while (b64.length % 4) b64 += "=";
   return b64ToBytes(b64);
 }
-
-/* =========================================================
-   ✅ RSA keypairs (PER USER)
-   - fixes OperationError unwrap mismatch
-   - fixes "user B overwrote user A keys"
-========================================================= */
 
 function rsaStorageKey(userId) {
   const id = String(userId || "").trim();
@@ -153,7 +137,10 @@ export async function getOrCreateRsaKeypair(userId) {
   const publicJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
 
   await new Promise((resolve) => {
-    chrome.storage.local.set({ [key]: { privateJwk, publicJwk, createdAt: new Date().toISOString() } }, () => resolve());
+    chrome.storage.local.set(
+      { [key]: { privateJwk, publicJwk, createdAt: new Date().toISOString() } },
+      () => resolve()
+    );
   });
 
   return { privateKey: kp.privateKey, publicKey: kp.publicKey };
@@ -175,10 +162,6 @@ export async function importPublicSpkiB64(publicKeySpkiB64) {
   );
 }
 
-/**
- * ✅ Register the *current user's* public key
- * Pass userId from login response/session.
- */
 export async function ensureKeypairAndRegister(serverBase, token, userId) {
   if (!userId) throw new Error("ensureKeypairAndRegister: missing userId");
 
@@ -205,7 +188,7 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
       data = { raw };
     }
 
-    return { res, data, raw };
+    return { res, data };
   }
 
   let out = await tryRegister("/org/register-key");
@@ -217,7 +200,6 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
   throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);
 }
 
-// AES-GCM envelope encryption
 export async function aesEncrypt(plaintext, aadText = "gmail") {
   const dek = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
     "encrypt",
@@ -225,7 +207,6 @@ export async function aesEncrypt(plaintext, aadText = "gmail") {
   ]);
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
-
   const ptBytes = new TextEncoder().encode(plaintext);
   const aadBytes = new TextEncoder().encode(aadText);
 
