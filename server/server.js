@@ -151,8 +151,8 @@ app.use(recoveryRoutes({
   saveOrg,
   sendMail,
   tokenSecret: TOKEN_SECRET,
-  hashPassword, 
-  publicBaseUrl: process.env.PUBLIC_BASE_URL || "" 
+  hashPassword,
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || ""
 }));
 
 app.use("/api/devices", requireAuth, deviceRoutes);
@@ -486,21 +486,59 @@ async function ensureTables() {
   `);
 
 await pool.query(`
-  create table if not exists qm_recovery_vault (
-    user_id text primary key,
-    token_id text not null,
-    token_verifier_hash text not null,
-    enc_wk_b64 text not null,
-    iv_b64 text not null,
-    wk_version int not null default 1,
-    updated_at timestamptz not null default now()
-  );
-`);
+    create table if not exists qm_recovery_vault (
+      user_id text primary key,
+      token_id text not null,
+      token_verifier_hash text not null,
+      enc_wk_b64 text not null,
+      iv_b64 text not null,
+      wk_version int not null default 2,
+      updated_at timestamptz not null default now()
+    );
+  `);
 
-await pool.query(`
-  create index if not exists idx_qm_recovery_vault_token
-  on qm_recovery_vault(token_id);
-`);
+  await pool.query(`
+    create index if not exists idx_qm_recovery_vault_token_id
+    on qm_recovery_vault(token_id);
+  `);
+
+  await pool.query(`
+    create table if not exists qm_devices (
+      user_id text not null,
+      device_id text not null,
+      label text not null default '',
+      device_type text not null default 'desktop',
+      pub_jwk jsonb not null,
+      created_at timestamptz not null default now(),
+      last_seen_at timestamptz not null default now(),
+      revoked boolean not null default false,
+      primary key (user_id, device_id)
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists qm_recovery_requests (
+      request_id text primary key,
+      user_id text not null,
+      token_id text not null,
+      requester_device_id text not null,
+      nonce_b64 text not null,
+      status text not null default 'PENDING',
+      created_at timestamptz not null default now(),
+      approved_at timestamptz null
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists qm_recovery_approvals (
+      request_id text not null,
+      user_id text not null,
+      device_id text not null,
+      sig_b64 text not null,
+      approved_at timestamptz not null default now(),
+      primary key (request_id, device_id)
+    );
+  `);
    
   await pool.query(`create index if not exists idx_qm_org_requests_company on qm_org_requests(company_id, created_at);`);
      // Query orgs by companyId stored inside JSONB
