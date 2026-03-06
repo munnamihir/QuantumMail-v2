@@ -1,27 +1,23 @@
 // extension/content-vault-bridge.js
-// Classic content script (no top-level imports).
-// We dynamically import module code using chrome.runtime.getURL().
-console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
 (async () => {
+  console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
+
   function reply(type, payload) {
     window.postMessage({ source: "qm-ext", type, payload }, "*");
   }
 
   async function getApiBase() {
-  // 1) Prefer your existing session in chrome.storage.sync (serverBase)
-  const sync = await chrome.storage.sync.get(["serverBase"]);
-  const serverBase = (sync.serverBase || "").trim();
-  if (serverBase) return serverBase.replace(/\/+$/, "");
+    const sync = await chrome.storage.sync.get(["serverBase"]);
+    const serverBase = (sync.serverBase || "").trim();
+    if (serverBase) return serverBase.replace(/\/+$/, "");
 
-  // 2) Fallback: legacy/local key if you ever set it
-  const local = await chrome.storage.local.get(["qm_api_base"]);
-  const apiBase = (local.qm_api_base || "").trim();
-  if (apiBase) return apiBase.replace(/\/+$/, "");
+    const local = await chrome.storage.local.get(["qm_api_base"]);
+    const apiBase = (local.qm_api_base || "").trim();
+    if (apiBase) return apiBase.replace(/\/+$/, "");
 
-  throw new Error("Missing API base. Set session.serverBase (sync) by logging in, or set qm_api_base (local).");
-}
+    throw new Error("Missing API base. Login first so session.serverBase is set.");
+  }
 
-  // Load module helpers dynamically
   const qmVaultUrl = chrome.runtime.getURL("qmVault.js");
   const qmVault = await import(qmVaultUrl);
 
@@ -38,35 +34,57 @@ console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
         return;
       }
 
+      if (msg.type === "trust_this_device") {
+        const out = await qmVault.trustCurrentDevice(
+          apiBase,
+          msg.payload?.label || "",
+          msg.payload?.device_type || "desktop"
+        );
+        reply("device_trusted", { device: out });
+        return;
+      }
+
+      if (msg.type === "load_devices") {
+        const devices = await qmVault.listTrustedDevices(apiBase);
+        reply("devices_loaded", { devices });
+        return;
+      }
+
+      if (msg.type === "revoke_device") {
+        await qmVault.revokeTrustedDevice(apiBase, msg.payload?.device_id);
+        reply("device_revoked", { device_id: msg.payload?.device_id });
+        return;
+      }
+
       if (msg.type === "start_recovery") {
-        const { token } = msg.payload || {};
-        const out = await qmVault.startRecoveryRequest(apiBase, token);
-        reply("recovery_started", {
-          request_id: out.request_id,
-          nonce_b64: out.nonce_b64,
-          token_id: out.token_id,
-          token_secret: out.token_secret
-        });
+        const out = await qmVault.startRecoveryRequest(apiBase, msg.payload?.token);
+        reply("recovery_started", out);
         return;
       }
 
-
-      if (msg.type === "recovery_pending") {
-        const out = await qmVault.getPendingRecovery(apiBase);
-        reply("pending_loaded", { pending: out || null });
+      if (msg.type === "load_pending") {
+        const pending = await qmVault.getPendingRecovery(apiBase);
+        reply("pending_loaded", { pending });
         return;
       }
-      
+
       if (msg.type === "approve_recovery") {
-        const { request_id, nonce_b64 } = msg.payload || {};
-        await qmVault.approveRecoveryRequest(apiBase, request_id, nonce_b64);
-        reply("recovery_approved", { request_id });
+        await qmVault.approveRecoveryRequest(
+          apiBase,
+          msg.payload?.request_id,
+          msg.payload?.nonce_b64
+        );
+        reply("recovery_approved", { request_id: msg.payload?.request_id });
         return;
       }
 
       if (msg.type === "finish_recovery") {
-        const { request_id, token_id, token_secret } = msg.payload || {};
-        await qmVault.finishRecoveryFetch(apiBase, request_id, token_id, token_secret);
+        await qmVault.finishRecoveryFetch(
+          apiBase,
+          msg.payload?.request_id,
+          msg.payload?.token_id,
+          msg.payload?.token_secret
+        );
         reply("vault_recovered", {});
         return;
       }
@@ -74,7 +92,4 @@ console.log("QM vault bridge injected ✅", chrome?.runtime?.id);
       reply("vault_error", { error: String(e?.message || e) });
     }
   });
-
-  // Optional: confirm loaded
-  // console.log("QM vault bridge loaded");
 })();
