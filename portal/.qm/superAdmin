@@ -27,3 +27,19 @@ SELECT
   jsonb_pretty(data) AS org_data_pretty
 FROM qm_org_store
 WHERE org_id = 'Org_deloitte';
+
+----adding superAdmin
+fetch("/bootstrap/superadmin", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-QM-Bootstrap": "PASTE_IT_HERE"
+  },
+  body: JSON.stringify({
+    username: "SET_YOUR_USERNAME",
+    password: "SET_PASSWORD_HERE"
+  })
+})
+.then(r => r.json())
+.then(console.log)
+.catch(console.error);
