@@ -5,7 +5,18 @@ button.innerText = "QIE";
 
 document.body.appendChild(button);
 
-const popup = document.createElement("div");
+const button = document.getElementById("qie-button");
+const popup = document.getElementById("qie-popup");
+const close = document.getElementById("qie-close");
+
+button.onclick = () => {
+  popup.style.display = "flex";
+};
+
+close.onclick = () => {
+  popup.style.display = "none";
+};
+
 popup.id = "qie-popup";
 
 popup.innerHTML = `
