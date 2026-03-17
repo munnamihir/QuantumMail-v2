@@ -120,3 +120,75 @@ textarea { min-height: 220px; resize: vertical; }
 @media (max-width: 920px) {
   .grid { grid-template-columns: 1fr; }
 }
+#qie-button{
+  position:fixed;
+  bottom:25px;
+  right:25px;
+  width:55px;
+  height:55px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#1e3a8a,#3b82f6);
+  color:white;
+  font-weight:bold;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,.3);
+  z-index:9999;
+}
+
+#qie-popup{
+  position:fixed;
+  bottom:90px;
+  right:25px;
+  width:360px;
+  height:480px;
+  background:#0f172a;
+  border-radius:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.4);
+  display:none;
+  flex-direction:column;
+  color:white;
+  z-index:9999;
+}
+
+#qie-header{
+  padding:12px;
+  font-weight:bold;
+  border-bottom:1px solid rgba(255,255,255,.1);
+  display:flex;
+  justify-content:space-between;
+}
+
+#qie-close{
+  cursor:pointer;
+}
+
+#qie-messages{
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+  font-size:14px;
+}
+
+#qie-input-area{
+  display:flex;
+  border-top:1px solid rgba(255,255,255,.1);
+}
+
+#qie-input{
+  flex:1;
+  border:none;
+  padding:10px;
+  background:#1e293b;
+  color:white;
+}
+
+#qie-send{
+  background:#3b82f6;
+  border:none;
+  padding:10px 14px;
+  color:white;
+  cursor:pointer;
+}
