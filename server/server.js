@@ -5,7 +5,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import cors from "cors";
-
+import qieRoutes from "./routes/qie.js";
 import { pool } from "./db.js"; // Neon/PG pool
 import { peekOrg, getOrg, saveOrg } from "./orgStore.js"; // JSONB org store
 import { sendMail } from "./mailer.js"; // single source of truth for email sending
@@ -163,6 +163,8 @@ app.use("/api/recovery", requireAuth, recoveryVaultRoutes);
 // ✅ quorum routes: /api/recovery/quorum/start, approve, fetch
 app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
 
+//QIE AI bot
+app.use("/qie", qieRoutes);
 /* =========================================================
    No-cache for portal + /m
 ========================================================= */
