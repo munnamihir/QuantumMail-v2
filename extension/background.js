@@ -353,7 +353,7 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
 
   let rawDek;
   try {
-    rawDek = await rsaUnwrapDek(kp.privateKey, payload.wrappedDek);
+    rawDek = await rsaUnwrapDek(kp.privateKey, wrappedDek);
   } catch {
     throw new Error(
       "Decrypt failed: your device key does not match the key used when this link was created.\n" +
