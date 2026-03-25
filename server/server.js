@@ -635,7 +635,8 @@ app.post("/auth/signup", async (req, res) => {
 ========================================================= */
 app.post("/org/revoke-device", requireAuth, async (req, res) => {
   try {
-    const user = req.user;
+    const { user, org } = req.qm;
+    const orgId = req.qm.tokenPayload.orgId;
     const { deviceId } = req.body;
 
     const org = await getOrg(user.orgId);
@@ -2282,7 +2283,8 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 
 app.get("/api/messages/:id", requireAuth, async (req, res) => {
   try {
-    const user = req.user;
+    const { user, org } = req.qm;
+    const orgId = req.qm.tokenPayload.orgId;
     const messageId = req.params.id;
 
     const deviceId = req.headers["x-qm-device-id"];
