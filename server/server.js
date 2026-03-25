@@ -630,6 +630,37 @@ app.post("/auth/signup", async (req, res) => {
 });
 
 /* =========================================================
+   ORG: Revoke Device 
+   GET /org/revoke-device
+========================================================= */
+app.post("/org/revoke-device", requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+    const { deviceId } = req.body;
+
+    const org = await getOrg(user.orgId);
+    ensureDevicesArray(org);
+
+    const device = getDeviceFromOrg(org, user.userId, deviceId);
+
+    if (!device) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    device.status = "revoked";
+    device.revokedAt = new Date().toISOString();
+
+    await saveOrg(user.orgId, org);
+
+    return res.json({ ok: true });
+
+  } catch (err) {
+    console.error("revoke error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* =========================================================
    ORG: get my org info (for Profile UI)
    GET /org/me
 ========================================================= */
