@@ -2209,44 +2209,54 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 });
 
 app.get("/api/messages/:id", requireAuth, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user } = req.qm;
-
-  const id = String(req.params.id || "").trim();
-  const rec = org.messages?.[id];
-  if (!rec) return res.status(404).json({ error: "Not found" });
-
-  const kv = String(rec.kekVersion || org.keyring?.active || "1");
-  const kk = getKekByVersion(org, kv);
-  if (!kk) return res.status(500).json({ error: "Missing KEK for stored message" });
-
-  let msg;
   try {
-    msg = openWithKek(kk.kekBytes, rec.sealed);
-  } catch {
-    return res.status(500).json({ error: "Failed to open message record (bad KEK)" });
+    const user = req.user;
+    const org = await getOrg(user.orgId);
+    const msg = org.messages[req.params.id];
+
+    if (!msg) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    /* =========================
+       🔐 DEVICE VALIDATION
+    ========================= */
+
+    const deviceId = req.headers["x-qm-device-id"];
+    if (!deviceId) {
+      return res.status(400).json({ error: "Missing device ID" });
+    }
+
+    const device = (org.devices || []).find(
+      d => d.deviceId === deviceId && d.userId === user.userId
+    );
+
+    if (!device || device.status !== "active") {
+      return res.status(403).json({
+        error: "Device revoked or not authorized"
+      });
+    }
+
+    const wrappedKey = msg.wrappedKeys?.[user.userId];
+
+    if (!wrappedKey) {
+      return res.status(403).json({
+        error: "No access to this message"
+      });
+    }
+
+    return res.json({
+      iv: msg.iv,
+      ciphertext: msg.ciphertext,
+      aad: msg.aad,
+      wrappedKey
+    });
+
+  } catch (err) {
+    console.error("Message fetch error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const wrappedDek = msg.wrappedKeys?.[user.userId];
-  if (!wrappedDek) {
-    await audit(req, orgId, user.userId, "decrypt_denied", { msgId: id, reason: "missing_wrapped_key" });
-    return res.status(403).json({ error: "No wrapped key for this user" });
-  }
-
-  await audit(req, orgId, user.userId, "decrypt_payload", { msgId: id, kekVersion: kv });
-
-  res.json({
-    id,
-    createdAt: rec.createdAt,
-    iv: msg.iv,
-    ciphertext: msg.ciphertext,
-    aad: msg.aad,
-    wrappedDek,
-    kekVersion: kv,
-    attachments: Array.isArray(msg.attachments) ? msg.attachments : [],
-  });
 });
-
 /* =========================================================
    Portal static + routes + outlook addin 
 ========================================================= */
