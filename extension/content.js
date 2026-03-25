@@ -183,49 +183,55 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // -----------------------
 // Decrypt bridge for /m/<id>
 // -----------------------
+
 function getMsgIdFromPath() {
   const parts = location.pathname.split("/").filter(Boolean);
-  if (parts[0] === "m" && parts[1]) return parts[1];
+  const mIndex = parts.indexOf("m");
+  if (mIndex !== -1 && parts[mIndex + 1]) return parts[mIndex + 1];
   return null;
 }
 
-if (location.pathname.startsWith("/m/")) {
-  window.addEventListener("message", (event) => {
-    const data = event.data || {};
-    if (data?.source !== "quantummail-portal") return;
-    if (data?.type !== "QM_LOGIN_AND_DECRYPT_REQUEST") return;
+console.log("QuantumMail decrypt bridge active on:", location.pathname);
 
-    const msgId = data.msgId || getMsgIdFromPath();
+window.addEventListener("message", (event) => {
+  const data = event.data || {};
 
-    // inside your existing "/m/" bridge callback:
-    chrome.runtime.sendMessage(
-      {
-        type: "QM_LOGIN_AND_DECRYPT",
-        msgId,
-        serverBase: data.serverBase,
-        orgId: data.orgId,
-        username: data.username,
-        password: data.password
-      },
-      (resp) => {
-        const out = resp?.ok
-          ? {
-              source: "quantummail-extension",
-              type: "QM_DECRYPT_RESULT",
-              ok: true,
-              plaintext: resp.plaintext,
-              attachments: resp.attachments || [],
-              message: "Decrypted ✅ (access audited)"
-            }
-          : {
-              source: "quantummail-extension",
-              type: "QM_DECRYPT_RESULT",
-              ok: false,
-              error: resp?.error || "Decrypt failed"
-            };
-    
-        window.postMessage(out, "*");
-      }
-    );
-  });
-}
+  if (data?.source !== "quantummail-portal") return;
+  if (data?.type !== "QM_LOGIN_AND_DECRYPT_REQUEST") return;
+
+  console.log("CONTENT: decrypt request received", data);
+
+  const msgId = data.msgId || getMsgIdFromPath();
+
+  chrome.runtime.sendMessage(
+    {
+      type: "QM_LOGIN_AND_DECRYPT",
+      msgId,
+      serverBase: data.serverBase,
+      orgId: data.orgId,
+      username: data.username,
+      password: data.password
+    },
+    (resp) => {
+      console.log("CONTENT: response from background", resp);
+
+      const out = resp?.ok
+        ? {
+            source: "quantummail-extension",
+            type: "QM_DECRYPT_RESULT",
+            ok: true,
+            plaintext: resp.plaintext,
+            attachments: resp.attachments || [],
+            message: "Decrypted ✅ (access audited)"
+          }
+        : {
+            source: "quantummail-extension",
+            type: "QM_DECRYPT_RESULT",
+            ok: false,
+            error: resp?.error || "Decrypt failed"
+          };
+
+      window.postMessage(out, "*");
+    }
+  );
+});
