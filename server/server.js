@@ -1693,7 +1693,9 @@ app.post("/auth/setup-admin", async (req, res) => {
 ========================================================= */
 app.post("/org/register-key", requireAuth, async (req, res) => {
   try {
-    const user = req.user;
+    const { user, org } = req.qm;
+    const orgId = req.qm.tokenPayload.orgId;
+
     const { publicKeySpkiB64, deviceId } = req.body;
 
     if (!publicKeySpkiB64) {
@@ -1704,8 +1706,6 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing deviceId" });
     }
 
-    const org = await getOrg(user.orgId);
-
     if (!org.devices) org.devices = [];
 
     let device = org.devices.find(
@@ -1713,21 +1713,20 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
     );
 
     if (!device) {
-      device = {
+      org.devices.push({
         deviceId,
         userId: user.userId,
         publicKeySpkiB64,
         status: "active",
         createdAt: new Date().toISOString()
-      };
-      org.devices.push(device);
+      });
     } else {
       device.publicKeySpkiB64 = publicKeySpkiB64;
       device.status = "active";
       device.updatedAt = new Date().toISOString();
     }
 
-    await saveOrg(user.orgId, org);
+    await saveOrg(orgId, org);
 
     res.json({ ok: true });
 
