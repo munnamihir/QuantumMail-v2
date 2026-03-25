@@ -1694,10 +1694,7 @@ app.post("/auth/setup-admin", async (req, res) => {
 app.post("/org/register-key", requireAuth, async (req, res) => {
   try {
     const user = req.user;
-    const { publicKeySpkiB64, deviceId: bodyDeviceId } = req.body;
-
-    const headerDeviceId = req.headers["x-qm-device-id"];
-    const deviceId = headerDeviceId || bodyDeviceId;
+    const { publicKeySpkiB64, deviceId } = req.body;
 
     if (!publicKeySpkiB64) {
       return res.status(400).json({ error: "Missing publicKeySpkiB64" });
@@ -1708,9 +1705,12 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
     }
 
     const org = await getOrg(user.orgId);
-    ensureDevicesArray(org);
 
-    let device = getDeviceFromOrg(org, user.userId, deviceId);
+    if (!org.devices) org.devices = [];
+
+    let device = org.devices.find(
+      d => d.deviceId === deviceId && d.userId === user.userId
+    );
 
     if (!device) {
       device = {
@@ -1729,7 +1729,7 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
 
     await saveOrg(user.orgId, org);
 
-    return res.json({ ok: true });
+    res.json({ ok: true });
 
   } catch (err) {
     console.error("register-key error:", err);
