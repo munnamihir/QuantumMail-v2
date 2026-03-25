@@ -6,6 +6,23 @@ export const DEFAULTS = {
   user: null
 };
 
+async function getDeviceId() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["qm_device_id"], async (res) => {
+      let id = res.qm_device_id;
+
+      if (!id) {
+        id = crypto.randomUUID();
+        await new Promise((r) =>
+          chrome.storage.local.set({ qm_device_id: id }, r)
+        );
+      }
+
+      resolve(id);
+    });
+  });
+}
+
 export function normalizeBase(url) {
   let s = String(url || "").trim();
   if (s && !/^https?:\/\//i.test(s)) s = "https://" + s;
@@ -39,11 +56,14 @@ export async function apiJson(apiBase, path, opts = {}) {
     throw new Error("Missing Bearer token. Login first so session.token is set.");
   }
 
+  const deviceId = await getDeviceId(); // ✅ NEW
+
   const res = await fetch(url, {
     method: opts.method || "GET",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      "x-qm-device-id": deviceId, // ✅ CRITICAL FIX
       ...(opts.headers || {})
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined
