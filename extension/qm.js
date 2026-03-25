@@ -195,7 +195,12 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ publicKeySpkiB64 })
+      const deviceId = await getDeviceId();
+
+      body: JSON.stringify({ 
+        publicKeySpkiB64,
+        deviceId 
+      })
     });
 
     const raw = await res.text().catch(() => "");
