@@ -6,7 +6,7 @@ export const DEFAULTS = {
   user: null
 };
 
-async function getDeviceId() {
+export async function getDeviceId() {
   return new Promise((resolve) => {
     chrome.storage.local.get(["qm_device_id"], async (res) => {
       let id = res.qm_device_id;
