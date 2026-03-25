@@ -51,6 +51,17 @@ const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 /* =========================================================
    Helpers
 ========================================================= */
+function getDeviceFromOrg(org, userId, deviceId) {
+  if (!org?.devices) return null;
+  return org.devices.find(
+    d => d.deviceId === deviceId && d.userId === userId
+  );
+}
+
+function ensureDevicesArray(org) {
+  if (!org.devices) org.devices = [];
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -1650,18 +1661,49 @@ app.post("/auth/setup-admin", async (req, res) => {
    ORG: register key + list users
 ========================================================= */
 app.post("/org/register-key", requireAuth, async (req, res) => {
-  const orgId = req.qm.tokenPayload.orgId;
-  const { org, user } = req.qm;
+  try {
+    const user = req.user;
+    const { publicKeySpkiB64, deviceId: bodyDeviceId } = req.body;
 
-  const publicKeySpkiB64 = String(req.body?.publicKeySpkiB64 || "").trim();
-  if (!publicKeySpkiB64) return res.status(400).json({ error: "publicKeySpkiB64 required" });
+    const headerDeviceId = req.headers["x-qm-device-id"];
+    const deviceId = headerDeviceId || bodyDeviceId;
 
-  user.publicKeySpkiB64 = publicKeySpkiB64;
-  user.publicKeyRegisteredAt = nowIso();
+    if (!publicKeySpkiB64) {
+      return res.status(400).json({ error: "Missing publicKeySpkiB64" });
+    }
 
-  await audit(req, orgId, user.userId, "pubkey_register", { username: user.username });
-  await saveOrg(orgId, org);
-  res.json({ ok: true });
+    if (!deviceId) {
+      return res.status(400).json({ error: "Missing deviceId" });
+    }
+
+    const org = await getOrg(user.orgId);
+    ensureDevicesArray(org);
+
+    let device = getDeviceFromOrg(org, user.userId, deviceId);
+
+    if (!device) {
+      device = {
+        deviceId,
+        userId: user.userId,
+        publicKeySpkiB64,
+        status: "active",
+        createdAt: new Date().toISOString()
+      };
+      org.devices.push(device);
+    } else {
+      device.publicKeySpkiB64 = publicKeySpkiB64;
+      device.status = "active";
+      device.updatedAt = new Date().toISOString();
+    }
+
+    await saveOrg(user.orgId, org);
+
+    return res.json({ ok: true });
+
+  } catch (err) {
+    console.error("register-key error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.get("/org/users", requireAuth, (req, res) => {
@@ -2211,8 +2253,15 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 app.get("/api/messages/:id", requireAuth, async (req, res) => {
   try {
     const user = req.user;
+    const messageId = req.params.id;
+
+    const deviceId = req.headers["x-qm-device-id"];
+    if (!deviceId) {
+      return res.status(400).json({ error: "Missing device ID" });
+    }
+
     const org = await getOrg(user.orgId);
-    const msg = org.messages[req.params.id];
+    const msg = org.messages?.[messageId];
 
     if (!msg) {
       return res.status(404).json({ error: "Message not found" });
@@ -2222,20 +2271,17 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
        🔐 DEVICE VALIDATION
     ========================= */
 
-    const deviceId = req.headers["x-qm-device-id"];
-    if (!deviceId) {
-      return res.status(400).json({ error: "Missing device ID" });
-    }
-
-    const device = (org.devices || []).find(
-      d => d.deviceId === deviceId && d.userId === user.userId
-    );
+    const device = getDeviceFromOrg(org, user.userId, deviceId);
 
     if (!device || device.status !== "active") {
       return res.status(403).json({
         error: "Device revoked or not authorized"
       });
     }
+
+    /* =========================
+       🔐 ACCESS CHECK
+    ========================= */
 
     const wrappedKey = msg.wrappedKeys?.[user.userId];
 
@@ -2245,6 +2291,10 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       });
     }
 
+    /* =========================
+       ✅ SAFE RESPONSE
+    ========================= */
+
     return res.json({
       iv: msg.iv,
       ciphertext: msg.ciphertext,
@@ -2253,7 +2303,7 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Message fetch error:", err);
+    console.error("message fetch error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
