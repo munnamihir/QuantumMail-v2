@@ -10,7 +10,8 @@ import {
   importPublicSpkiB64,
   rsaWrapDek,
   b64UrlToBytes,
-  getOrCreateRsaKeypair
+  getOrCreateRsaKeypair,
+  getDeviceId
 } from "./qm.js";
 
 /* =========================
@@ -40,6 +41,10 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
   const url = `${base}${path}`;
 
   const headers = { Accept: "application/json" };
+  const deviceId = await getDeviceId?.().catch(() => null);
+  if (deviceId) {
+    headers["x-qm-device-id"] = deviceId;
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body) headers["Content-Type"] = "application/json";
 
@@ -384,6 +389,49 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === "load_devices") {
+        const s = await getSession();
+        if (!s?.token || !s?.serverBase) {
+          sendResponse({ ok: false, error: "Not logged in" });
+          return;
+        }
+      
+        const devicesOut = await apiJson(s.serverBase, "/org/devices", {
+          token: s.token
+        });
+      
+        window.postMessage({
+          source: "qm-ext",
+          type: "devices_loaded",
+          payload: { devices: devicesOut.devices || [] }
+        });
+      
+        sendResponse({ ok: true });
+        return;
+      }
+
+      if (msg?.type === "revoke_device") {
+        const s = await getSession();
+        if (!s?.token || !s?.serverBase) {
+          sendResponse({ ok: false, error: "Not logged in" });
+          return;
+        }
+      
+        await apiJson(s.serverBase, "/org/revoke-device", {
+          method: "POST",
+          token: s.token,
+          body: { deviceId: msg.payload.device_id }
+        });
+      
+        window.postMessage({
+          source: "qm-ext",
+          type: "device_revoked"
+        });
+      
+        sendResponse({ ok: true });
+        return;
+      }
+      
       // ✅ NEW: recipients list for autocomplete
       if (msg?.type === "QM_RECIPIENTS") {
         const users = await listOrgUsersForAutocomplete();
