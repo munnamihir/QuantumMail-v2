@@ -2311,6 +2311,8 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       });
     }
 
+   
+     
     /* =========================
        🔐 ACCESS CHECK
     ========================= */
@@ -2323,6 +2325,15 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       });
     }
 
+     
+   console.log("---- DEBUG MESSAGE ACCESS ----");
+   console.log("User ID:", user.userId);
+   console.log("Device ID:", req.headers["x-qm-device-id"]);
+   console.log("WrappedKeys:", Object.keys(msg.wrappedKeys || {}));
+   console.log("Full wrappedKeys object:", msg.wrappedKeys);
+   console.log("--------------------------------");
+
+     
     /* =========================
        ✅ SAFE RESPONSE
     ========================= */
