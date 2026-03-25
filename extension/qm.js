@@ -189,17 +189,18 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
   const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
 
   async function tryRegister(path) {
+    const deviceId = await getDeviceId();
+  
     const res = await fetch(`${serverBase}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-qm-device-id": deviceId 
       },
-      const deviceId = await getDeviceId();
-
       body: JSON.stringify({ 
         publicKeySpkiB64,
-        deviceId 
+        deviceId
       })
     });
 
