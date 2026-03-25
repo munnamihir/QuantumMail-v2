@@ -2342,7 +2342,7 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       iv: msg.iv,
       ciphertext: msg.ciphertext,
       aad: msg.aad,
-      wrappedKey
+      wrappedDek: wrappedKey
     });
 
   } catch (err) {
