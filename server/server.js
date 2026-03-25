@@ -639,7 +639,7 @@ app.post("/org/revoke-device", requireAuth, async (req, res) => {
     const orgId = req.qm.tokenPayload.orgId;
     const { deviceId } = req.body;
 
-    const org = await getOrg(user.orgId);
+    //const org = await getOrg(user.orgId);
     ensureDevicesArray(org);
 
     const device = getDeviceFromOrg(org, user.userId, deviceId);
