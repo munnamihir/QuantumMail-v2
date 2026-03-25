@@ -2292,7 +2292,7 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing device ID" });
     }
 
-    const org = await getOrg(user.orgId);
+    //const org = await getOrg(user.orgId);
     const msg = org.messages?.[messageId];
 
     if (!msg) {
