@@ -1,37 +1,49 @@
 {
   "manifest_version": 3,
   "name": "QuantumMail (Envelope Encryption MVP)",
-  "version": "0.6",
+  "version": "0.7",
   "description": "Encrypt selected email text into a secure link. Envelope encryption with per-user wrapped keys.",
+
   "permissions": ["storage", "activeTab"],
+
   "host_permissions": [
     "https://mail.google.com/*",
     "https://outlook.office.com/*",
     "https://outlook.live.com/*",
+
+    // 🔐 Your app domains (EXPLICIT + wildcard)
+    "https://*.onrender.com/*",
     "https://quantummail-v2.onrender.com/*",
-    "https://*.onrender.com/*"
+    "https://quantummail-v3.onrender.com/*"
   ],
+
   "action": {
     "default_title": "QuantumMail",
     "default_popup": "popup.html"
   },
+
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
+
   "content_scripts": [
     {
       "matches": [
         "https://mail.google.com/*",
         "https://outlook.office.com/*",
         "https://outlook.live.com/*",
+
+        // 🔥 CRITICAL: include both wildcard + explicit
+        "https://*.onrender.com/*",
         "https://quantummail-v2.onrender.com/*",
-        "https://*.onrender.com/*"
+        "https://quantummail-v3.onrender.com/*"
       ],
       "js": ["content.js", "content-vault-bridge.js"],
       "run_at": "document_idle"
     }
   ],
+
   "web_accessible_resources": [
     {
       "resources": ["qmVault.js", "qm.js"],
@@ -39,8 +51,10 @@
         "https://mail.google.com/*",
         "https://outlook.office.com/*",
         "https://outlook.live.com/*",
+
+        "https://*.onrender.com/*",
         "https://quantummail-v2.onrender.com/*",
-        "https://*.onrender.com/*"
+        "https://quantummail-v3.onrender.com/*"
       ]
     }
   ]
