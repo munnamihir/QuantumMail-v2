@@ -342,7 +342,12 @@ async function loginAndDecrypt({ msgId, serverBase, orgId, username, password })
   const { base, token, user } = await loginAndStoreSession({ serverBase, orgId, username, password });
 
   const payload = await apiJson(base, `/api/messages/${encodeURIComponent(msgId)}`, { token });
-  if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
+  //if (!payload?.wrappedDek) throw new Error("Missing wrappedDek in payload.");
+  const wrappedDek = payload.wrappedDek || payload.wrappedKey;
+
+  if (!wrappedDek) {
+    throw new Error("Missing wrapped key in payload.");
+  }
 
   const kp = await getOrCreateRsaKeypair(user.userId);
 
