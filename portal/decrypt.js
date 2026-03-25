@@ -105,7 +105,7 @@ function requestDecrypt() {
   window.postMessage(
     {
       source: "quantummail-portal",
-      type: "QM_LOGIN_AND_DECRYPT_RESULT",
+      type: "QM_LOGIN_AND_DECRYPT_REQUEST",
       msgId,
       serverBase: window.location.origin,
       orgId,
