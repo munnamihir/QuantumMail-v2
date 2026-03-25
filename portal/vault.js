@@ -41,7 +41,26 @@ function renderDevices(devices) {
   wrap.querySelectorAll("[data-revoke]").forEach((btn) => {
     btn.onclick = () => {
       clearMsgs();
-      sendToExtension("revoke_device", { device_id: btn.dataset.revoke });
+      btn.onclick = async () => {
+        try {
+          clearMsgs();
+      
+          const session = await getSession();
+          const apiBase = session.serverBase;
+      
+          await apiJson(apiBase, "/org/revoke-device", {
+            method: "POST",
+            body: { deviceId: btn.dataset.revoke }
+          });
+      
+          $("trustMsg").textContent = "Device revoked.";
+      
+          sendToExtension("load_devices");
+      
+        } catch (err) {
+          $("trustErr").textContent = err.message;
+        }
+      };
     };
   });
 }
