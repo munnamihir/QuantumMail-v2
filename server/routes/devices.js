@@ -4,7 +4,7 @@ import { pool } from "../db.js";
 
 export const deviceRoutes = express.Router();
 
-function requireAuth(req, res, next) {
+export function requireAuth(req, res, next) {
   if (!req.qm?.user?.userId) return res.status(401).json({ error: "Unauthorized" });
   next();
 }
