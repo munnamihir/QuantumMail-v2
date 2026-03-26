@@ -195,9 +195,11 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
         "Content-Type": "application/json",
         "x-qm-device-id": deviceId 
       },
-      body: JSON.stringify({ 
-        publicKeySpkiB64,
-        deviceId
+      body: JSON.stringify({
+        device_id: deviceId,
+        pub_jwk: { publicKeySpkiB64 },
+        label: "Chrome Extension",
+        device_type: "desktop"
       })
     });
 
