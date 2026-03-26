@@ -216,13 +216,24 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
     return { res, data };
   }
 
-  let out = await tryRegister("/org/register-key");
+  /*let out = await tryRegister("/org/register-key");
   if (out.res.ok) return;
 
   out = await tryRegister("/pubkey_register");
-  if (out.res.ok) return;
+  if (out.res.ok) return;*
 
-  throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);
+  throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);*/
+  const out = await tryRegister("/org/register-key");
+
+  if (!out.res.ok) {
+    console.error("REGISTER KEY FAILED:", out);
+  
+    throw new Error(
+      out.data?.error ||
+      out.data?.message ||
+      `register-key failed (${out.res.status})`
+    );
+  }
 }
 
 export async function aesEncrypt(plaintext, aadText = "gmail") {
