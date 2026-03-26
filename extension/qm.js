@@ -183,8 +183,13 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
   if (!userId) throw new Error("ensureKeypairAndRegister: missing userId");
 
   const { publicKey } = await getOrCreateRsaKeypair(userId);
-  const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
-
+  //const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
+  const kp = await getOrCreateRsaKeypair(userId);
+  if (!kp || !kp.publicKey) {
+    throw new Error("Keypair generation failed");
+  }  
+  const publicJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+  
   async function tryRegister(path) {
     const deviceId = await getDeviceId();
    console.log("DEVICE ID:", deviceId);
@@ -196,8 +201,10 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
         "x-qm-device-id": deviceId 
       },
       body: JSON.stringify({
-        publicKeySpkiB64,
-        deviceId
+        device_id: deviceId,
+        pub_jwk: publicJwk,   
+        label: "Chrome Extension",
+        device_type: "desktop"
       })
     });
 
