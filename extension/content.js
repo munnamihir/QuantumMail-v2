@@ -1,6 +1,6 @@
 // extension/content.js
 // Gmail-safe selection caching (polling) + replace selection with link + decrypt bridge
-
+console.log("🔥 QuantumMail content.js injected");
 let cachedSelectionText = "";
 let cachedRange = null;
 let lastActiveCompose = null;
