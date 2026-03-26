@@ -1723,27 +1723,56 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing deviceId" });
     }
 
+    /* =========================
+       ✅ SAVE IN POSTGRES (REAL SOURCE)
+    ========================= */
+
     await pool.query(
-     `insert into qm_devices
-       (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
+      `
+      insert into qm_devices
+        (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
       values
-       ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
-      on conflict (user_id, device_id)
-      do update set
-       pub_jwk = excluded.pub_jwk,
-       last_seen_at = now(),
-       revoked = false`,
-     [
-       user.userId,
-       deviceId,
-       "Chrome Extension",
-       "desktop",
-       JSON.stringify({ publicKeySpkiB64 })
-     ]
-   );
-   
-   res.json({ ok: true });
-     
+        ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
+      on conflict (user_id, device_id) do update set
+        pub_jwk = excluded.pub_jwk,
+        last_seen_at = now(),
+        revoked = false
+      `,
+      [
+        user.userId,
+        deviceId,
+        "My Device",
+        "desktop",
+        JSON.stringify({
+          spki: publicKeySpkiB64
+        })
+      ]
+    );
+
+    /* =========================
+       (optional) keep JSON store
+    ========================= */
+
+    if (!org.devices) org.devices = [];
+
+    let device = org.devices.find(
+      d => d.deviceId === deviceId && d.userId === user.userId
+    );
+
+    if (!device) {
+      org.devices.push({
+        deviceId,
+        userId: user.userId,
+        publicKeySpkiB64,
+        status: "active",
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    await saveOrg(orgId, org);
+
+    res.json({ ok: true });
+
   } catch (err) {
     console.error("register-key error:", err);
     res.status(500).json({ error: "Internal server error" });
