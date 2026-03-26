@@ -53,7 +53,7 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, "gmail");
 
   // 🔐 DEVICE-BASED WRAPPING
-  const devicesOut = await apiJson(s.serverBase, "/list", {
+  const devicesOut = await apiJson(s.serverBase, "/api/devices/list", {
     token: s.token
   });
 
@@ -61,12 +61,24 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
 
   const wrappedKeys = {};
 
-  for (const d of devices) {
+  /*for (const d of devices) {
     if (!d.deviceId || !d.publicKeySpkiB64) continue;
     if (d.status !== "active") continue;
 
     const pub = await importPublicSpkiB64(d.publicKeySpkiB64);
-    wrappedKeys[d.deviceId] = await rsaWrapDek(pub, rawDek);
+    wrappedKeys[d.deviceId] = await rsaWrapDek(pub, rawDek);*/
+  for (const d of devices) {
+  if (!d.device_id || !d.pub_jwk) continue;
+
+  const pub = await crypto.subtle.importKey(
+    "jwk",
+    d.pub_jwk,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["encrypt"]
+  );
+
+  wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
   }
 
   const msgOut = await apiJson(s.serverBase, "/api/messages", {
@@ -301,7 +313,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === "load_devices") {
         const s = await getSession();
 
-        const data = await apiJson(s.serverBase, "/list", {
+        const data = await apiJson(s.serverBase, "/api/devices/list", {
           token: s.token
         });
 
