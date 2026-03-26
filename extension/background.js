@@ -182,6 +182,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === "QM_RECIPIENTS") {
+        const s = await getSession();
+      
+        if (!s?.token || !s?.serverBase) {
+          sendResponse({ ok: false, error: "Not logged in" });
+          return;
+        }
+      
+        const usersOut = await apiJson(s.serverBase, "/org/users", {
+          token: s.token
+        });
+      
+        const users = Array.isArray(usersOut?.users)
+          ? usersOut.users
+          : [];
+      
+        sendResponse({
+          ok: true,
+          users: users.map(u => ({
+            userId: u.userId,
+            username: u.username,
+            hasKey: !!u.publicKeySpkiB64
+          }))
+        });
+      
+        return;
+      }
+
+      
       /* DECRYPT */
       if (msg?.type === "QM_LOGIN_AND_DECRYPT") {
         const out = await loginAndDecrypt(msg);
