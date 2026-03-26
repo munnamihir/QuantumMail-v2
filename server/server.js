@@ -2313,37 +2313,52 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
 
    
      
-    /* =========================
-       🔐 ACCESS CHECK
-    ========================= */
-
-    const wrappedKey = msg.wrappedKeys?.[user.userId];
-
-    if (!wrappedKey) {
-      return res.status(403).json({
-        error: "No access to this message"
-      });
-    }
-
-     
+   /* =========================
+   🔓 UNSEAL MESSAGE
+   ========================= */
+   
+   const kv = String(msg.kekVersion || org.keyring?.active || "1");
+   const kk = getKekByVersion(org, kv);
+   
+   if (!kk) {
+     return res.status(500).json({ error: "KEK not found" });
+   }
+   
+   let decrypted;
+   try {
+     decrypted = openWithKek(kk.kekBytes, msg.sealed);
+   } catch (e) {
+     return res.status(500).json({ error: "Failed to decrypt message" });
+   }
+   
+   /* =========================
+      🔐 ACCESS CHECK
+   ========================= */
+   
+   const wrappedKey = decrypted.wrappedKeys?.[user.userId];
+   
+   if (!wrappedKey) {
+     return res.status(403).json({
+       error: "No access to this message"
+     });
+   }
+   
    console.log("---- DEBUG MESSAGE ACCESS ----");
    console.log("User ID:", user.userId);
-   console.log("Device ID:", req.headers["x-qm-device-id"]);
-   console.log("WrappedKeys:", Object.keys(msg.wrappedKeys || {}));
-   console.log("Full wrappedKeys object:", msg.wrappedKeys);
+   console.log("WrappedKeys:", Object.keys(decrypted.wrappedKeys || {}));
    console.log("--------------------------------");
-
-     
-    /* =========================
-       ✅ SAFE RESPONSE
-    ========================= */
-
-    return res.json({
-      iv: msg.iv,
-      ciphertext: msg.ciphertext,
-      aad: msg.aad,
-      wrappedDek: wrappedKey
-    });
+   
+   /* =========================
+      ✅ SAFE RESPONSE
+   ========================= */
+   
+   return res.json({
+     iv: decrypted.iv,
+     ciphertext: decrypted.ciphertext,
+     aad: decrypted.aad,
+     wrappedDek: wrappedKey,
+     attachments: decrypted.attachments || []
+   });
 
   } catch (err) {
     console.error("message fetch error:", err);
