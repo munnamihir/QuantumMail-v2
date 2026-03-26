@@ -68,35 +68,35 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
     const pub = await importPublicSpkiB64(d.publicKeySpkiB64);
     wrappedKeys[d.deviceId] = await rsaWrapDek(pub, rawDek);*/
   for (const d of devices) {
-  if (!d.device_id || !d.pub_jwk) continue;
-
-  const pub = await crypto.subtle.importKey(
-    "jwk",
-    d.pub_jwk,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["encrypt"]
-  );
-
-  wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
+    if (!d.device_id || !d.pub_jwk) continue;
+  
+    const pub = await crypto.subtle.importKey(
+      "jwk",
+      d.pub_jwk,
+      { name: "RSA-OAEP", hash: "SHA-256" },
+      true,
+      ["encrypt"]
+    );
+  
+    wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
   }
 
-  const msgOut = await apiJson(s.serverBase, "/api/messages", {
-    method: "POST",
-    token: s.token,
-    body: {
-      iv: ivB64Url,
-      ciphertext: ctB64Url,
-      aad: "gmail",
-      wrappedKeys,
-      attachments
-    }
-  });
-
-  await chrome.tabs.sendMessage(tabId, {
-    type: "QM_REPLACE_SELECTION_WITH_LINK",
-    url: msgOut.url
-  });
+    const msgOut = await apiJson(s.serverBase, "/api/messages", {
+      method: "POST",
+      token: s.token,
+      body: {
+        iv: ivB64Url,
+        ciphertext: ctB64Url,
+        aad: "gmail",
+        wrappedKeys,
+        attachments
+      }
+    });
+  
+    await chrome.tabs.sendMessage(tabId, {
+      type: "QM_REPLACE_SELECTION_WITH_LINK",
+      url: msgOut.url
+    });
 
   return {
     url: msgOut.url,
