@@ -1,13 +1,14 @@
 // server/routes/devices.js
 import express from "express";
 import { pool } from "../db.js";
+import { requireAuth } from "../server.js";
 
 export const deviceRoutes = express.Router();
 
-export function requireAuth(req, res, next) {
+/*export function requireAuth(req, res, next) {
   if (!req.qm?.user?.userId) return res.status(401).json({ error: "Unauthorized" });
   next();
-}
+}*/
 
 deviceRoutes.post("/register", requireAuth, async (req, res) => {
   try {
