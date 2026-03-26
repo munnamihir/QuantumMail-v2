@@ -301,7 +301,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === "load_devices") {
         const s = await getSession();
 
-        const data = await apiJson(s.serverBase, "/api/devices/list", {
+        const data = await apiJson(s.serverBase, "/list", {
           token: s.token
         });
 
