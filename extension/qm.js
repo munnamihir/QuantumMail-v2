@@ -6,21 +6,18 @@ export const DEFAULTS = {
   user: null
 };
 
-export async function getDeviceId() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(["qm_device_id"], async (res) => {
-      let id = res.qm_device_id;
+async function getDeviceId() {
+  const { deviceId } = await chrome.storage.local.get("deviceId");
 
-      if (!id) {
-        id = crypto.randomUUID();
-        await new Promise((r) =>
-          chrome.storage.local.set({ qm_device_id: id }, r)
-        );
-      }
+  if (deviceId) return deviceId;
 
-      resolve(id);
-    });
-  });
+  const newId = "d_" + crypto.randomUUID().replace(/-/g, "");
+
+  await chrome.storage.local.set({ deviceId: newId });
+
+  console.log("NEW DEVICE ID CREATED:", newId);
+
+  return newId;
 }
 
 export function normalizeBase(url) {
