@@ -58,7 +58,7 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
 
   const { rows } = await pool.query(
-    `select user_id, device_id, label, device_type, created_at, last_seen_at, revoked
+    `select user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked
        from qm_devices
       where user_id = $1
       order by created_at desc`,
@@ -82,5 +82,14 @@ deviceRoutes.post("/revoke", requireAuth, async (req, res) => {
     [userId, String(device_id)]
   );
 
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    devices: rows.map(d => ({
+      deviceId: d.device_id,
+      label: d.label,
+      deviceType: d.device_type,
+      publicKeySpkiB64: d.pub_jwk?.publicKeySpkiB64,
+      status: d.revoked ? "revoked" : "active"
+    }))
+  });
 });
