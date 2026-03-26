@@ -2336,12 +2336,15 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
    ========================= */
    
    const wrappedKey = decrypted.wrappedKeys?.[deviceId];
-   
+   // FALLBACK (old user-based)
    if (!wrappedKey) {
+     wrappedKey = decrypted.wrappedKeys?.[user.userId];
+   }
+   /*if (!wrappedKey) {
      return res.status(403).json({
        error: "No access to this message"
      });
-   }
+   }*/
    
    console.log("---- DEBUG MESSAGE ACCESS ----");
    console.log("User ID:", user.userId);
