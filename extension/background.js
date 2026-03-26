@@ -53,7 +53,7 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, "gmail");
 
   // 🔐 DEVICE-BASED WRAPPING
-  const devicesOut = await apiJson(s.serverBase, "/api/devices/list", {
+  const devicesOut = await apiJson(s.serverBase, "/list", {
     token: s.token
   });
 
