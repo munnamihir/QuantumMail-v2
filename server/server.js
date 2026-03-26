@@ -2335,8 +2335,6 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       🔐 ACCESS CHECK
    ========================= */
    
-   const deviceId = req.headers["x-qm-device-id"];
-
    const wrappedKey = decrypted.wrappedKeys?.[deviceId];
    
    if (!wrappedKey) {
