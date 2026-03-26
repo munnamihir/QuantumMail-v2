@@ -6,7 +6,7 @@ export const DEFAULTS = {
   user: null
 };
 
-async function getDeviceId() {
+export async function getDeviceId() {
   const { deviceId } = await chrome.storage.local.get("deviceId");
 
   if (deviceId) return deviceId;
