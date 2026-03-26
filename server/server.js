@@ -227,7 +227,7 @@ function verifyToken(token) {
 /* =========================================================
    Auth middleware (Postgres-backed org)
 ========================================================= */
-async function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   try {
     const auth = String(req.headers.authorization || "");
     const m = auth.match(/^Bearer\s+(.+)$/i);
