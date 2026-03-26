@@ -53,7 +53,7 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
   const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, "gmail");
 
   // 🔐 DEVICE-BASED WRAPPING
-  const devicesOut = await apiJson(s.serverBase, "/org/devices", {
+  const devicesOut = await apiJson(s.serverBase, "/api/devices", {
     token: s.token
   });
 
@@ -301,7 +301,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === "load_devices") {
         const s = await getSession();
 
-        const data = await apiJson(s.serverBase, "/org/devices", {
+        const data = await apiJson(s.serverBase, "/api/devices", {
           token: s.token
         });
 
