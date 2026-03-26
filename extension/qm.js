@@ -196,10 +196,8 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
         "x-qm-device-id": deviceId 
       },
       body: JSON.stringify({
-        device_id: deviceId,
-        pub_jwk: { publicKeySpkiB64 },
-        label: "Chrome Extension",
-        device_type: "desktop"
+        publicKeySpkiB64,
+        deviceId
       })
     });
 
@@ -223,7 +221,8 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
   if (out.res.ok) return;*
 
   throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);*/
-  const out = await tryRegister("/org/register-key");
+  //const out = await tryRegister("/org/register-key");
+  const out = await tryRegister("/api/devices/register");
 
   if (!out.res.ok) {
     console.error("REGISTER KEY FAILED:", out);
