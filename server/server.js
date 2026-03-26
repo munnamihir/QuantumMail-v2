@@ -54,7 +54,10 @@ const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 function getDeviceFromOrg(org, userId, deviceId) {
   if (!org?.devices) return null;
   return org.devices.find(
-    d => d.deviceId === deviceId && d.userId === userId
+    d => d.deviceId === deviceId && 
+         d.userId === userId &&
+         d.status === "active" &&
+         d.revoked !== true
   );
 }
 
@@ -166,7 +169,7 @@ app.use(recoveryRoutes({
   publicBaseUrl: process.env.PUBLIC_BASE_URL || ""
 }));
 
-app.use("/api/devices", requireAuth, deviceRoutes);
+app.use("/api/devices", deviceRoutes);
 
 // ✅ vault routes: /api/recovery/init, /api/recovery/vault
 app.use("/api/recovery", requireAuth, recoveryVaultRoutes);
@@ -639,19 +642,33 @@ app.post("/org/revoke-device", requireAuth, async (req, res) => {
     const orgId = req.qm.tokenPayload.orgId;
     const { deviceId } = req.body;
 
-    //const org = await getOrg(user.orgId);
-    ensureDevicesArray(org);
-
-    const device = getDeviceFromOrg(org, user.userId, deviceId);
-
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+    if (!deviceId) {
+      return res.status(400).json({ error: "deviceId required" });
     }
 
-    device.status = "revoked";
-    device.revokedAt = new Date().toISOString();
+    // ✅ 1. Update JSON store
+    if (org.devices) {
+      const device = org.devices.find(
+        d => d.deviceId === deviceId && d.userId === user.userId
+      );
 
-    await saveOrg(user.orgId, org);
+      if (device) {
+        device.status = "revoked";
+        device.revoked = true;
+        device.revokedAt = new Date().toISOString();
+      }
+    }
+
+    // ✅ 2. Update Postgres (SOURCE OF TRUTH)
+    await pool.query(
+      `update qm_devices
+       set revoked = true,
+           last_seen_at = now()
+       where user_id = $1 and device_id = $2`,
+      [user.userId, deviceId]
+    );
+
+    await saveOrg(orgId, org);
 
     return res.json({ ok: true });
 
@@ -660,7 +677,6 @@ app.post("/org/revoke-device", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
 /* =========================================================
    ORG: get my org info (for Profile UI)
    GET /org/me
@@ -2175,6 +2191,25 @@ app.post("/api/messages", requireAuth, async (req, res) => {
     attachmentsTotalBytes,
   });
 
+ // ✅ Validate wrappedKeys against ACTIVE DEVICES
+
+   const { rows: validDevices } = await pool.query(
+     `select device_id
+      from qm_devices
+      where user_id = $1 and revoked = false`,
+     [user.userId]
+   );
+   
+   const validDeviceIds = new Set(validDevices.map(d => d.device_id));
+   
+   for (const deviceId of Object.keys(payload.wrappedKeys || {})) {
+     if (!validDeviceIds.has(deviceId)) {
+       return res.status(400).json({
+         error: `Invalid or revoked device in wrappedKeys: ${deviceId}`
+       });
+     }
+   }
+   
   await saveOrg(orgId, org);
 
   const base = getPublicBase(req);
@@ -2284,7 +2319,6 @@ app.get("/api/inbox", requireAuth, (req, res) => {
 app.get("/api/messages/:id", requireAuth, async (req, res) => {
   try {
     const { user, org } = req.qm;
-    const orgId = req.qm.tokenPayload.orgId;
     const messageId = req.params.id;
 
     const deviceId = req.headers["x-qm-device-id"];
@@ -2292,81 +2326,83 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing device ID" });
     }
 
-    //const org = await getOrg(user.orgId);
     const msg = org.messages?.[messageId];
-
     if (!msg) {
       return res.status(404).json({ error: "Message not found" });
     }
 
     /* =========================
-       🔐 DEVICE VALIDATION
+       🔐 DEVICE VALIDATION (DB FIRST)
     ========================= */
 
-    const device = getDeviceFromOrg(org, user.userId, deviceId);
+    const { rows } = await pool.query(
+      `select device_id, revoked
+       from qm_devices
+       where user_id = $1 and device_id = $2
+       limit 1`,
+      [user.userId, deviceId]
+    );
 
-    if (!device || device.status !== "active") {
+    const dbDevice = rows[0];
+
+    if (!dbDevice) {
       return res.status(403).json({
-        error: "Device revoked or not authorized"
+        error: "Device not registered"
       });
     }
 
-   
-     
-   /* =========================
-   🔓 UNSEAL MESSAGE
-   ========================= */
-   
-   const kv = String(msg.kekVersion || org.keyring?.active || "1");
-   const kk = getKekByVersion(org, kv);
-   
-   if (!kk) {
-     return res.status(500).json({ error: "KEK not found" });
-   }
-   
-   let decrypted;
-   try {
-     decrypted = openWithKek(kk.kekBytes, msg.sealed);
-   } catch (e) {
-     return res.status(500).json({ error: "Failed to decrypt message" });
-   }
-   
-   /* =========================
-      🔐 ACCESS CHECK
-   ========================= */
-   
-   //const deviceId = req.headers["x-qm-device-id"];
+    if (dbDevice.revoked === true) {
+      return res.status(403).json({
+        error: "Device revoked"
+      });
+    }
 
-   // NEW (device-based)
-   let wrappedKey = decrypted.wrappedKeys?.[deviceId];
-   
-   // FALLBACK (old user-based)
-   if (!wrappedKey) {
-     wrappedKey = decrypted.wrappedKeys?.[user.userId];
-   }
-   
-   if (!wrappedKey) {
-     return res.status(403).json({
-       error: "No access to this message"
-     });
-   }
-   
-   console.log("---- DEBUG MESSAGE ACCESS ----");
-   console.log("User ID:", user.userId);
-   console.log("WrappedKeys:", Object.keys(decrypted.wrappedKeys || {}));
-   console.log("--------------------------------");
-   
-   /* =========================
-      ✅ SAFE RESPONSE
-   ========================= */
-   
-   return res.json({
-     iv: decrypted.iv,
-     ciphertext: decrypted.ciphertext,
-     aad: decrypted.aad,
-     wrappedDek: wrappedKey,
-     attachments: decrypted.attachments || []
-   });
+    /* =========================
+       🔓 UNSEAL MESSAGE
+    ========================= */
+
+    const kv = String(msg.kekVersion || org.keyring?.active || "1");
+    const kk = getKekByVersion(org, kv);
+
+    if (!kk) {
+      return res.status(500).json({ error: "KEK not found" });
+    }
+
+    let decrypted;
+    try {
+      decrypted = openWithKek(kk.kekBytes, msg.sealed);
+    } catch (e) {
+      return res.status(500).json({ error: "Failed to decrypt message" });
+    }
+
+    /* =========================
+       🔐 STRICT DEVICE ACCESS (NO FALLBACK)
+    ========================= */
+
+    const wrappedKey = decrypted.wrappedKeys?.[deviceId];
+
+    if (!wrappedKey) {
+      return res.status(403).json({
+        error: "No access to this message (device not authorized)"
+      });
+    }
+
+    console.log("---- DEVICE ACCESS GRANTED ----");
+    console.log("User:", user.userId);
+    console.log("Device:", deviceId);
+    console.log("--------------------------------");
+
+    /* =========================
+       ✅ RESPONSE
+    ========================= */
+
+    return res.json({
+      iv: decrypted.iv,
+      ciphertext: decrypted.ciphertext,
+      aad: decrypted.aad,
+      wrappedDek: wrappedKey,
+      attachments: decrypted.attachments || []
+    });
 
   } catch (err) {
     console.error("message fetch error:", err);
