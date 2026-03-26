@@ -57,7 +57,7 @@ export async function apiJson(apiBase, path, opts = {}) {
   }
 
   const deviceId = await getDeviceId(); // ✅ NEW
-
+  console.log("DEVICE ID:", deviceId);
   const res = await fetch(url, {
     method: opts.method || "GET",
     headers: {
@@ -190,7 +190,7 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
 
   async function tryRegister(path) {
     const deviceId = await getDeviceId();
-  
+   console.log("DEVICE ID:", deviceId);
     const res = await fetch(`${serverBase}${path}`, {
       method: "POST",
       headers: {
