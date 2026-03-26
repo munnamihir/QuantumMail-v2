@@ -38,6 +38,59 @@ async function readResponseSmart(res) {
   return { kind: "text", data: raw, raw };
 }
 
+
+async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = [] }) {
+  const s = await getSession();
+
+  const tab = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab[0].id;
+
+  const sel = await chrome.tabs.sendMessage(tabId, { type: "QM_GET_SELECTION" });
+  const plaintext = String(sel?.text || "").trim();
+
+  if (!plaintext) throw new Error("No selected text");
+
+  const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(plaintext, "gmail");
+
+  // 🔐 DEVICE-BASED WRAPPING
+  const devicesOut = await apiJson(s.serverBase, "/org/devices", {
+    token: s.token
+  });
+
+  const devices = devicesOut.devices || [];
+
+  const wrappedKeys = {};
+
+  for (const d of devices) {
+    if (!d.deviceId || !d.publicKeySpkiB64) continue;
+    if (d.status !== "active") continue;
+
+    const pub = await importPublicSpkiB64(d.publicKeySpkiB64);
+    wrappedKeys[d.deviceId] = await rsaWrapDek(pub, rawDek);
+  }
+
+  const msgOut = await apiJson(s.serverBase, "/api/messages", {
+    method: "POST",
+    token: s.token,
+    body: {
+      iv: ivB64Url,
+      ciphertext: ctB64Url,
+      aad: "gmail",
+      wrappedKeys,
+      attachments
+    }
+  });
+
+  await chrome.tabs.sendMessage(tabId, {
+    type: "QM_REPLACE_SELECTION_WITH_LINK",
+    url: msgOut.url
+  });
+
+  return {
+    url: msgOut.url,
+    wrappedCount: Object.keys(wrappedKeys).length
+  };
+}
 /* =========================
    API CALL (with device binding)
 ========================= */
@@ -210,6 +263,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      if (msg?.type === "QM_ENCRYPT_SELECTION") {
+        const s = await getSession();
+      
+        if (!s?.token || !s?.serverBase) {
+          sendResponse({ ok: false, error: "Not logged in" });
+          return;
+        }
+      
+        try {
+          const out = await encryptSelectionOrgWide({
+            attachments: msg.attachments || [],
+            recipientUserIds: msg.recipientUserIds || []
+          });
+      
+          sendResponse({ ok: true, ...out });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message || String(e) });
+        }
+      
+        return;
+      }
       
       /* DECRYPT */
       if (msg?.type === "QM_LOGIN_AND_DECRYPT") {
