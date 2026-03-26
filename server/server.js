@@ -51,7 +51,7 @@ const BOOTSTRAP_ENABLED = BOOTSTRAP_SECRET.length >= 32;
 /* =========================================================
    Helpers
 ========================================================= */
-function getDeviceFromOrg(org, userId, deviceId) {
+/*function getDeviceFromOrg(org, userId, deviceId) {
   if (!org?.devices) return null;
   return org.devices.find(
     d => d.deviceId === deviceId && 
@@ -59,11 +59,11 @@ function getDeviceFromOrg(org, userId, deviceId) {
          d.status === "active" &&
          d.revoked !== true
   );
-}
+}*/
 
-function ensureDevicesArray(org) {
+/*function ensureDevicesArray(org) {
   if (!org.devices) org.devices = [];
-}
+}*/
 
 function nowIso() {
   return new Date().toISOString();
@@ -1723,30 +1723,27 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing deviceId" });
     }
 
-    if (!org.devices) org.devices = [];
-
-    let device = org.devices.find(
-      d => d.deviceId === deviceId && d.userId === user.userId
-    );
-
-    if (!device) {
-      org.devices.push({
-        deviceId,
-        userId: user.userId,
-        publicKeySpkiB64,
-        status: "active",
-        createdAt: new Date().toISOString()
-      });
-    } else {
-      device.publicKeySpkiB64 = publicKeySpkiB64;
-      device.status = "active";
-      device.updatedAt = new Date().toISOString();
-    }
-
-    await saveOrg(orgId, org);
-
-    res.json({ ok: true });
-
+    await pool.query(
+     `insert into qm_devices
+       (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
+      values
+       ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
+      on conflict (user_id, device_id)
+      do update set
+       pub_jwk = excluded.pub_jwk,
+       last_seen_at = now(),
+       revoked = false`,
+     [
+       user.userId,
+       deviceId,
+       "Chrome Extension",
+       "desktop",
+       JSON.stringify({ publicKeySpkiB64 })
+     ]
+   );
+   
+   res.json({ ok: true });
+     
   } catch (err) {
     console.error("register-key error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -2191,16 +2188,14 @@ app.post("/api/messages", requireAuth, async (req, res) => {
     attachmentsTotalBytes,
   });
 
- // ✅ Validate wrappedKeys against ACTIVE DEVICES
+ const { rows: validDevices } = await pool.query(
+  `select device_id
+   from qm_devices
+   where user_id = $1 and revoked = false`,
+  [user.userId]
+);
 
-   const { rows: validDevices } = await pool.query(
-     `select device_id
-      from qm_devices
-      where user_id = $1 and revoked = false`,
-     [user.userId]
-   );
-   
-   const validDeviceIds = new Set(validDevices.map(d => d.device_id));
+const validDeviceIds = new Set(validDevices.map(d => d.device_id));
    
    for (const deviceId of Object.keys(payload.wrappedKeys || {})) {
      if (!validDeviceIds.has(deviceId)) {
