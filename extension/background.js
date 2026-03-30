@@ -170,9 +170,7 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
     throw new Error("Login failed: missing token/user.");
   }
 
-  // 🔐 Register device key
-  await ensureKeypairAndRegister(base, token, user.userId);
-
+  
   await setSession({ serverBase: base, token, user });
 
   return { base, token, user };
