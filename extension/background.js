@@ -22,6 +22,11 @@ function shortenText(s, n = 280) {
   return str.length <= n ? str : str.slice(0, n) + "…";
 }
 
+async function exportPublicJwkForCurrentUser(userId) {
+  const { publicKey } = await getOrCreateRsaKeypair(userId);
+  return await crypto.subtle.exportKey("jwk", publicKey);
+}
+
 async function readResponseSmart(res) {
   const ct = String(res.headers.get("content-type") || "").toLowerCase();
   const raw = await res.text().catch(() => "");
