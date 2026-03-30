@@ -188,7 +188,9 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
   if (!kp || !kp.publicKey) {
     throw new Error("Keypair generation failed");
   }  
-  const publicJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+  const { publicKey } = await getOrCreateRsaKeypair(userId);
+
+  const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
   
   async function tryRegister(path) {
     const deviceId = await getDeviceId();
@@ -208,6 +210,10 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
       })
     });
 
+
+
+
+    
     const raw = await res.text().catch(() => "");
     let data = {};
     try {
