@@ -276,6 +276,32 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
 
+      /* TRUST DEVICE */
+      if (msg?.type === "trust_this_device") {
+        const s = await getSession();
+      
+        const deviceId = await getDeviceId();
+      
+        await apiJson(s.serverBase, "/api/devices/register", {
+          method: "POST",
+          token: s.token,
+          body: {
+            device_id: deviceId,
+            label: msg.payload.label || "My Device",
+            device_type: msg.payload.device_type || "desktop",
+            pub_jwk: await exportPublicJwkForCurrentUser(s.user.userId)
+          }
+        });
+      
+        window.postMessage({
+          source: "qm-ext",
+          type: "device_trusted"
+        });
+      
+        sendResponse({ ok: true });
+        return;
+      }
+      
       if (msg?.type === "QM_ENCRYPT_SELECTION") {
         const s = await getSession();
       
