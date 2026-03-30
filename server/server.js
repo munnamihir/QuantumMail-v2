@@ -2346,39 +2346,45 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
     const messageId = req.params.id;
 
     const deviceId = req.headers["x-qm-device-id"];
+
     if (!deviceId) {
       return res.status(400).json({ error: "Missing device ID" });
     }
 
-    const msg = org.messages?.[messageId];
-    if (!msg) {
-      return res.status(404).json({ error: "Message not found" });
-    }
-
     /* =========================
-       🔐 DEVICE VALIDATION (DB FIRST)
+       🔐 DEVICE VALIDATION
     ========================= */
 
     const { rows } = await pool.query(
-      `select device_id, revoked
-       from qm_devices
-       where user_id = $1 and device_id = $2
-       limit 1`,
+      `select status
+         from qm_devices
+        where user_id = $1 and device_id = $2
+        limit 1`,
       [user.userId, deviceId]
     );
 
-    const dbDevice = rows[0];
+    const device = rows[0];
 
-    if (!dbDevice) {
+    if (!device) {
       return res.status(403).json({
         error: "Device not registered"
       });
     }
 
-    if (dbDevice.revoked === true) {
+    if (device.status !== "active") {
       return res.status(403).json({
-        error: "Device revoked"
+        error: "Device not trusted. Approve it in vault."
       });
+    }
+
+    /* =========================
+       📦 FETCH MESSAGE
+    ========================= */
+
+    const msg = org.messages?.[messageId];
+
+    if (!msg) {
+      return res.status(404).json({ error: "Message not found" });
     }
 
     /* =========================
@@ -2395,12 +2401,12 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
     let decrypted;
     try {
       decrypted = openWithKek(kk.kekBytes, msg.sealed);
-    } catch (e) {
+    } catch {
       return res.status(500).json({ error: "Failed to decrypt message" });
     }
 
     /* =========================
-       🔐 STRICT DEVICE ACCESS (NO FALLBACK)
+       🔐 DEVICE ACCESS CHECK
     ========================= */
 
     const wrappedKey = decrypted.wrappedKeys?.[deviceId];
@@ -2411,10 +2417,10 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
       });
     }
 
-    console.log("---- DEVICE ACCESS GRANTED ----");
-    console.log("User:", user.userId);
-    console.log("Device:", deviceId);
-    console.log("--------------------------------");
+    console.log("✅ DEVICE ACCESS GRANTED:", {
+      user: user.userId,
+      device: deviceId
+    });
 
     /* =========================
        ✅ RESPONSE
@@ -2433,6 +2439,7 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 /* =========================================================
    Portal static + routes + outlook addin 
 ========================================================= */
