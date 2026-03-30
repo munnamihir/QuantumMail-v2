@@ -67,8 +67,9 @@ async function encryptSelectionOrgWide({ attachments = [], recipientUserIds = []
     const pub = await importPublicSpkiB64(d.publicKeySpkiB64);
     wrappedKeys[d.deviceId] = await rsaWrapDek(pub, rawDek);*/
   for (const d of devices) {
+    if (d.status !== "active") continue; // 🔥 ONLY TRUSTED DEVICES
+  
     if (!d.device_id || !d.pub_jwk) continue;
-    if (d.status !== "active") continue;
   
     const pub = await crypto.subtle.importKey(
       "jwk",
