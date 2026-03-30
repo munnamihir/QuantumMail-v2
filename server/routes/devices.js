@@ -26,16 +26,14 @@ deviceRoutes.post("/register", requireAuth, async (req, res) => {
 
     const q = `
       insert into qm_devices
-        (user_id, device_id, label, device_type, pub_jwk, created_at, last_seen_at, revoked)
-      values
-        ($1,$2,$3,$4,$5::jsonb, now(), now(), false)
-      on conflict (user_id, device_id) do update set
-        label = excluded.label,
-        device_type = excluded.device_type,
-        pub_jwk = excluded.pub_jwk,
-        last_seen_at = now(),
-        revoked = false
-      returning user_id, device_id, label, device_type, created_at, last_seen_at, revoked
+      (user_id, device_id, label, device_type, pub_jwk, status, created_at, last_seen_at)
+    values
+      ($1,$2,$3,$4,$5::jsonb,'pending', now(), now())
+    on conflict (user_id, device_id) do update set
+      label = excluded.label,
+      device_type = excluded.device_type,
+      pub_jwk = excluded.pub_jwk,
+      last_seen_at = now()
     `;
 
     const vals = [
@@ -75,8 +73,37 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
       status: d.revoked ? "revoked" : "active"
     }))
   });*/
+    res.json({
+      ok: true,
+      devices: rows.map(d => ({
+        device_id: d.device_id,
+        label: d.label,
+        device_type: d.device_type,
+        pub_jwk: d.pub_jwk,
+        status: d.status 
+      }))
+    });
+});
+
+deviceRoutes.post("/approve", requireAuth, async (req, res) => {
+  const userId = req.qm.user.userId;
+  const { device_id } = req.body || {};
+
+  if (!device_id) {
+    return res.status(400).json({ error: "device_id required" });
+  }
+
+  await pool.query(
+    `update qm_devices
+        set status = 'active',
+            last_seen_at = now()
+      where user_id = $1 and device_id = $2`,
+    [userId, String(device_id)]
+  );
+
   res.json({ ok: true });
 });
+
 
 deviceRoutes.post("/revoke", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
