@@ -65,7 +65,16 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
     [userId]
   );
 
-  res.json({ ok: true, devices: rows });
+  res.json({
+    ok: true,
+    devices: rows.map(d => ({
+      device_id: d.device_id,
+      label: d.label,
+      device_type: d.device_type,
+      pub_jwk: d.pub_jwk, 
+      status: d.revoked ? "revoked" : "active"
+    }))
+  });
 });
 
 deviceRoutes.post("/revoke", requireAuth, async (req, res) => {
