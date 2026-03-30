@@ -6,20 +6,24 @@ export const DEFAULTS = {
   user: null
 };
 
+/* =========================================================
+   DEVICE ID (stable per browser)
+========================================================= */
 export async function getDeviceId() {
   const { deviceId } = await chrome.storage.local.get("deviceId");
 
   if (deviceId) return deviceId;
 
   const newId = "d_" + crypto.randomUUID().replace(/-/g, "");
-
   await chrome.storage.local.set({ deviceId: newId });
 
   console.log("NEW DEVICE ID CREATED:", newId);
-
   return newId;
 }
 
+/* =========================================================
+   SESSION
+========================================================= */
 export function normalizeBase(url) {
   let s = String(url || "").trim();
   if (s && !/^https?:\/\//i.test(s)) s = "https://" + s;
@@ -42,6 +46,9 @@ export async function clearSession() {
   return setSession({ ...DEFAULTS });
 }
 
+/* =========================================================
+   API HELPER (with device binding)
+========================================================= */
 export async function apiJson(apiBase, path, opts = {}) {
   const base = normalizeBase(apiBase);
   const url = base + path;
@@ -50,17 +57,17 @@ export async function apiJson(apiBase, path, opts = {}) {
   const token = String(session?.token || "").trim();
 
   if (!token) {
-    throw new Error("Missing Bearer token. Login first so session.token is set.");
+    throw new Error("Missing Bearer token. Login first.");
   }
 
-  const deviceId = await getDeviceId(); // ✅ NEW
-  console.log("DEVICE ID:", deviceId);
+  const deviceId = await getDeviceId();
+
   const res = await fetch(url, {
     method: opts.method || "GET",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
-      "x-qm-device-id": deviceId, // ✅ CRITICAL FIX
+      "x-qm-device-id": deviceId,
       ...(opts.headers || {})
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined
@@ -68,6 +75,7 @@ export async function apiJson(apiBase, path, opts = {}) {
 
   const raw = await res.text().catch(() => "");
   let data;
+
   try {
     data = (res.headers.get("content-type") || "").includes("application/json")
       ? JSON.parse(raw || "{}")
@@ -83,7 +91,9 @@ export async function apiJson(apiBase, path, opts = {}) {
   return data;
 }
 
-// ---------- Base64 helpers ----------
+/* =========================================================
+   BASE64 HELPERS
+========================================================= */
 export function b64ToBytes(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -98,7 +108,10 @@ export function bytesToB64(bytes) {
 }
 
 export function bytesToB64Url(bytes) {
-  return bytesToB64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return bytesToB64(bytes)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 export function b64UrlToBytes(b64url) {
@@ -107,15 +120,15 @@ export function b64UrlToBytes(b64url) {
   return b64ToBytes(b64);
 }
 
+/* =========================================================
+   RSA KEY MANAGEMENT (JWK BASED)
+========================================================= */
 function rsaStorageKey(userId) {
-  const id = String(userId || "").trim();
-  if (!id) return null;
-  return `qm_rsa_${id}`;
+  return `qm_rsa_${userId}`;
 }
 
 export async function getOrCreateRsaKeypair(userId) {
   const key = rsaStorageKey(userId);
-  if (!key) throw new Error("Missing userId for RSA keypair.");
 
   const existing = await new Promise((resolve) => {
     chrome.storage.local.get({ [key]: null }, (v) => resolve(v[key]));
@@ -129,6 +142,7 @@ export async function getOrCreateRsaKeypair(userId) {
       true,
       ["decrypt"]
     );
+
     const publicKey = await crypto.subtle.importKey(
       "jwk",
       existing.publicJwk,
@@ -136,6 +150,7 @@ export async function getOrCreateRsaKeypair(userId) {
       true,
       ["encrypt"]
     );
+
     return { privateKey, publicKey };
   }
 
@@ -155,7 +170,13 @@ export async function getOrCreateRsaKeypair(userId) {
 
   await new Promise((resolve) => {
     chrome.storage.local.set(
-      { [key]: { privateJwk, publicJwk, createdAt: new Date().toISOString() } },
+      {
+        [key]: {
+          privateJwk,
+          publicJwk,
+          createdAt: new Date().toISOString()
+        }
+      },
       () => resolve()
     );
   });
@@ -163,96 +184,48 @@ export async function getOrCreateRsaKeypair(userId) {
   return { privateKey: kp.privateKey, publicKey: kp.publicKey };
 }
 
-export async function exportPublicSpkiB64(publicKey) {
-  const spki = await crypto.subtle.exportKey("spki", publicKey);
-  return bytesToB64(new Uint8Array(spki));
-}
-
-export async function importPublicSpkiB64(publicKeySpkiB64) {
-  const spkiBytes = b64ToBytes(publicKeySpkiB64);
-  return crypto.subtle.importKey(
-    "spki",
-    spkiBytes,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["encrypt"]
-  );
-}
-
+/* =========================================================
+   DEVICE REGISTRATION (JWK)
+========================================================= */
 export async function ensureKeypairAndRegister(serverBase, token, userId) {
-  if (!userId) throw new Error("ensureKeypairAndRegister: missing userId");
-
   const { publicKey } = await getOrCreateRsaKeypair(userId);
-  //const publicKeySpkiB64 = await exportPublicSpkiB64(publicKey);
-  const kp = await getOrCreateRsaKeypair(userId);
-  if (!kp || !kp.publicKey) {
-    throw new Error("Keypair generation failed");
-  }  
-  const { publicKey } = await getOrCreateRsaKeypair(userId);
-
   const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
-  
-  async function tryRegister(path) {
-    const deviceId = await getDeviceId();
-   console.log("DEVICE ID:", deviceId);
-    const res = await fetch(`${serverBase}${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "x-qm-device-id": deviceId 
-      },
-      body: JSON.stringify({
-        device_id: deviceId,
-        pub_jwk: publicJwk,   
-        label: "Chrome Extension",
-        device_type: "desktop"
-      })
-    });
 
+  const deviceId = await getDeviceId();
 
+  console.log("REGISTER DEVICE:", deviceId);
 
+  const res = await fetch(`${serverBase}/api/devices/register`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "x-qm-device-id": deviceId
+    },
+    body: JSON.stringify({
+      device_id: deviceId,
+      pub_jwk: publicJwk,
+      label: "Chrome Extension",
+      device_type: "desktop"
+    })
+  });
 
-    
-    const raw = await res.text().catch(() => "");
-    let data = {};
-    try {
-      data = (res.headers.get("content-type") || "").includes("application/json")
-        ? JSON.parse(raw || "{}")
-        : { raw };
-    } catch {
-      data = { raw };
-    }
-
-    return { res, data };
-  }
-
-  /*let out = await tryRegister("/org/register-key");
-  if (out.res.ok) return;
-
-  out = await tryRegister("/pubkey_register");
-  if (out.res.ok) return;*
-
-  throw new Error(out.data?.error || out.data?.message || `pubkey_register failed (${out.res.status})`);*/
-  //const out = await tryRegister("/org/register-key");
-  const out = await tryRegister("/api/devices/register");
-
-  if (!out.res.ok) {
-    console.error("REGISTER KEY FAILED:", out);
-  
-    throw new Error(
-      out.data?.error ||
-      out.data?.message ||
-      `register-key failed (${out.res.status})`
-    );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.error("REGISTER FAILED:", txt);
+    throw new Error("Device registration failed");
   }
 }
 
+/* =========================================================
+   AES-GCM ENCRYPTION
+========================================================= */
 export async function aesEncrypt(plaintext, aadText = "gmail") {
-  const dek = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
-    "encrypt",
-    "decrypt"
-  ]);
+  const dek = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ptBytes = new TextEncoder().encode(plaintext);
@@ -265,6 +238,7 @@ export async function aesEncrypt(plaintext, aadText = "gmail") {
   );
 
   const rawDek = new Uint8Array(await crypto.subtle.exportKey("raw", dek));
+
   return {
     ivB64Url: bytesToB64Url(iv),
     ctB64Url: bytesToB64Url(new Uint8Array(ct)),
@@ -273,14 +247,21 @@ export async function aesEncrypt(plaintext, aadText = "gmail") {
   };
 }
 
+/* =========================================================
+   AES-GCM DECRYPTION
+========================================================= */
 export async function aesDecrypt(ivB64Url, ctB64Url, aadText, rawDekBytes) {
   const iv = b64UrlToBytes(ivB64Url);
   const ct = b64UrlToBytes(ctB64Url);
   const aadBytes = new TextEncoder().encode(aadText || "");
 
-  const dek = await crypto.subtle.importKey("raw", rawDekBytes, { name: "AES-GCM" }, false, [
-    "decrypt"
-  ]);
+  const dek = await crypto.subtle.importKey(
+    "raw",
+    rawDekBytes,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"]
+  );
 
   const pt = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv, additionalData: aadBytes },
@@ -291,7 +272,15 @@ export async function aesDecrypt(ivB64Url, ctB64Url, aadText, rawDekBytes) {
   return new TextDecoder().decode(pt);
 }
 
-export async function rsaWrapDek(recipientPublicKey, rawDekBytes) {
-  const wrapped = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, recipientPublicKey, rawDekBytes);
+/* =========================================================
+   RSA WRAP DEK
+========================================================= */
+export async function rsaWrapDek(publicKey, rawDekBytes) {
+  const wrapped = await crypto.subtle.encrypt(
+    { name: "RSA-OAEP" },
+    publicKey,
+    rawDekBytes
+  );
+
   return bytesToB64Url(new Uint8Array(wrapped));
 }
