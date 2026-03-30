@@ -7,7 +7,6 @@ import {
   ensureKeypairAndRegister,
   aesEncrypt,
   aesDecrypt,
-  importPublicSpkiB64,
   rsaWrapDek,
   b64UrlToBytes,
   getOrCreateRsaKeypair,
