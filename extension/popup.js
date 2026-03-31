@@ -77,7 +77,18 @@ function err(msg) {
 ========================= */
 async function sendBg(type, payload = {}) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type, ...payload }, (resp) => resolve(resp));
+    try {
+      chrome.runtime.sendMessage({ type, ...payload }, (resp) => {
+        if (chrome.runtime.lastError) {
+          console.error("BG ERROR:", chrome.runtime.lastError.message);
+          resolve({ ok: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(resp);
+        }
+      });
+    } catch (e) {
+      resolve({ ok: false, error: e.message });
+    }
   });
 }
 
