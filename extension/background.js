@@ -135,6 +135,47 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
+
+      if (msg?.type === "QM_RECIPIENTS") {
+        try {
+          const s = await getSession();
+      
+          if (!s?.token || !s?.serverBase) {
+            sendResponse({ ok: false, error: "Not logged in" });
+            return;
+          }
+      
+          const usersOut = await apiJson(s.serverBase, "/org/users", {
+            token: s.token
+          });
+      
+          console.log("USERS API:", usersOut);
+      
+          const users = Array.isArray(usersOut?.users)
+            ? usersOut.users
+            : [];
+      
+          sendResponse({
+            ok: true,
+            users: users.map(u => ({
+              userId: u.userId,
+              username: u.username,
+              hasKey: !!u.publicKeySpkiB64
+            }))
+          });
+      
+        } catch (e) {
+          console.error("QM_RECIPIENTS ERROR:", e);
+      
+          sendResponse({
+            ok: false,
+            error: e.message || "Failed to load users"
+          });
+        }
+      
+        return;
+      }
+      
       if (msg.type === "load_devices") {
         const s = await getSession();
 
