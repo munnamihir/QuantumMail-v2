@@ -187,15 +187,15 @@ export async function getOrCreateRsaKeypair(userId) {
 /* =========================================================
    DEVICE REGISTRATION (JWK)
 ========================================================= */
-export async function ensureKeypairAndRegister(serverBase, token, userId) {
-  const { publicKey } = await getOrCreateRsaKeypair(userId);
-  const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
-
+export async function ensureDeviceRegistered(serverBase, token, userId) {
   const deviceId = await getDeviceId();
 
-  console.log("REGISTER DEVICE:", deviceId);
+  const { publicKey } = await getOrCreateRsaKeypair(userId);
+  const pubJwk = await crypto.subtle.exportKey("jwk", publicKey);
 
-  const res = await fetch(`${serverBase}/api/devices/register`, {
+  console.log("AUTO REGISTER DEVICE (PENDING):", deviceId);
+
+  await fetch(`${serverBase}/api/devices/register`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -204,17 +204,12 @@ export async function ensureKeypairAndRegister(serverBase, token, userId) {
     },
     body: JSON.stringify({
       device_id: deviceId,
-      pub_jwk: publicJwk,
       label: "Chrome Extension",
-      device_type: "desktop"
+      device_type: "desktop",
+      pub_jwk: pubJwk,
+      status: "pending" 
     })
   });
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    console.error("REGISTER FAILED:", txt);
-    throw new Error("Device registration failed");
-  }
 }
 
 /* =========================================================
