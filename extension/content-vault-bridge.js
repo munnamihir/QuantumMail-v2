@@ -35,12 +35,11 @@
       }
 
       if (msg.type === "trust_this_device") {
-        const out = await qmVault.trustCurrentDevice(
-          apiBase,
-          msg.payload?.label || "",
-          msg.payload?.device_type || "desktop"
-        );
-        reply("device_trusted", { device: out });
+        const res = await sendToBackground("trust_this_device", msg.payload);
+
+        if (!res?.ok) throw new Error(res?.error || "Trust failed");
+
+        reply("device_trusted", {});
         return;
       }
 
