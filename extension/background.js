@@ -314,9 +314,9 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
             console.error("ENCRYPT ERROR:", e);
             sendResponse({ ok: false, error: e.message });
             return;
-          }
-          
-  })();
+        }
+        
+    })();
 
   return true;
 });
