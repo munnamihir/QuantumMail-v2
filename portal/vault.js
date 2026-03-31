@@ -27,6 +27,10 @@ function renderDevices(devices) {
   }
 
   devices.forEach(d => {
+    const statusColor =
+      d.status === "active" ? "green" :
+      d.status === "pending" ? "orange" : "red";
+
     const div = document.createElement("div");
 
     div.innerHTML = `
@@ -34,7 +38,7 @@ function renderDevices(devices) {
         <b>${d.label || "Device"}</b><br/>
         ID: ${d.device_id}<br/>
         Type: ${d.device_type}<br/>
-        Status: ${d.status}
+        Status: <span style="color:${statusColor}">${d.status}</span>
       </div>
     `;
 
@@ -69,6 +73,4 @@ $("trustBtn").onclick = () => {
   });
 };
 
-$("refreshDevicesBtn").onclick = () => {
-  loadDevices();
-};
+$("refreshDevicesBtn").onclick = loadDevices;
