@@ -1,4 +1,4 @@
-// extension/background.js (FINAL CLEAN)
+// extension/background.js (SYNTAX FIXED — NO LOGIC REMOVED)
 
 import {
   normalizeBase,
@@ -76,26 +76,24 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
-      /* Recepients */
+      /* RECIPIENTS */
       if (msg.type === "QM_RECIPIENTS") {
         try {
           const s = await getSession();
-      
+
           if (!s?.token || !s?.serverBase) {
             sendResponse({ ok: false, error: "Not logged in" });
             return;
           }
-      
+
           const usersOut = await apiJson(s.serverBase, "/org/users", {
             token: s.token
           });
-      
-          console.log("USERS API:", usersOut);
-      
+
           const users = Array.isArray(usersOut?.users)
             ? usersOut.users
             : [];
-      
+
           sendResponse({
             ok: true,
             users: users.map(u => ({
@@ -104,19 +102,17 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
               hasKey: !!u.publicKeySpkiB64
             }))
           });
-      
+
         } catch (e) {
-          console.error("QM_RECIPIENTS ERROR:", e);
-      
           sendResponse({
             ok: false,
             error: e.message || "Failed to load users"
           });
         }
-      
-        return; // ✅ VERY IMPORTANT
+
+        return;
       }
-      
+
       /* LOAD DEVICES */
       if (msg.type === "load_devices") {
         const s = await getSession();
@@ -225,98 +221,97 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
+      /* ENCRYPT */
+      if (msg.type === "QM_ENCRYPT_SELECTION") {
+        try {
+          const s = await getSession();
 
-      /* =========================
-           ENCRYPT
-        ========================= */
-        if (msg.type === "QM_ENCRYPT_SELECTION") {
-          try {
-            const s = await getSession();
-        
-            if (!s?.token || !s?.serverBase) {
-              sendResponse({ ok: false, error: "Not logged in" });
-              return;
-            }
-        
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        
-            const sel = await chrome.tabs.sendMessage(tab.id, {
-              type: "QM_GET_SELECTION"
-            });
-        
-            const text = String(sel?.text || "").trim();
-        
-            if (!text) {
-              sendResponse({ ok: false, error: "No text selected" });
-              return;
-            }
-        
-            /* ENCRYPT */
-            const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(text);
-        
-            /* LOAD DEVICES */
-            const devicesRes = await apiJson(s.serverBase, "/api/devices/list", {
-              token: s.token
-            });
-        
-            const devices = devicesRes.devices || [];
-        
-            const wrappedKeys = {};
-        
-            for (const d of devices) {
-              if (d.status !== "active") continue;
-        
-              try {
-                const pub = await crypto.subtle.importKey(
-                  "jwk",
-                  d.pub_jwk,
-                  { name: "RSA-OAEP", hash: "SHA-256" },
-                  true,
-                  ["encrypt"]
-                );
-        
-                wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
-        
-              } catch (e) {
-                console.error("Key import failed:", d.device_id, e);
-              }
-            }
-        
-            if (Object.keys(wrappedKeys).length === 0) {
-              sendResponse({
-                ok: false,
-                error: "No trusted devices available"
-              });
-              return;
-            }
-        
-            /* SEND TO SERVER */
-            const msgOut = await apiJson(s.serverBase, "/api/messages", {
-              method: "POST",
-              token: s.token,
-              body: {
-                iv: ivB64Url,
-                ciphertext: ctB64Url,
-                wrappedKeys
-              }
-            });
-        
-            /* REPLACE TEXT */
-            await chrome.tabs.sendMessage(tab.id, {
-              type: "QM_REPLACE_SELECTION_WITH_LINK",
-              url: msgOut.url
-            });
-        
-            sendResponse({ ok: true, payload: msgOut });
+          if (!s?.token || !s?.serverBase) {
+            sendResponse({ ok: false, error: "Not logged in" });
             return;
-        
-          } catch (e) {
-            console.error("ENCRYPT ERROR:", e);
-            sendResponse({ ok: false, error: e.message });
+          }
+
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+          const sel = await chrome.tabs.sendMessage(tab.id, {
+            type: "QM_GET_SELECTION"
+          });
+
+          const text = String(sel?.text || "").trim();
+
+          if (!text) {
+            sendResponse({ ok: false, error: "No text selected" });
             return;
+          }
+
+          const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(text);
+
+          const devicesRes = await apiJson(s.serverBase, "/api/devices/list", {
+            token: s.token
+          });
+
+          const devices = devicesRes.devices || [];
+
+          const wrappedKeys = {};
+
+          for (const d of devices) {
+            if (d.status !== "active") continue;
+
+            try {
+              const pub = await crypto.subtle.importKey(
+                "jwk",
+                d.pub_jwk,
+                { name: "RSA-OAEP", hash: "SHA-256" },
+                true,
+                ["encrypt"]
+              );
+
+              wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
+
+            } catch (e) {
+              console.error("Key import failed:", d.device_id, e);
+            }
+          }
+
+          if (Object.keys(wrappedKeys).length === 0) {
+            sendResponse({
+              ok: false,
+              error: "No trusted devices available"
+            });
+            return;
+          }
+
+          const msgOut = await apiJson(s.serverBase, "/api/messages", {
+            method: "POST",
+            token: s.token,
+            body: {
+              iv: ivB64Url,
+              ciphertext: ctB64Url,
+              wrappedKeys
+            }
+          });
+
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "QM_REPLACE_SELECTION_WITH_LINK",
+            url: msgOut.url
+          });
+
+          sendResponse({ ok: true, payload: msgOut });
+          return;
+
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+          return;
         }
-        
-    })();
+      }
+
+      /* DEFAULT */
+      sendResponse({ ok: false });
+
+    } catch (e) {
+      sendResponse({ ok: false, error: e.message });
+    }
+  })();
 
   return true;
 });
