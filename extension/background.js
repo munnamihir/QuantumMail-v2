@@ -255,22 +255,24 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           const wrappedKeys = {};
 
           for (const d of devices) {
-            if (d.status !== "active") continue;
-
-            try {
-              const pub = await crypto.subtle.importKey(
-                "jwk",
-                d.pub_jwk,
-                { name: "RSA-OAEP", hash: "SHA-256" },
-                true,
-                ["encrypt"]
-              );
-
-              wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
-
-            } catch (e) {
-              console.error("Key import failed:", d.device_id, e);
+            if (!d.pub_jwk) continue;
+          
+            const status = String(d.status || "").toLowerCase().trim();
+          
+            if (status !== "active") {
+              console.log("SKIPPING DEVICE:", d.device_id, d.status);
+              continue;
             }
+          
+            const pub = await crypto.subtle.importKey(
+              "jwk",
+              d.pub_jwk,
+              { name: "RSA-OAEP", hash: "SHA-256" },
+              true,
+              ["encrypt"]
+            );
+          
+            wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
           }
 
           if (Object.keys(wrappedKeys).length === 0) {
