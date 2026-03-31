@@ -195,12 +195,12 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
 
       if (msg.type === "trust_this_device") {
         const s = await getSession();
-        const deviceId = await getDeviceId();
+        //const deviceId = await getDeviceId();
 
         await apiJson(s.serverBase, "/api/devices/trust", {
           method: "POST",
           token: s.token,
-          body: { device_id: deviceId }
+          body: { device_id: msg.payload.device_id }
         });
 
         window.postMessage({ source: "qm-ext", type: "device_trusted" });
