@@ -61,6 +61,46 @@ function renderDevices(devices) {
   });
 }
 
+/* START RECOVERY */
+$("startBtn").onclick = () => {
+  sendToExtension("start_recovery");
+};
+
+/* LOAD PENDING */
+$("loadPendingBtn").onclick = () => {
+  sendToExtension("load_pending");
+};
+
+/* FINISH */
+$("finishBtn").onclick = () => {
+  sendToExtension("finish_recovery", {
+    request_id: lastRecovery.request_id
+  });
+};
+
+window.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg || msg.source !== "qm-ext") return;
+
+  if (msg.type === "recovery_started") {
+    lastRecovery = msg.payload;
+    $("reqOut").textContent = JSON.stringify(msg.payload, null, 2);
+  }
+
+  if (msg.type === "pending_loaded") {
+    renderPending(msg.payload.pending);
+  }
+
+  if (msg.type === "recovery_approved") {
+    $("approveMsg").textContent = "Approved!";
+  }
+
+  if (msg.type === "vault_recovered") {
+    $("recoverMsg").textContent = "Recovery complete!";
+  }
+});
+
+
 window.addEventListener("message", (event) => {
   const msg = event.data;
   if (!msg || msg.source !== "qm-ext") return;
