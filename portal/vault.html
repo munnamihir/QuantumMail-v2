@@ -215,7 +215,7 @@ function renderDevices(devices) {
 /* ================= ACTIONS ================= */
 
 function trust(id) {
-  send("trust_device_direct", { device_id: id });
+  send("trust_this_device", { device_id: id });
 }
 
 function revoke(id) {
