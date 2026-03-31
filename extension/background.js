@@ -8,6 +8,7 @@ import {
   aesDecrypt,
   rsaWrapDek,
   getOrCreateRsaKeypair,
+  ensureDeviceRegistered,
   getDeviceId
 } from "./qm.js";
 
