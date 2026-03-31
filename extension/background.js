@@ -284,7 +284,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await apiJson(s.serverBase, "/api/devices/trust", {
           method: "POST",
           token: s.token,
-          body: { device_id: deviceId }
+          body: {
+            device_id: deviceId,
+            label: msg.label,
+            device_type: msg.device_type
+          }
         });
       
         window.postMessage({
