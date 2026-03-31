@@ -88,12 +88,15 @@ export async function trustCurrentDevice(apiBase, label = "", deviceType = "desk
   const ident = await ensureLocalDeviceIdentity();
   const session = await getSession();
 
+  if (!session?.token) throw new Error("Not logged in");
+
   const defaultLabel =
     label ||
-    (session?.user?.username ? `${session.user.username} device` : navigator.userAgent.slice(0, 48));
+    (session?.user?.username ? `${session.user.username} device` : "Device");
 
   const out = await apiJson(apiBase, "/api/devices/register", {
     method: "POST",
+    token: session.token,
     body: {
       device_id: ident.device_id,
       label: defaultLabel,
@@ -106,15 +109,31 @@ export async function trustCurrentDevice(apiBase, label = "", deviceType = "desk
 }
 
 export async function listTrustedDevices(apiBase) {
-  const out = await apiJson(apiBase, "/api/devices/list", { method: "GET" });
+  const session = await getSession();
+
+  if (!session?.token) {
+    throw new Error("Not logged in (missing token)");
+  }
+
+  const out = await apiJson(apiBase, "/api/devices/list", {
+    method: "GET",
+    token: session.token
+  });
+
   return out.devices || [];
 }
 
 export async function revokeTrustedDevice(apiBase, deviceId) {
+  const session = await getSession();
+
+  if (!session?.token) throw new Error("Not logged in");
+
   await apiJson(apiBase, "/api/devices/revoke", {
     method: "POST",
+    token: session.token,
     body: { device_id: deviceId }
   });
+
   return true;
 }
 
@@ -204,8 +223,11 @@ export async function startRecoveryRequest(apiBase, tokenString) {
     `${parts[0] === "qm-rrt-3" ? "qm|v3|" : "qm|v2|"}${token_id}|${token_secret}`
   );
 
+  const session = await getSession();
+
   const out = await apiJson(apiBase, "/api/recovery/quorum/start", {
     method: "POST",
+    token: session.token,
     body: {
       token_id,
       token_verifier_hash,
@@ -223,7 +245,13 @@ export async function startRecoveryRequest(apiBase, tokenString) {
 }
 
 export async function getPendingRecovery(apiBase) {
-  const out = await apiJson(apiBase, "/api/recovery/quorum/pending", { method: "GET" });
+  const session = await getSession();
+
+  const out = await apiJson(apiBase, "/api/recovery/quorum/pending", {
+    method: "GET",
+    token: session.token
+  });
+
   return out.requests || [];
 }
 
@@ -241,6 +269,7 @@ export async function approveRecoveryRequest(apiBase, request_id, nonce_b64) {
 
   await apiJson(apiBase, "/api/recovery/quorum/approve", {
     method: "POST",
+    token: session.token,
     body: {
       request_id,
       device_id: ident.device_id,
@@ -255,8 +284,11 @@ export async function finishRecoveryFetch(apiBase, request_id, token_id, token_s
   const verifierPrefix = tokenPrefix === "qm-rrt-2" ? "qm|v2|" : "qm|v3|";
   const token_verifier_hash = await sha256Hex(`${verifierPrefix}${token_id}|${token_secret}`);
 
+  const session = await getSession();
+
   const out = await apiJson(apiBase, "/api/recovery/quorum/fetch", {
     method: "POST",
+    token: session.token,
     body: {
       request_id,
       token_id,
