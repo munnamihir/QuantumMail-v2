@@ -6,36 +6,67 @@ function sendToExtension(type, payload = {}) {
   window.postMessage({ source: "qm-portal", type, payload }, "*");
 }
 
+/* =========================
+   INIT
+========================= */
 document.addEventListener("DOMContentLoaded", () => {
   loadDevices();
 });
 
+/* =========================
+   LOAD DEVICES
+========================= */
 function loadDevices() {
+  console.log("Loading devices...");
   sendToExtension("load_devices");
 }
 
+/* =========================
+   RENDER DEVICES
+========================= */
 function renderDevices(devices) {
   const el = $("devicesList");
   el.innerHTML = "";
 
+  if (!devices || !devices.length) {
+    el.innerHTML = `<div style="opacity:.7">No devices found</div>`;
+    return;
+  }
+
   devices.forEach(d => {
     const div = document.createElement("div");
 
+    const statusColor =
+      d.status === "active"
+        ? "#2bd576"
+        : d.status === "pending"
+        ? "#facc15"
+        : "#ef4444";
+
     div.innerHTML = `
-      <div style="border:1px solid #444; padding:12px; margin:10px;">
-        <b>${d.label || "Device"}</b><br/>
-        ${d.device_id}<br/>
-        Status: ${d.status}<br/><br/>
+      <div style="
+        border:1px solid #444;
+        padding:14px;
+        margin:10px;
+        border-radius:10px;
+        background:#0f172a;
+      ">
+        <b style="font-size:14px">${d.label || "Device"}</b><br/>
+        <span style="opacity:.6">${d.device_id}</span><br/>
+
+        <span style="color:${statusColor}; font-weight:bold;">
+          ${d.status.toUpperCase()}
+        </span><br/><br/>
 
         ${
           d.status === "pending"
-            ? `<button data-trust="${d.device_id}">Trust</button>`
+            ? `<button data-trust="${d.device_id}" class="btn">Trust</button>`
             : ""
         }
 
         ${
           d.status === "active"
-            ? `<button data-revoke="${d.device_id}">Revoke</button>`
+            ? `<button data-revoke="${d.device_id}" class="btn danger">Revoke</button>`
             : ""
         }
       </div>
@@ -44,44 +75,82 @@ function renderDevices(devices) {
     el.appendChild(div);
   });
 
+  /* =========================
+     TRUST BUTTON
+  ========================= */
   el.querySelectorAll("[data-trust]").forEach(btn => {
     btn.onclick = () => {
+      const id = btn.dataset.trust;
+      console.log("Trust clicked:", id);
+
       sendToExtension("trust_this_device", {
-        device_id: btn.dataset.trust
+        device_id: id
       });
     };
   });
 
+  /* =========================
+     REVOKE BUTTON
+  ========================= */
   el.querySelectorAll("[data-revoke]").forEach(btn => {
     btn.onclick = () => {
+      const id = btn.dataset.revoke;
+      console.log("Revoke clicked:", id);
+
       sendToExtension("revoke_device", {
-        device_id: btn.dataset.revoke
+        device_id: id
       });
     };
   });
 }
 
-/* START RECOVERY */
-$("startBtn").onclick = () => {
+/* =========================
+   RECOVERY BUTTONS
+========================= */
+
+let lastRecovery = null;
+
+$("startBtn")?.addEventListener("click", () => {
   sendToExtension("start_recovery");
-};
+});
 
-/* LOAD PENDING */
-$("loadPendingBtn").onclick = () => {
+$("loadPendingBtn")?.addEventListener("click", () => {
   sendToExtension("load_pending");
-};
+});
 
-/* FINISH */
-$("finishBtn").onclick = () => {
+$("finishBtn")?.addEventListener("click", () => {
+  if (!lastRecovery) return;
+
   sendToExtension("finish_recovery", {
     request_id: lastRecovery.request_id
   });
-};
+});
 
+/* =========================
+   MESSAGE LISTENER
+========================= */
 window.addEventListener("message", (event) => {
   const msg = event.data;
   if (!msg || msg.source !== "qm-ext") return;
 
+  console.log("Vault received:", msg);
+
+  /* DEVICES */
+  if (msg.type === "devices_loaded") {
+    renderDevices(msg.payload.devices);
+  }
+
+  if (msg.type === "device_trusted") {
+    console.log("Device trusted!");
+    loadDevices();
+  }
+
+  if (msg.type === "device_revoked") {
+    console.log("Device revoked!");
+    loadDevices();
+  }
+
+  /* RECOVERY */
   if (msg.type === "recovery_started") {
     lastRecovery = msg.payload;
     $("reqOut").textContent = JSON.stringify(msg.payload, null, 2);
@@ -98,18 +167,8 @@ window.addEventListener("message", (event) => {
   if (msg.type === "vault_recovered") {
     $("recoverMsg").textContent = "Recovery complete!";
   }
-});
 
-
-window.addEventListener("message", (event) => {
-  const msg = event.data;
-  if (!msg || msg.source !== "qm-ext") return;
-
-  if (msg.type === "devices_loaded") {
-    renderDevices(msg.payload.devices);
-  }
-
-  if (msg.type === "device_trusted" || msg.type === "device_revoked") {
-    loadDevices();
+  if (msg.type === "vault_error") {
+    alert(msg.payload.error);
   }
 });
