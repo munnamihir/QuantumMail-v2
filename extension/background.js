@@ -1,9 +1,10 @@
+// extension/background.js (FINAL CLEAN)
+
 import {
   normalizeBase,
   getSession,
   setSession,
   aesEncrypt,
-  aesDecrypt,
   rsaWrapDek,
   getOrCreateRsaKeypair,
   ensureDeviceRegistered,
@@ -11,7 +12,7 @@ import {
 } from "./qm.js";
 
 /* =========================
-   API CALL
+   API HELPER
 ========================= */
 async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
   const base = normalizeBase(serverBase);
@@ -29,9 +30,7 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
 
   const data = await res.json().catch(() => ({}));
 
-  if (!res.ok) {
-    throw new Error(data.error || "Request failed");
-  }
+  if (!res.ok) throw new Error(data.error || "Request failed");
 
   return data;
 }
@@ -44,7 +43,7 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 
   const res = await fetch(`${base}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ orgId, username, password })
   });
 
@@ -64,118 +63,20 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
 }
 
 /* =========================
-   ENCRYPT
-========================= */
-async function encryptSelection() {
-  const s = await getSession();
-
-  const tab = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab[0].id;
-
-  const sel = await chrome.tabs.sendMessage(tabId, { type: "QM_GET_SELECTION" });
-  const text = sel?.text?.trim();
-
-  if (!text) throw new Error("No text selected");
-
-  const { ctB64Url, ivB64Url, rawDek } = await aesEncrypt(text);
-
-  const devices = await apiJson(s.serverBase, "/api/devices/list", {
-    token: s.token
-  });
-
-  const wrappedKeys = {};
-
-  for (const d of devices.devices) {
-    if (d.status !== "active") continue;
-
-    const pub = await crypto.subtle.importKey(
-      "jwk",
-      d.pub_jwk,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      true,
-      ["encrypt"]
-    );
-
-    wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
-  }
-
-  const msg = await apiJson(s.serverBase, "/api/messages", {
-    method: "POST",
-    token: s.token,
-    body: {
-      iv: ivB64Url,
-      ciphertext: ctB64Url,
-      wrappedKeys
-    }
-  });
-
-  await chrome.tabs.sendMessage(tabId, {
-    type: "QM_REPLACE_SELECTION_WITH_LINK",
-    url: msg.url
-  });
-
-  return msg;
-}
-
-/* =========================
    MESSAGE ROUTER
 ========================= */
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
   (async () => {
     try {
+
+      /* LOGIN */
       if (msg.type === "QM_LOGIN") {
         await loginAndStoreSession(msg);
         sendResponse({ ok: true });
         return;
       }
 
-      if (msg.type === "QM_ENCRYPT_SELECTION") {
-        const out = await encryptSelection();
-        sendResponse({ ok: true, ...out });
-        return;
-      }
-
-
-      if (msg?.type === "QM_RECIPIENTS") {
-        try {
-          const s = await getSession();
-      
-          if (!s?.token || !s?.serverBase) {
-            sendResponse({ ok: false, error: "Not logged in" });
-            return;
-          }
-      
-          const usersOut = await apiJson(s.serverBase, "/org/users", {
-            token: s.token
-          });
-      
-          console.log("USERS API:", usersOut);
-      
-          const users = Array.isArray(usersOut?.users)
-            ? usersOut.users
-            : [];
-      
-          sendResponse({
-            ok: true,
-            users: users.map(u => ({
-              userId: u.userId,
-              username: u.username,
-              hasKey: !!u.publicKeySpkiB64
-            }))
-          });
-      
-        } catch (e) {
-          console.error("QM_RECIPIENTS ERROR:", e);
-      
-          sendResponse({
-            ok: false,
-            error: e.message || "Failed to load users"
-          });
-        }
-      
-        return;
-      }
-      
+      /* LOAD DEVICES */
       if (msg.type === "load_devices") {
         const s = await getSession();
 
@@ -183,19 +84,13 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           token: s.token
         });
 
-        window.postMessage({
-          source: "qm-ext",
-          type: "devices_loaded",
-          payload: data
-        });
-
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, payload: data });
         return;
       }
 
+      /* TRUST DEVICE */
       if (msg.type === "trust_this_device") {
         const s = await getSession();
-        //const deviceId = await getDeviceId();
 
         await apiJson(s.serverBase, "/api/devices/trust", {
           method: "POST",
@@ -203,12 +98,11 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           body: { device_id: msg.payload.device_id }
         });
 
-        window.postMessage({ source: "qm-ext", type: "device_trusted" });
-
         sendResponse({ ok: true });
         return;
       }
 
+      /* REVOKE DEVICE */
       if (msg.type === "revoke_device") {
         const s = await getSession();
 
@@ -218,115 +112,82 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           body: { device_id: msg.payload.device_id }
         });
 
-        window.postMessage({ source: "qm-ext", type: "device_revoked" });
-
         sendResponse({ ok: true });
         return;
       }
 
-
-      /* =========================
-         START RECOVERY
-      ========================= */
+      /* START RECOVERY */
       if (msg.type === "start_recovery") {
         const s = await getSession();
-      
+
         const data = await apiJson(s.serverBase, "/api/recovery/start", {
           method: "POST",
           token: s.token
         });
-      
-        window.postMessage({
-          source: "qm-ext",
-          type: "recovery_started",
-          payload: data
-        });
-      
-        sendResponse({ ok: true });
+
+        sendResponse({ ok: true, payload: data });
         return;
       }
-      
-      /* =========================
-         LOAD PENDING
-      ========================= */
+
+      /* LOAD PENDING */
       if (msg.type === "load_pending") {
         const s = await getSession();
-      
+
         const data = await apiJson(s.serverBase, "/api/recovery/pending", {
           token: s.token
         });
-      
-        window.postMessage({
-          source: "qm-ext",
-          type: "pending_loaded",
-          payload: data
-        });
-      
-        sendResponse({ ok: true });
+
+        sendResponse({ ok: true, payload: data });
         return;
       }
-      
-      /* =========================
-         APPROVE RECOVERY
-      ========================= */
+
+      /* APPROVE */
       if (msg.type === "approve_recovery") {
         const s = await getSession();
-      
+
         const kp = await getOrCreateRsaKeypair(s.user.userId);
         const privateJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
-      
-        const encrypted = btoa(JSON.stringify(privateJwk));
-      
+
         await apiJson(s.serverBase, "/api/recovery/approve", {
           method: "POST",
           token: s.token,
           body: {
             request_id: msg.payload.request_id,
-            encrypted_private_key: encrypted
+            encrypted_private_key: btoa(JSON.stringify(privateJwk))
           }
         });
-      
-        window.postMessage({
-          source: "qm-ext",
-          type: "recovery_approved"
-        });
-      
+
         sendResponse({ ok: true });
         return;
       }
-      
-      /* =========================
-         FINISH RECOVERY
-      ========================= */
+
+      /* FINISH */
       if (msg.type === "finish_recovery") {
         const s = await getSession();
-      
+
         const data = await apiJson(
           s.serverBase,
           `/api/recovery/finish/${msg.payload.request_id}`,
           { token: s.token }
         );
-      
+
         const privateJwk = JSON.parse(atob(data.encrypted_key));
-      
+
         await chrome.storage.local.set({
           [`qm_rsa_${s.user.userId}`]: {
             privateJwk,
-            publicJwk: privateJwk 
+            publicJwk: privateJwk
           }
         });
-      
-        window.postMessage({
-          source: "qm-ext",
-          type: "vault_recovered"
-        });
-      
+
         sendResponse({ ok: true });
         return;
       }
-      
+
       sendResponse({ ok: false });
+
     } catch (e) {
+      console.error("❌ Background error:", e);
       sendResponse({ ok: false, error: e.message });
     }
   })();
