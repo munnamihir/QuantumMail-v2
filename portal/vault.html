@@ -2,102 +2,308 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>QuantumMail - Trusted Devices & Recovery Vault</title>
-  <link rel="stylesheet" href="ui.css" />
+  <title>QuantumMail Vault</title>
+
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --card: #12182a;
+      --border: rgba(255,255,255,.08);
+      --text: #e9eefc;
+      --muted: #9aa6d6;
+      --accent: #6ea8fe;
+      --green: #2bd576;
+      --danger: #ff5d5d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #0f1730, #0b0f1a);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: auto;
+      padding: 30px;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 25px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,.3);
+    }
+
+    .card h2 {
+      margin-top: 0;
+    }
+
+    button {
+      border: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-right: 10px;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #07101f;
+    }
+
+    button.success {
+      background: var(--green);
+      color: #04120a;
+    }
+
+    button.danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0f1528;
+      color: white;
+      margin-bottom: 10px;
+    }
+
+    .device {
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-left: 8px;
+    }
+
+    .active { background: var(--green); color: black; }
+    .pending { background: orange; color: black; }
+
+    .section-title {
+      margin-top: 10px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .center {
+      text-align: center;
+      margin-top: 40px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+  </style>
 </head>
+
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div class="brand">
-        <div class="logo"></div>
-        <div>
-          <h1>QuantumMail Security</h1>
-          <div class="muted">Trusted devices and token + 1 device recovery</div>
-        </div>
-      </div>
-    </div>
 
+<div class="wrap">
+
+  <h1>🔐 QuantumMail Vault</h1>
+  <div class="muted">2-Device Trust + Recovery System</div>
+
+  <div class="grid">
+
+    <!-- ===================== DEVICE A ===================== -->
     <div class="card">
-      <h2>Trust this device</h2>
-      <p class="muted">
-        This device is not trusted automatically. Trust it only if you want to use it later for approving recovery on new devices.
-      </p>
+      <h2>Device A (Trusted Device)</h2>
+      <div class="muted">Approve recovery + manage trust</div>
 
-      <div class="row">
-        <div>
-          <label for="deviceLabel">Device label</label>
-          <input id="deviceLabel" placeholder="Mihir MacBook Pro" />
-        </div>
-        <div>
-          <label for="deviceType">Device type</label>
-          <select id="deviceType">
-            <option value="desktop">Desktop / Laptop</option>
-            <option value="mobile">Mobile</option>
-            <option value="tablet">Tablet</option>
-          </select>
-        </div>
-      </div>
+      <div class="section-title">Devices</div>
+      <div id="devicesA"></div>
 
-      <div class="actions">
-        <button id="trustBtn" class="primary">Trust this device</button>
-        <button id="refreshDevicesBtn" class="secondary">Refresh devices</button>
-      </div>
+      <button class="primary" id="loadDevicesA">Refresh Devices</button>
 
-      <div id="trustMsg" class="ok"></div>
-      <div id="trustErr" class="err"></div>
+      <hr style="margin:20px 0;border-color:var(--border)"/>
+
+      <div class="section-title">Approve Recovery</div>
+      <button class="success" id="loadPending">Load Requests</button>
+      <div id="pendingList"></div>
     </div>
 
+
+    <!-- ===================== DEVICE B ===================== -->
     <div class="card">
-      <h2>Trusted devices</h2>
-      <div id="devicesList"></div> <!-- ✅ MUST MATCH JS -->
+      <h2>Device B (New Device)</h2>
+      <div class="muted">Recover access using trusted device</div>
+
+      <div class="section-title">Recovery Token</div>
+      <input id="tokenInput" placeholder="Paste recovery token"/>
+
+      <button class="primary" id="startRecovery">Start Recovery</button>
+      <button class="success" id="finishRecovery" disabled>Finish Recovery</button>
+
+      <pre id="requestOut">(no request)</pre>
     </div>
 
-    <div class="card">
-      <h2>Enable Recovery Vault</h2>
-      <p class="muted">
-        Generate your recovery token once. Save it safely. You will need this token plus one trusted device to recover on a new device later.
-      </p>
-
-      <div class="actions">
-        <button id="enableBtn" class="primary">Enable Recovery Vault</button>
-      </div>
-
-      <label>Recovery token</label>
-      <pre id="tokenOut">(not generated)</pre>
-      <div id="vaultMsg" class="ok"></div>
-      <div id="vaultErr" class="err"></div>
-    </div>
-
-    <div class="card">
-      <h2>Recover on a new device</h2>
-
-      <label for="tokenIn">Recovery token</label>
-      <input id="tokenIn" placeholder="qm-rrt-2|rrt_xxx|secret" />
-
-      <div class="actions">
-        <button id="startBtn" class="primary">Start Recovery</button>
-        <button id="finishBtn" class="secondary" disabled>Finish Recovery</button>
-      </div>
-
-      <label>Recovery request</label>
-      <pre id="reqOut">(none)</pre>
-      <div id="recoverMsg" class="ok"></div>
-      <div id="recoverErr" class="err"></div>
-    </div>
-
-    <div class="card">
-      <h2>Approve pending recovery requests</h2>
-
-      <div class="actions">
-        <button id="loadPendingBtn" class="secondary">Load pending requests</button>
-      </div>
-
-      <div id="pendingList" class="list"></div>
-      <div id="approveMsg" class="ok"></div>
-      <div id="approveErr" class="err"></div>
-    </div>
   </div>
 
-  <script src="vault.js"></script>
+  <div class="center">
+    QuantumMail Zero-Trust Device Security
+  </div>
+
+</div>
+
+<script>
+function send(type, payload = {}) {
+  window.postMessage({ source: "qm-portal", type, payload }, "*");
+}
+
+let lastRequest = null;
+
+/* ================= DEVICE LIST ================= */
+
+function renderDevices(devices) {
+  const el = document.getElementById("devicesA");
+  el.innerHTML = "";
+
+  devices.forEach(d => {
+    const div = document.createElement("div");
+    div.className = "device";
+
+    div.innerHTML = `
+      <b>${d.label || "Device"}</b>
+      <span class="tag ${d.status}">${d.status}</span><br/>
+      ${d.device_id}
+      <br/><br/>
+      <button class="success" ${d.status === "active" ? "disabled" : ""} 
+        onclick="trust('${d.device_id}')">Trust</button>
+      <button class="danger" onclick="revoke('${d.device_id}')">Revoke</button>
+    `;
+
+    el.appendChild(div);
+  });
+}
+
+/* ================= ACTIONS ================= */
+
+function trust(id) {
+  send("trust_device_direct", { device_id: id });
+}
+
+function revoke(id) {
+  send("revoke_device", { device_id: id });
+}
+
+/* ================= RECOVERY ================= */
+
+document.getElementById("startRecovery").onclick = () => {
+  const token = document.getElementById("tokenInput").value.trim();
+  if (!token) return alert("Enter token");
+
+  send("start_recovery", { token });
+};
+
+document.getElementById("finishRecovery").onclick = () => {
+  if (!lastRequest) return;
+
+  send("finish_recovery", lastRequest);
+};
+
+document.getElementById("loadDevicesA").onclick = () => {
+  send("load_devices");
+};
+
+document.getElementById("loadPending").onclick = () => {
+  send("load_pending");
+};
+
+/* ================= LISTENER ================= */
+
+window.addEventListener("message", (e) => {
+  const msg = e.data;
+  if (!msg || msg.source !== "qm-ext") return;
+
+  if (msg.type === "devices_loaded") {
+    renderDevices(msg.payload.devices || []);
+  }
+
+  if (msg.type === "pending_loaded") {
+    const wrap = document.getElementById("pendingList");
+    wrap.innerHTML = "";
+
+    msg.payload.pending.forEach(r => {
+      const div = document.createElement("div");
+
+      div.innerHTML = `
+        <div class="device">
+          Request: ${r.request_id}<br/>
+          From: ${r.requester_device_id}<br/>
+          <button class="success"
+            onclick="approve('${r.request_id}','${r.nonce_b64}')">
+            Approve
+          </button>
+        </div>
+      `;
+
+      wrap.appendChild(div);
+    });
+  }
+
+  if (msg.type === "recovery_started") {
+    lastRequest = msg.payload;
+
+    document.getElementById("requestOut").textContent =
+      JSON.stringify(msg.payload, null, 2);
+
+    document.getElementById("finishRecovery").disabled = false;
+  }
+
+  if (msg.type === "device_trusted") {
+    send("load_devices");
+  }
+
+});
+
+/* ================= APPROVE ================= */
+
+function approve(id, nonce) {
+  send("approve_recovery", {
+    request_id: id,
+    nonce_b64: nonce
+  });
+}
+
+/* INIT */
+send("load_devices");
+</script>
+
 </body>
 </html>
