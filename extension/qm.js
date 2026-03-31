@@ -42,6 +42,37 @@ export async function setSession(patch) {
   });
 }
 
+/*================
+      apiJson
+  ================*/
+export async function apiJson(serverBase, path, { method = "GET", token = "", body = null } = {}) {
+  const url = serverBase.replace(/\/+$/, "") + path;
+
+  const headers = {
+    "Content-Type": "application/json"
+  };
+
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const deviceId = await getDeviceId();
+  if (deviceId) headers["x-qm-device-id"] = deviceId;
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+
+  return data;
+}
+
+
 /* =========================
    DEVICE REGISTER (PENDING ONLY)
 ========================= */
