@@ -4,7 +4,6 @@ import {
   normalizeBase,
   getSession,
   setSession,
-  ensureKeypairAndRegister,
   aesEncrypt,
   aesDecrypt,
   rsaWrapDek,
