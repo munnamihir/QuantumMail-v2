@@ -173,11 +173,3 @@ window.addEventListener("message", (event) => {
   }
 });
 
-btn.onclick = () => {
-  const id = btn.dataset.trust;
-  console.log("🚀 Sending trust for:", id);
-
-  sendToExtension("trust_this_device", {
-    device_id: id
-  });
-};
