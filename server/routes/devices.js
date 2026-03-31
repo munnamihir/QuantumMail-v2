@@ -47,6 +47,14 @@ deviceRoutes.post("/register", requireAuth, async (req, res) => {
 ========================= */
 deviceRoutes.get("/list", requireAuth, async (req, res) => {
   try {
+    console.log("REQ.QM:", req.qm); 
+
+    if (!req.qm || !req.qm.user || !req.qm.user.userId) {
+      return res.status(401).json({
+        error: "Unauthorized - missing user"
+      });
+    }
+
     const userId = req.qm.user.userId;
 
     const { rows } = await pool.query(
@@ -57,10 +65,16 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
       [userId]
     );
 
+    console.log("DEVICES FOUND:", rows); // 🔥
+
     res.json({ ok: true, devices: rows });
+
   } catch (e) {
-    console.error("LIST DEVICES ERROR:", e);
-    res.status(500).json({ error: "device_list_failed" });
+    console.error("LIST DEVICES ERROR FULL:", e); // 🔥 IMPORTANT
+    res.status(500).json({
+      error: "device_list_failed",
+      detail: e.message
+    });
   }
 });
 
