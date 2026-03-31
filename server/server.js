@@ -2347,35 +2347,27 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
 
     const deviceId = req.headers["x-qm-device-id"];
 
-    if (!deviceId) {
-      return res.status(400).json({ error: "Missing device ID" });
-    }
-
-    /* =========================
-       🔐 DEVICE VALIDATION
-    ========================= */
-
-    const { rows } = await pool.query(
-      `select status
+      if (!deviceId) {
+        return res.status(400).json({ error: "Missing device ID" });
+      }
+      
+      const { rows } = await pool.query(
+        `select device_id, revoked, status
          from qm_devices
-        where user_id = $1 and device_id = $2
-        limit 1`,
-      [user.userId, deviceId]
-    );
-
-    const device = rows[0];
-
-    if (!device) {
-      return res.status(403).json({
-        error: "Device not registered"
-      });
-    }
-
-    if (device.status !== "active") {
-      return res.status(403).json({
-        error: "Device not trusted. Approve it in vault."
-      });
-    }
+         where user_id = $1 and device_id = $2
+         limit 1`,
+        [user.userId, deviceId]
+      );
+      
+      const dbDevice = rows[0];
+      
+      if (!dbDevice) {
+        return res.status(403).json({ error: "Device not registered" });
+      }
+      
+      if (dbDevice.revoked || dbDevice.status !== "active") {
+        return res.status(403).json({ error: "Device not trusted" });
+      }
 
     /* =========================
        📦 FETCH MESSAGE
