@@ -158,7 +158,6 @@ export async function aesEncrypt(plaintext, aadText = "web") {
   );
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
-
   const encoded = new TextEncoder().encode(plaintext);
 
   const ciphertext = await crypto.subtle.encrypt(
@@ -170,8 +169,8 @@ export async function aesEncrypt(plaintext, aadText = "web") {
   const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
 
   return {
-    iv: btoa(String.fromCharCode(...iv)),
-    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+    ivB64Url: btoa(String.fromCharCode(...iv)),              // ✅ FIXED NAME
+    ctB64Url: btoa(String.fromCharCode(...new Uint8Array(ciphertext))), // ✅ FIXED NAME
     rawDek: rawKey
   };
 }
