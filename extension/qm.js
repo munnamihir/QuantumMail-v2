@@ -95,55 +95,28 @@ function rsaStorageKey(userId) {
   return `qm_rsa_${userId}`;
 }
 
-export async function getOrCreateRsaKeypair(userId) {
-  const key = rsaStorageKey(userId);
+export async function getOrCreateRsaKeypair(deviceId) {
+  const keyName = `qm_rsa_${deviceId}`;
 
-  const existing = await new Promise((resolve) => {
-    chrome.storage.local.get(key, (v) => resolve(v[key]));
-  });
+  const stored = await chrome.storage.local.get(keyName);
 
-  if (existing?.privateJwk && existing?.publicJwk) {
-    const privateKey = await crypto.subtle.importKey(
-      "jwk",
-      existing.privateJwk,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      true,
-      ["decrypt"]
-    );
+  if (stored[keyName]) return stored[keyName];
 
-    const publicKey = await crypto.subtle.importKey(
-      "jwk",
-      existing.publicJwk,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      true,
-      ["encrypt"]
-    );
-
-    return { privateKey, publicKey };
-  }
-
-  const kp = await crypto.subtle.generateKey(
+  const keypair = await crypto.subtle.generateKey(
     {
       name: "RSA-OAEP",
       modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
       hash: "SHA-256"
     },
     true,
     ["encrypt", "decrypt"]
   );
 
-  const privateJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
-  const publicJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+  const jwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
 
-  await new Promise((resolve) => {
-    chrome.storage.local.set(
-      { [key]: { privateJwk, publicJwk } },
-      () => resolve()
-    );
-  });
+  await chrome.storage.local.set({ [keyName]: jwk });
 
-  return kp;
+  return jwk;
 }
 
 // =========================
