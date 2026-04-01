@@ -80,17 +80,33 @@ recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
    FINISH RECOVERY
 ========================= */
 recoveryDeviceRoutes.get("/finish/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
   const userId = req.qm.user.userId;
 
+  // 1. Check quorum
   const { rows } = await pool.query(`
-    SELECT enc_wk_b64, iv_b64
+    SELECT status
+    FROM qm_recovery_requests
+    WHERE request_id=$1 AND user_id=$2
+  `, [id, userId]);
+
+  if (!rows.length || rows[0].status !== "approved") {
+    return res.status(400).json({ error: "Quorum not reached" });
+  }
+
+  // 2. Fetch vault (REAL recovery)
+  const { rows: vault } = await pool.query(`
+    SELECT enc_wk_b64, iv_b64, wk_version
     FROM qm_recovery_vault
     WHERE user_id=$1
   `, [userId]);
 
-  if (!rows.length) {
+  if (!vault.length) {
     return res.status(404).json({ error: "Vault not found" });
   }
 
-  res.json(rows[0]);
+  res.json({
+    ok: true,
+    vault: vault[0]
+  });
 });
