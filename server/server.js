@@ -2172,7 +2172,19 @@ app.post("/api/messages", requireAuth, async (req, res) => {
   const orgId = req.qm.tokenPayload.orgId;
   const { org, user } = req.qm;
 
+  console.log("🔥 HEADERS:", req.headers);
+  console.log("🔥 BODY RAW:", req.body);
+  console.log("🔥 BODY TYPE:", typeof req.body);
+
   const payload = req.body || {};
+
+  console.log("🔥 PAYLOAD:", payload);
+  console.log("🔥 FIELDS:", {
+    iv: payload.iv,
+    ciphertext: payload.ciphertext,
+    wrappedKeys: payload.wrappedKeys
+  });
+   
   if (!payload.iv || !payload.ciphertext || !payload.wrappedKeys) {
     return res.status(400).json({ error: "Invalid payload (iv, ciphertext, wrappedKeys required)" });
   }
