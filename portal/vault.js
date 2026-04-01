@@ -112,120 +112,42 @@ async function renderDevices(devices) {
   const el = $("devicesList");
   el.innerHTML = "";
 
-  const currentId = await getDeviceId();
+  const pending = await loadRecoveryState();
+
+  const activeRequest = pending.find(r => r.status === "pending");
 
   devices.forEach(d => {
+    const canApprove =
+      activeRequest &&
+      d.device_id !== activeRequest.device_id; // not self
+
     const div = document.createElement("div");
+
     div.className = "device";
 
-    const isCurrent = d.device_id === currentId;
-
     div.innerHTML = `
-  <b>${d.label || "Device"}</b><br/>
-  ${d.device_id}<br/>
+      <b>${d.label || "Device"}</b><br/>
+      ${d.device_id}<br/>
+      <span>${d.status}</span><br/><br/>
 
-  Status:
-  <span style="
-    color: ${
-      d.status === "active" ? "#2bd576" :
-      d.status === "pending" ? "#ffcc00" :
-      "#ff5d5d"
-    };
-    font-weight: bold;
-  ">
-    ${d.status}
-  </span>
+      ${
+        d.status === "active"
+          ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
+          : ""
+      }
 
-  <br/><br/>
-
-  ${
-    d.status === "pending"
-      ? `<button data-trust="${d.device_id}" class="primary">
-           Trust Device
-         </button>`
-      : ""
-  }
-
-  ${
-    d.status === "active"
-      ? `<button data-revoke="${d.device_id}" class="danger">
-           Revoke
-         </button>
-         <button data-approve="${d.device_id}" class="success">
-           🔓 Approve Recovery
-         </button>`
-      : ""
-  }`;
+      ${
+        canApprove
+          ? `<button data-approve="${d.device_id}" class="success">
+              🔓 Approve Recovery
+            </button>`
+          : `<button disabled style="opacity:.4">
+              Waiting for recovery
+            </button>`
+      }
+    `;
 
     el.appendChild(div);
-  });
-
-  /* =========================
-     TRUST DEVICE
-  ========================= */
-  el.querySelectorAll("[data-trust]").forEach(btn => {
-    btn.onclick = async () => {
-      const token = getToken();
-
-      await fetch("/api/devices/trust", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          device_id: btn.dataset.trust
-        })
-      });
-
-      alert("Device trusted ✅");
-      loadDevices();
-    };
-  });
-
-  /* =========================
-     REVOKE DEVICE
-  ========================= */
-  el.querySelectorAll("[data-revoke]").forEach(btn => {
-    btn.onclick = async () => {
-      const token = getToken();
-
-      await fetch("/api/devices/revoke", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          device_id: btn.dataset.revoke
-        })
-      });
-
-      loadDevices();
-    };
-  });
-
-  /* =========================
-     APPROVE RECOVERY
-  ========================= */
-  el.querySelectorAll("[data-approve]").forEach(btn => {
-    btn.onclick = async () => {
-      const token = getToken();
-
-      await fetch("/api/recovery/approve", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          "x-qm-device-id": getDeviceId()
-        },
-        body: JSON.stringify({
-          request_id: window.currentRequestId
-        })
-      });
-
-      alert("Approved for recovery");
-    };
   });
 }
 
