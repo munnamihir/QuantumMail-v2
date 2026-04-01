@@ -13,14 +13,38 @@
     window.postMessage({ source: "qm-ext", type, payload }, "*");
   }
 
-  window.addEventListener("message", async (event) => {
+  window.addEventListener("message", (event) => {
     if (event.data?.type === "GET_DEVICE_ID") {
-      const { deviceId } = await chrome.storage.local.get("deviceId");
+      console.log("📩 Bridge received: GET_DEVICE_ID");
   
-      window.postMessage({
-        type: "QM_DEVICE_ID_RESPONSE",
-        deviceId
-      }, "*");
+      try {
+        chrome.storage.local.get("deviceId", (result) => {
+          const deviceId = result.deviceId;
+  
+          if (!deviceId) {
+            console.error("❌ No deviceId in storage");
+  
+            window.postMessage({
+              type: "QM_DEVICE_ID_RESPONSE",
+              error: "NO_DEVICE_ID"
+            }, "*");
+  
+            return;
+          }
+  
+          window.postMessage({
+            type: "QM_DEVICE_ID_RESPONSE",
+            deviceId
+          }, "*");
+        });
+      } catch (err) {
+        console.error("❌ Bridge error:", err);
+  
+        window.postMessage({
+          type: "QM_DEVICE_ID_RESPONSE",
+          error: "BRIDGE_FAILED"
+        }, "*");
+      }
     }
   });
 
