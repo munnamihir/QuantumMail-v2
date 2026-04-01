@@ -14,6 +14,7 @@ import { recoveryRoutes } from "./routes/recovery.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { recoveryQuorumRoutes } from "./routes/recoveryQuorum.js";
 import { recoveryVaultRoutes } from "./routes/recoveryVault.js";
+import { recoveryDeviceRoutes } from "./routes/recoveryDeviceRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
