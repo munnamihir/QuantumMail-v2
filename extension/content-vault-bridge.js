@@ -46,19 +46,6 @@
         }, "*");
       }
     }
-    if (msg?.type === "rewrap_message") {
-      const { messageId, payload } = msg.payload || {};
-
-      console.log("🔁 Rewrapping message:", messageId);
-
-      chrome.runtime.sendMessage({
-        type: "QM_REWRAP_MESSAGE",
-        messageId,
-        payload
-      });
-
-      return; // 🔥 prevent fall-through
-    }
   });
 
   
@@ -103,6 +90,20 @@
       if (msg.type === "finish_recovery") {
         reply("vault_recovered", {});
       }
+
+      if (msg?.type === "rewrap_message") {
+      const { messageId, payload } = msg.payload || {};
+
+      console.log("🔁 Rewrapping message:", messageId);
+
+      chrome.runtime.sendMessage({
+        type: "QM_REWRAP_MESSAGE",
+        messageId,
+        payload
+      });
+
+      return; // 🔥 prevent fall-through
+    }
 
     } catch (e) {
       console.error("❌ Bridge error:", e);
