@@ -5,6 +5,7 @@ import {
   getSession,
   setSession,
   aesEncrypt,
+  aesDecrypt,
   rsaWrapDek,
   getOrCreateRsaKeypair,
   ensureDeviceRegistered,
