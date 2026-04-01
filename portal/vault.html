@@ -77,15 +77,41 @@
     </div>
 
     <!-- RECOVERY -->
-    <div class="card">
-      <h2>🔐 Recovery</h2>
-
-      <button id="startRecoveryBtn" class="primary">Start Recovery</button>
-      <button id="checkRecoveryBtn">Check Status</button>
-      <button id="finishRecoveryBtn" class="success">Complete Recovery</button>
-
-      <div id="recoveryStatus" style="margin-top:10px;"></div>
+    <div class="card recovery-card">
+    <h2>🔐 Device Recovery</h2>
+  
+    <!-- STEP INDICATOR -->
+    <div class="steps">
+      <div class="step active" id="step1">1</div>
+      <div class="step" id="step2">2</div>
+      <div class="step" id="step3">3</div>
     </div>
+  
+    <!-- STATUS -->
+    <div id="recoveryStatusBox" class="status-box">
+      <span id="recoveryStatusText">Not started</span>
+    </div>
+  
+    <!-- COUNTER -->
+    <div class="counter">
+      Approvals: <b id="approvalCount">0</b> / 2
+    </div>
+  
+    <!-- ACTION BUTTONS -->
+    <div class="actions">
+      <button id="startRecoveryBtn" class="primary">
+        🚀 Start Recovery
+      </button>
+  
+      <button id="checkRecoveryBtn" class="secondary">
+        🔄 Check Status
+      </button>
+  
+      <button id="finishRecoveryBtn" class="success">
+        ✅ Complete Recovery
+      </button>
+    </div>
+  </div>
 
   </div>
 
