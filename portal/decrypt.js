@@ -26,6 +26,7 @@ function bytesToBlobUrl(bytesArr, mimeType) {
 function renderAttachments(list) {
   const wrap = $("attachments");
   const host = $("attList");
+
   if (!wrap || !host) return;
 
   host.innerHTML = "";
@@ -42,58 +43,68 @@ function renderAttachments(list) {
 
     const row = document.createElement("div");
     row.className = "attItem";
+    row.style.marginBottom = "16px";
 
     /* =========================
-       HEADER (name + size)
+       FILE TITLE
     ========================= */
     const title = document.createElement("div");
-    title.style.fontWeight = "700";
+    title.style.fontWeight = "bold";
     title.style.marginBottom = "6px";
-
-    const kb = a.size ? Math.round(a.size / 1024) : null;
-    title.textContent = `${a.name || "attachment"}${kb ? ` • ${kb} KB` : ""}`;
+    title.textContent = `${a.name} (${Math.round(a.size / 1024)} KB)`;
 
     row.appendChild(title);
 
     /* =========================
-       🖼 IMAGE PREVIEW
+       PDF VIEWER
     ========================= */
-    if (a.mimeType?.startsWith("image/")) {
-      const img = document.createElement("img");
-      img.src = url;
-      img.style.maxWidth = "100%";
-      img.style.borderRadius = "10px";
-      img.style.marginBottom = "6px";
-
-      row.appendChild(img);
-    }
-
-    /* =========================
-       📄 PDF VIEWER (KEY FEATURE)
-    ========================= */
-    else if (a.mimeType === "application/pdf") {
+    if (a.mimeType === "application/pdf") {
       const iframe = document.createElement("iframe");
       iframe.src = url;
       iframe.style.width = "100%";
-      iframe.style.height = "500px";
+      iframe.style.height = "420px";
       iframe.style.border = "1px solid rgba(255,255,255,.1)";
       iframe.style.borderRadius = "10px";
-      iframe.style.marginBottom = "6px";
 
       row.appendChild(iframe);
     }
 
     /* =========================
-       📎 DOWNLOAD BUTTON (ALL FILES)
+       IMAGE PREVIEW
+    ========================= */
+    else if (a.mimeType.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.style.maxWidth = "100%";
+      img.style.borderRadius = "10px";
+      img.style.marginTop = "6px";
+
+      row.appendChild(img);
+    }
+
+    /* =========================
+       DEFAULT FILE
+    ========================= */
+    else {
+      const note = document.createElement("div");
+      note.style.opacity = "0.7";
+      note.style.fontSize = "12px";
+      note.textContent = "Preview not available";
+
+      row.appendChild(note);
+    }
+
+    /* =========================
+       DOWNLOAD BUTTON
     ========================= */
     const link = document.createElement("a");
     link.href = url;
     link.download = a.name || "attachment";
     link.textContent = "⬇ Download";
     link.style.display = "inline-block";
-    link.style.marginTop = "4px";
+    link.style.marginTop = "8px";
     link.style.color = "#6ea8fe";
-    link.style.fontWeight = "600";
+    link.style.fontWeight = "bold";
 
     row.appendChild(link);
 
