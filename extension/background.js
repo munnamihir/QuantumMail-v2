@@ -163,73 +163,81 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
-      /* START RECOVERY */
-      if (msg.type === "start_recovery") {
-        const s = await getSession();
-
-        const data = await apiJson(s.serverBase, "/api/recovery/start", {
-          method: "POST",
-          token: s.token
-        });
-
-        sendResponse({ ok: true, payload: data });
-        return;
-      }
-
-      /* LOAD PENDING */
-      if (msg.type === "load_pending") {
-        const s = await getSession();
-
-        const data = await apiJson(s.serverBase, "/api/recovery/pending", {
-          token: s.token
-        });
-
-        sendResponse({ ok: true, payload: data });
-        return;
-      }
-
-      /* APPROVE */
-      if (msg.type === "approve_recovery") {
-        const s = await getSession();
-
-        const kp = await getOrCreateRsaKeypair(s.user.userId);
-        const privateJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
-
-        await apiJson(s.serverBase, "/api/recovery/approve", {
-          method: "POST",
-          token: s.token,
-          body: {
-            request_id: msg.payload.request_id,
-            encrypted_private_key: btoa(JSON.stringify(privateJwk))
-          }
-        });
-
-        sendResponse({ ok: true });
-        return;
-      }
-
-      /* FINISH */
-      if (msg.type === "finish_recovery") {
-        const s = await getSession();
-
-        const data = await apiJson(
-          s.serverBase,
-          `/api/recovery/finish/${msg.payload.request_id}`,
-          { token: s.token }
-        );
-
-        const privateJwk = JSON.parse(atob(data.encrypted_key));
-
-        await chrome.storage.local.set({
-          [`qm_rsa_${s.user.userId}`]: {
-            privateJwk,
-            publicJwk: privateJwk
-          }
-        });
-
-        sendResponse({ ok: true });
-        return;
-      }
+      /* =========================
+           START RECOVERY
+        ========================= */
+        if (msg.type === "QM_START_RECOVERY") {
+          const s = await getSession();
+        
+          const data = await apiJson(s.serverBase, "/api/recovery/start", {
+            method: "POST",
+            token: s.token
+          });
+        
+          sendResponse({ ok: true, payload: data });
+          return;
+        }
+        
+        /* =========================
+           LOAD PENDING REQUESTS
+        ========================= */
+        if (msg.type === "QM_LOAD_RECOVERY_PENDING") {
+          const s = await getSession();
+        
+          const data = await apiJson(s.serverBase, "/api/recovery/pending", {
+            token: s.token
+          });
+        
+          sendResponse({ ok: true, payload: data });
+          return;
+        }
+        
+        /* =========================
+           APPROVE RECOVERY (OTHER DEVICE)
+        ========================= */
+        if (msg.type === "QM_APPROVE_RECOVERY") {
+          const s = await getSession();
+        
+          const kp = await getOrCreateRsaKeypair(s.user.userId);
+          const privateJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+        
+          const data = await apiJson(s.serverBase, "/api/recovery/approve", {
+            method: "POST",
+            token: s.token,
+            body: {
+              request_id: msg.requestId,
+              encrypted_private_key: btoa(JSON.stringify(privateJwk))
+            }
+          });
+        
+          sendResponse({ ok: true, payload: data });
+          return;
+        }
+        
+        /* =========================
+           FINISH RECOVERY
+        ========================= */
+        if (msg.type === "QM_FINISH_RECOVERY") {
+          const s = await getSession();
+        
+          const data = await apiJson(
+            s.serverBase,
+            `/api/recovery/finish/${msg.requestId}`,
+            { token: s.token }
+          );
+        
+          const privateJwk = JSON.parse(atob(data.encrypted_key));
+        
+          await chrome.storage.local.set({
+            [`qm_rsa_${s.user.userId}`]: {
+              privateJwk,
+              publicJwk: privateJwk
+            }
+          });
+        
+          sendResponse({ ok: true });
+          return;
+        }
 
       /* =========================
          ENCRYPT (FIXED)
