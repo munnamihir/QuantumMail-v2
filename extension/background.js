@@ -330,6 +330,17 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
+      if (msg.type === "QM_REWRAP_MESSAGE") {
+        const { messageId, payload } = msg;
+      
+        // TODO:
+        // 1. unwrap existing DEK
+        // 2. wrap for current device
+        // 3. call backend to update message
+      
+        console.log("Rewrap logic triggered for", messageId);
+      }
+      
       /* =========================
          DECRYPT (FIXED)
       ========================= */
