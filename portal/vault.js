@@ -91,6 +91,19 @@ async function renderCurrentDevice(devices) {
   `;
 }
 
+/*===========================
+  Recovery State
+  ===========================*/
+async function loadRecoveryState() {
+  const res = await fetch("/api/recovery/pending", {
+    headers: { Authorization: `Bearer ${getToken()}` }
+  });
+
+  const data = await res.json();
+
+  return data.pending || [];
+}
+
 /* =========================
    CURRENT DEVICE
 ========================= */
