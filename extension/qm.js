@@ -11,16 +11,15 @@ export const DEFAULTS = {
 // DEVICE ID
 // =========================
 export async function getDeviceId() {
-  const { deviceId } = await chrome.storage.local.get("deviceId");
+  const stored = await chrome.storage.local.get("qm_device_id");
 
-  if (deviceId) return deviceId;
+  if (stored.qm_device_id) return stored.qm_device_id;
 
-  const newId = "d_" + crypto.randomUUID().replace(/-/g, "");
+  const id = "dev_" + crypto.randomUUID();
 
-  await chrome.storage.local.set({ deviceId: newId });
+  await chrome.storage.local.set({ qm_device_id: id });
 
-  console.log("NEW DEVICE ID:", newId);
-  return newId;
+  return id;
 }
 
 // =========================
