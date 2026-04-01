@@ -6,22 +6,40 @@ import { requireAuth } from "../server.js";
 export const recoveryDeviceRoutes = express.Router();
 
 /* =========================
-   START
+   START RECOVERY
 ========================= */
 recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
-  const deviceId = req.headers["x-qm-device-id"];
+  const requesterDevice = req.headers["x-qm-device-id"];
 
   const requestId = crypto.randomBytes(16).toString("hex");
-  const nonce = crypto.randomBytes(16).toString("base64");
+  const nonce = crypto.randomBytes(32).toString("base64");
 
   await pool.query(`
     INSERT INTO qm_recovery_requests
     (request_id, user_id, requester_device_id, nonce_b64, status)
     VALUES ($1,$2,$3,$4,'pending')
-  `, [requestId, userId, deviceId, nonce]);
+  `, [requestId, userId, requesterDevice, nonce]);
 
-  res.json({ request_id: requestId, nonce });
+  res.json({
+    request_id: requestId,
+    nonce
+  });
+});
+
+/* =========================
+   LIST PENDING
+========================= */
+recoveryDeviceRoutes.get("/pending", requireAuth, async (req, res) => {
+  const userId = req.qm.user.userId;
+
+  const { rows } = await pool.query(`
+    SELECT request_id, requester_device_id, nonce_b64, status
+    FROM qm_recovery_requests
+    WHERE user_id=$1 AND status='pending'
+  `, [userId]);
+
+  res.json({ pending: rows });
 });
 
 /* =========================
@@ -29,28 +47,46 @@ recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
 ========================= */
 recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
-  const deviceId = req.headers["x-qm-device-id"];
+  const approverDevice = req.headers["x-qm-device-id"];
   const { request_id, encrypted_private_key } = req.body;
 
+  // ❗ prevent self-approval
+  const { rows: reqRows } = await pool.query(`
+    SELECT requester_device_id
+    FROM qm_recovery_requests
+    WHERE request_id=$1 AND user_id=$2
+  `, [request_id, userId]);
+
+  if (!reqRows.length) {
+    return res.status(404).json({ error: "Request not found" });
+  }
+
+  if (reqRows[0].requester_device_id === approverDevice) {
+    return res.status(400).json({ error: "Requester cannot approve" });
+  }
+
+  // ✅ insert approval
   await pool.query(`
     INSERT INTO qm_recovery_approvals
     (request_id, user_id, device_id, sig_b64)
     VALUES ($1,$2,$3,$4)
     ON CONFLICT DO NOTHING
-  `, [request_id, userId, deviceId, encrypted_private_key]);
+  `, [request_id, userId, approverDevice, encrypted_private_key]);
 
+  // ✅ count approvals
   const { rows } = await pool.query(`
     SELECT COUNT(*) as count
     FROM qm_recovery_approvals
-    WHERE request_id = $1
+    WHERE request_id=$1
   `, [request_id]);
 
   const approvals = Number(rows[0].count);
 
+  // 🔥 quorum condition
   if (approvals >= 2) {
     await pool.query(`
       UPDATE qm_recovery_requests
-      SET status='approved'
+      SET status='approved', approved_at=now()
       WHERE request_id=$1
     `, [request_id]);
   }
@@ -64,7 +100,7 @@ recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
 });
 
 /* =========================
-   FINISH
+   FINISH RECOVERY
 ========================= */
 recoveryDeviceRoutes.get("/finish/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -84,6 +120,7 @@ recoveryDeviceRoutes.get("/finish/:id", requireAuth, async (req, res) => {
     });
   }
 
+  // 🔥 latest approval key
   const { rows: approvals } = await pool.query(`
     SELECT sig_b64
     FROM qm_recovery_approvals
