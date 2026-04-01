@@ -108,46 +108,41 @@ async function renderDevices(devices) {
     const isCurrent = d.device_id === currentId;
 
     div.innerHTML = `
-      <b>${d.label || "Device"}</b>
-      ${isCurrent ? "<span style='color:#2bd576'> (This Device)</span>" : ""}
-      <br/>
+  <b>${d.label || "Device"}</b><br/>
+  ${d.device_id}<br/>
 
-      ${d.device_id}<br/>
+  Status:
+  <span style="
+    color: ${
+      d.status === "active" ? "#2bd576" :
+      d.status === "pending" ? "#ffcc00" :
+      "#ff5d5d"
+    };
+    font-weight: bold;
+  ">
+    ${d.status}
+  </span>
 
-      Status:
-      <span style="
-        color: ${
-          d.status === "active" ? "#2bd576" :
-          d.status === "pending" ? "#ffcc00" :
-          "#ff5d5d"
-        };
-        font-weight: bold;
-      ">
-        ${d.status}
-      </span>
+  <br/><br/>
 
-      <br/><br/>
+  ${
+    d.status === "pending"
+      ? `<button data-trust="${d.device_id}" class="primary">
+           Trust Device
+         </button>`
+      : ""
+  }
 
-      ${
-        d.status === "pending"
-          ? `<button data-trust="${d.device_id}" class="primary">
-               Trust Device
-             </button>`
-          : ""
-      }
-
-      ${
-        d.status === "active"
-          ? `<button data-revoke="${d.device_id}" class="danger">
-               Revoke
-             </button>`
-          : ""
-      }
-
-      <button data-approve="${d.device_id}" class="success">
-        Approve Recovery
-      </button>
-    `;
+  ${
+    d.status === "active"
+      ? `<button data-revoke="${d.device_id}" class="danger">
+           Revoke
+         </button>
+         <button data-approve="${d.device_id}" class="success">
+           🔓 Approve Recovery
+         </button>`
+      : ""
+  }`;
 
     el.appendChild(div);
   });
