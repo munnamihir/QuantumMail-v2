@@ -17,18 +17,37 @@ recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "missing device id header" });
     }
 
+    // ✅ generate ids
     const requestId = crypto.randomUUID();
+    const nonce = crypto.randomBytes(32).toString("base64");
 
+    // ✅ get token_id from vault (VERY IMPORTANT)
+    const { rows: vaultRows } = await pool.query(
+      `SELECT token_id FROM qm_recovery_vault WHERE user_id=$1`,
+      [userId]
+    );
+
+    if (!vaultRows.length) {
+      return res.status(400).json({ error: "vault_not_initialized" });
+    }
+
+    const tokenId = vaultRows[0].token_id;
+
+    // ✅ correct insert
     await pool.query(
       `
       INSERT INTO qm_recovery_requests
-      (request_id, user_id, requester_device_id, status)
-      VALUES ($1, $2, $3, 'pending')
+      (request_id, user_id, token_id, requester_device_id, nonce_b64, status)
+      VALUES ($1, $2, $3, $4, $5, 'pending')
       `,
-      [requestId, userId, deviceId]
+      [requestId, userId, tokenId, deviceId, nonce]
     );
 
-    res.json({ ok: true, request_id: requestId });
+    res.json({
+      ok: true,
+      request_id: requestId,
+      nonce
+    });
 
   } catch (e) {
     console.error("START ERROR:", e);
