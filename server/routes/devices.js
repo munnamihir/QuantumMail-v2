@@ -102,7 +102,15 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
       [userId]
     );
 
-    res.json({ devices: rows });
+    res.json({
+     devices: rows.map(r => ({
+       device_id: r.device_id,
+       label: r.label,
+       device_type: r.device_type,
+       pub_jwk: r.pub_jwk,
+       status: r.revoked ? "revoked" : "active"
+     }))
+   });
   } catch (e) {
     console.error("LIST ERROR:", e);
     res.status(500).json({ error: "device_list_failed" });
