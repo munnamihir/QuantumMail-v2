@@ -74,26 +74,31 @@ function escapeHtml(s) {
 
 function render(items) {
   const list = $("list");
-  if (!list) return;
 
-  if (!Array.isArray(items) || items.length === 0) {
-    list.innerHTML = `<div class="muted" style="padding:12px;">No encrypted messages yet.</div>`;
+  if (!items || items.length === 0) {
+    list.innerHTML = `<div class="empty">📭 No encrypted messages yet</div>`;
     return;
   }
 
-  list.innerHTML = items.map((m) => `
+  list.innerHTML = items.map(m => `
     <div class="item">
-      <div class="itemMain">
-        <div class="itemTitle">Encrypted message</div>
-        <div class="muted">
-          ${m.from ? `From: <b>${escapeHtml(m.from)}</b> • ` : ``}
-          ${escapeHtml(fmt(m.createdAt))}
-          ${m.attachmentCount ? ` • Attachments: ${escapeHtml(m.attachmentCount)}` : ``}
+
+      <div class="itemLeft">
+        <div class="title">
+          🔐 Encrypted Message
+          ${m.attachmentCount ? `<span class="badge">📎 ${m.attachmentCount}</span>` : ""}
+        </div>
+
+        <div class="meta">
+          ${m.from ? `From: <b>${m.from}</b> • ` : ""}
+          ${new Date(m.createdAt).toLocaleString()}
         </div>
       </div>
-      <div class="itemActions">
-        <a class="btn primary" href="/m/${encodeURIComponent(m.id)}">Decrypt</a>
+
+      <div>
+        <a class="btn primary" href="/m/${m.id}">Decrypt</a>
       </div>
+
     </div>
   `).join("");
 }
