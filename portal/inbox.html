@@ -4,96 +4,184 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>QuantumMail • Inbox</title>
-  <link rel="stylesheet" href="/portal/ui.css"/>
+
+  <style>
+    :root{
+      --bg:#0b0f1a;
+      --card:#12182a;
+      --text:#e9eefc;
+      --muted:#aab4d6;
+      --border:rgba(255,255,255,.10);
+      --accent:#6ea8fe;
+      --good:#2bd576;
+      --shadow: 0 18px 60px rgba(0,0,0,.35);
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      font-family: system-ui,-apple-system,Segoe UI,Roboto;
+      background:
+        radial-gradient(1200px 600px at 30% -10%, rgba(110,168,254,.18), transparent 55%),
+        radial-gradient(900px 500px at 95% 0%, rgba(43,213,118,.12), transparent 50%),
+        var(--bg);
+      color:var(--text);
+    }
+
+    .wrap{max-width:1100px;margin:auto;padding:20px}
+
+    /* HEADER */
+    .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:20px;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+
+    .logo{
+      width:44px;height:44px;border-radius:14px;
+      background:linear-gradient(135deg,#6ea8fe,#2bd576);
+      box-shadow:0 10px 40px rgba(110,168,254,.3);
+    }
+
+    h1{margin:0;font-size:20px}
+    .muted{color:var(--muted);font-size:12px}
+
+    .right button{
+      margin-left:8px;
+    }
+
+    button{
+      border-radius:12px;
+      padding:10px 14px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.05);
+      color:var(--text);
+      cursor:pointer;
+      font-weight:600;
+    }
+
+    button.primary{
+      background:linear-gradient(135deg,#6ea8fe,#2bd576);
+      border:none;
+      color:#07101f;
+    }
+
+    /* CARD */
+    .card{
+      background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+      border:1px solid var(--border);
+      border-radius:18px;
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+
+    /* LIST */
+    .list{
+      margin-top:15px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .item{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:14px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.04);
+      transition:all .2s ease;
+    }
+
+    .item:hover{
+      transform:translateY(-2px);
+      background:rgba(255,255,255,.06);
+    }
+
+    .itemLeft{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+
+    .title{
+      font-weight:700;
+      font-size:14px;
+    }
+
+    .meta{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .badge{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(110,168,254,.15);
+      color:var(--accent);
+      border:1px solid rgba(110,168,254,.25);
+      margin-left:6px;
+    }
+
+    .empty{
+      text-align:center;
+      padding:40px;
+      color:var(--muted);
+    }
+
+    .err{color:#ff5c77;margin-top:10px}
+
+  </style>
 </head>
+
 <body>
-  <div class="wrap">
-    <header class="top">
-      <div class="brand">
-        <div class="logo"></div>
-        <div>
-          <h1>Inbox</h1>
-          <p class="muted" id="who">—</p>
-          <div class="orgLine" id="orgLine" style="display:none;">
-            <span class="badge" id="companyBadge" title="Company">
-              <span class="badgeDot"></span>
-              Company: <strong id="companyName">—</strong>
-            </span>
-          
-            <span class="badge" id="orgBadge" title="Organization">
-              <span class="badgeDot"></span>
-              Org: <strong id="orgName">—</strong>
-              <span class="muted" id="orgIdSmall" style="margin-left:6px;">—</span>
-            </span>
-          </div>
-        </div>
+
+<div class="wrap">
+
+  <!-- HEADER -->
+  <div class="top">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>Inbox</h1>
+        <div class="muted" id="who">—</div>
       </div>
-<a class="btn" href="/portal/admin.html" id="btnAdminDash" style="display:none;">Admin Dashboard</a>
-<a class="btn" href="/portal/invites.html" id="btnInvites" style="display:none;">Generate Invite</a>
-      <div class="right">
-        <button id="btnProfile" class="secondary" type="button">Profile</button>
-        <button id="btnLogout" class="danger" type="button">Logout</button>
-      </div>
-    </header>
+    </div>
 
-    <main class="card">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <div>
-          <h2 style="margin:0;">Encrypted messages for you</h2>
-          <div class="muted">Click Decrypt to open the secure decrypt page.</div>
-        </div>
-        <button id="btnRefresh" class="secondary" type="button">Refresh</button>
-      </div>
-
-      <div id="list" class="list"></div>
-
-      <div id="inboxErr" class="err"></div>
-    </main>
-
-    <!-- Profile Modal (top-level) -->
-    <div id="profileModal" class="modal" style="display:none;">
-      <div class="modalInner">
-        <div class="card">
-          <div class="modalHead">
-            <h2 style="margin:0;">Profile</h2>
-            <button id="btnCloseProfile" class="secondary" type="button">Close</button>
-          </div>
-
-          <div class="muted" id="profileMeta">—</div>
-
-          <div class="row" style="margin-top:12px;">
-            <div>
-              <label for="curPw">Current Password</label>
-              <div class="help">Verify it’s you.</div>
-              <input id="curPw" type="password"/>
-            </div>
-          </div>
-
-          <div class="row">
-            <div>
-              <label for="newPw">New Password</label>
-              <div class="help">Minimum 8 characters.</div>
-              <input id="newPw" type="password"/>
-            </div>
-            <div>
-              <label for="newPw2">Confirm New Password</label>
-              <div class="help">Must match exactly.</div>
-              <input id="newPw2" type="password"/>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="btnChangePw" class="primary" type="button">Change password</button>
-          </div>
-
-          <div id="pwOk" class="ok"></div>
-          <div id="pwErr" class="err"></div>
-        </div>
-      </div>
+    <div class="right">
+      <button id="btnRefresh">Refresh</button>
+      <button id="btnLogout">Logout</button>
     </div>
   </div>
 
-  <script type="module" src="/portal/inbox.js"></script>
-  <script src="/portal/common-ui.js"></script>
+  <!-- MAIN -->
+  <div class="card">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h2 style="margin:0">Encrypted Messages</h2>
+        <div class="muted">Only accessible with your trusted device</div>
+      </div>
+    </div>
+
+    <div id="list" class="list"></div>
+    <div id="inboxErr" class="err"></div>
+
+  </div>
+
+</div>
+
+<script type="module" src="/portal/inbox.js"></script>
+
 </body>
 </html>
