@@ -40,70 +40,111 @@ async function loadDevices() {
 /* =========================
    CURRENT DEVICE
 ========================= */
-function renderCurrentDevice(devices) {
-  const el = $("currentDeviceBox");
-  const id = getDeviceId();
-
-  const d = devices.find(x => x.device_id === id);
-
-  if (!d) {
-    el.innerHTML = "Device not registered";
-    return;
-  }
-
-  el.innerHTML = `
-    <b>${d.label || "This Device"}</b><br/>
-    ${d.device_id}<br/>
-    <span style="color:#2bd576">ACTIVE</span>
-  `;
-}
-
-/* =========================
-   DEVICES LIST
-========================= */
 function renderDevices(devices) {
   const el = $("devicesList");
   el.innerHTML = "";
 
+  const currentId = getDeviceId();
+
   devices.forEach(d => {
     const div = document.createElement("div");
-
     div.className = "device";
 
+    const isCurrent = d.device_id === currentId;
+
     div.innerHTML = `
-      <b>${d.label || "Device"}</b><br/>
+      <b>${d.label || "Device"}</b>
+      ${isCurrent ? "<span style='color:#2bd576'> (This Device)</span>" : ""}
+      <br/>
+
       ${d.device_id}<br/>
-      <span>${d.status}</span><br/><br/>
 
-      ${d.status === "active"
-        ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
-        : ""}
+      Status:
+      <span style="
+        color: ${
+          d.status === "active" ? "#2bd576" :
+          d.status === "pending" ? "#ffcc00" :
+          "#ff5d5d"
+        };
+        font-weight: bold;
+      ">
+        ${d.status}
+      </span>
 
-      <button data-approve="${d.device_id}" class="success">Approve Recovery</button>
+      <br/><br/>
+
+      ${
+        d.status === "pending"
+          ? `<button data-trust="${d.device_id}" class="primary">
+               Trust Device
+             </button>`
+          : ""
+      }
+
+      ${
+        d.status === "active"
+          ? `<button data-revoke="${d.device_id}" class="danger">
+               Revoke
+             </button>`
+          : ""
+      }
+
+      <button data-approve="${d.device_id}" class="success">
+        Approve Recovery
+      </button>
     `;
 
     el.appendChild(div);
   });
 
-  /* REVOKE */
-  el.querySelectorAll("[data-revoke]").forEach(btn => {
+  /* =========================
+     TRUST DEVICE
+  ========================= */
+  el.querySelectorAll("[data-trust]").forEach(btn => {
     btn.onclick = async () => {
       const token = getToken();
 
-      await fetch("/org/revoke-device", {
+      await fetch("/api/devices/trust", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ deviceId: btn.dataset.revoke })
+        body: JSON.stringify({
+          device_id: btn.dataset.trust
+        })
+      });
+
+      alert("Device trusted ✅");
+      loadDevices();
+    };
+  });
+
+  /* =========================
+     REVOKE DEVICE
+  ========================= */
+  el.querySelectorAll("[data-revoke]").forEach(btn => {
+    btn.onclick = async () => {
+      const token = getToken();
+
+      await fetch("/api/devices/revoke", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: btn.dataset.revoke
+        })
       });
 
       loadDevices();
     };
   });
 
-  /* APPROVE */
+  /* =========================
+     APPROVE RECOVERY
+  ========================= */
   el.querySelectorAll("[data-approve]").forEach(btn => {
     btn.onclick = async () => {
       const token = getToken();
@@ -120,7 +161,7 @@ function renderDevices(devices) {
         })
       });
 
-      alert("Approved");
+      alert("Approved for recovery");
     };
   });
 }
