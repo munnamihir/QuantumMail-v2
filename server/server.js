@@ -2375,6 +2375,37 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
         return res.status(403).json({ error: "Device not trusted" });
       }
 
+   app.post("/api/messages/:id/add-device-key", requireAuth, async (req, res) => {
+     try {
+       const { org } = req.qm;
+       const messageId = req.params.id;
+       const deviceId = req.headers["x-qm-device-id"];
+       const { wrappedKey } = req.body;
+   
+       const msg = org.messages?.[messageId];
+       if (!msg) return res.status(404).json({ error: "Message not found" });
+   
+       const kv = String(msg.kekVersion || org.keyring?.active || "1");
+       const kk = getKekByVersion(org, kv);
+   
+       const decrypted = openWithKek(kk.kekBytes, msg.sealed);
+   
+       // 🔥 ADD NEW DEVICE KEY
+       decrypted.wrappedKeys[deviceId] = wrappedKey;
+   
+       // 🔒 RE-SEAL
+       msg.sealed = sealWithKek(kk.kekBytes, decrypted);
+   
+       await saveOrg(req.qm.tokenPayload.orgId, org);
+   
+       res.json({ ok: true });
+   
+     } catch (err) {
+       console.error("add-device-key error:", err);
+       res.status(500).json({ error: "Failed to add device key" });
+     }
+   });
+   
     /* =========================
        📦 FETCH MESSAGE
     ========================= */
