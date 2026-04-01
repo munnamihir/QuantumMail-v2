@@ -108,7 +108,7 @@ deviceRoutes.get("/list", requireAuth, async (req, res) => {
        label: r.label,
        device_type: r.device_type,
        pub_jwk: r.pub_jwk,
-       status: r.revoked ? "revoked" : "active"
+       status: r.revoked ? "revoked" : (r.status || "pending")
      }))
    });
   } catch (e) {
