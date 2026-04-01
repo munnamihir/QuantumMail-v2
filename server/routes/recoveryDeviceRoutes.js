@@ -54,7 +54,7 @@ recoveryDeviceRoutes.get("/pending", requireAuth, async (req, res) => {
 /* =========================
    APPROVE (QUORUM)
 ========================= */
-deviceRoutes.post("/approve", requireAuth, async (req, res) => {
+recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
   try {
     const userId = req.qm.user.userId;
     const approverDeviceId = req.headers["x-qm-device-id"];
