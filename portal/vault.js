@@ -2,69 +2,16 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function getToken() {
+  return localStorage.getItem("qm_token");
+}
+
+function getDeviceId() {
+  return localStorage.getItem("qm_device_id");
+}
+
 function sendToExtension(type, payload = {}) {
   window.postMessage({ source: "qm-portal", type, payload }, "*");
-}
-/* ===================
-   RECOVERY
-   ===================*/
-async function startRecovery() {
-  const res = await fetch("/api/recovery/start", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "x-qm-device-id": newDeviceId
-    }
-  });
-
-  const data = await res.json();
-  window.currentRequestId = data.request_id;
-}
-
-async function checkStatus() {
-  const res = await fetch("/api/recovery/pending", {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  const data = await res.json();
-
-  const req = data.pending.find(p => p.request_id === window.currentRequestId);
-
-  if (req?.status === "approved") {
-    finishRecovery();
-  }
-}
-
-
-async function finishRecovery() {
-  const res = await fetch(`/api/recovery/finish/${window.currentRequestId}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  const data = await res.json();
-
-  const vault = data.vault;
-
-  // 🔓 decrypt vault
-  const privateKey = await decryptVault(vault);
-
-  // 💾 store in extension
-  sendToExtension("restore_key", { privateKey });
-
-  // 🔐 register new device
-  await fetch("/org/register-key", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      publicKeySpkiB64: privateKey.publicKey,
-      deviceId: newDeviceId
-    })
-  });
-
-  alert("Recovery successful 🎉");
 }
 
 /* =========================
@@ -77,160 +24,155 @@ document.addEventListener("DOMContentLoaded", () => {
 /* =========================
    LOAD DEVICES
 ========================= */
-function loadDevices() {
-  console.log("Loading devices...");
-  sendToExtension("load_devices");
+async function loadDevices() {
+  const token = getToken();
+
+  const res = await fetch("/api/devices", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = await res.json();
+
+  renderDevices(data.devices || []);
+  renderCurrentDevice(data.devices || []);
 }
 
 /* =========================
-   RENDER DEVICES
+   CURRENT DEVICE
+========================= */
+function renderCurrentDevice(devices) {
+  const el = $("currentDeviceBox");
+  const id = getDeviceId();
+
+  const d = devices.find(x => x.device_id === id);
+
+  if (!d) {
+    el.innerHTML = "Device not registered";
+    return;
+  }
+
+  el.innerHTML = `
+    <b>${d.label || "This Device"}</b><br/>
+    ${d.device_id}<br/>
+    <span style="color:#2bd576">ACTIVE</span>
+  `;
+}
+
+/* =========================
+   DEVICES LIST
 ========================= */
 function renderDevices(devices) {
   const el = $("devicesList");
   el.innerHTML = "";
 
-  if (!devices || !devices.length) {
-    el.innerHTML = `<div style="opacity:.7">No devices found</div>`;
-    return;
-  }
-
   devices.forEach(d => {
     const div = document.createElement("div");
 
-    const statusColor =
-      d.status === "active"
-        ? "#2bd576"
-        : d.status === "pending"
-        ? "#facc15"
-        : "#ef4444";
+    div.className = "device";
 
     div.innerHTML = `
-      <div style="
-        border:1px solid #444;
-        padding:14px;
-        margin:10px;
-        border-radius:10px;
-        background:#0f172a;
-      ">
-        <b style="font-size:14px">${d.label || "Device"}</b><br/>
-        <span style="opacity:.6">${d.device_id}</span><br/>
+      <b>${d.label || "Device"}</b><br/>
+      ${d.device_id}<br/>
+      <span>${d.status}</span><br/><br/>
 
-        <span style="color:${statusColor}; font-weight:bold;">
-          ${d.status.toUpperCase()}
-        </span><br/><br/>
+      ${d.status === "active"
+        ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
+        : ""}
 
-        ${
-          d.status === "pending"
-            ? `<button data-trust="${d.device_id}" class="btn">Trust</button>`
-            : ""
-        }
-
-        ${
-          d.status === "active"
-            ? `<button data-revoke="${d.device_id}" class="btn danger">Revoke</button>`
-            : ""
-        }
-      </div>
+      <button data-approve="${d.device_id}" class="success">Approve Recovery</button>
     `;
 
     el.appendChild(div);
   });
 
-  /* =========================
-     TRUST BUTTON
-  ========================= */
-  el.querySelectorAll("[data-trust]").forEach(btn => {
-    btn.onclick = () => {
-      const id = btn.dataset.trust;
-      console.log("Trust clicked:", id);
+  /* REVOKE */
+  el.querySelectorAll("[data-revoke]").forEach(btn => {
+    btn.onclick = async () => {
+      const token = getToken();
 
-      sendToExtension("trust_this_device", {
-        device_id: id
+      await fetch("/org/revoke-device", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ deviceId: btn.dataset.revoke })
       });
+
+      loadDevices();
     };
   });
 
-  /* =========================
-     REVOKE BUTTON
-  ========================= */
-  el.querySelectorAll("[data-revoke]").forEach(btn => {
-    btn.onclick = () => {
-      const id = btn.dataset.revoke;
-      console.log("Revoke clicked:", id);
+  /* APPROVE */
+  el.querySelectorAll("[data-approve]").forEach(btn => {
+    btn.onclick = async () => {
+      const token = getToken();
 
-      sendToExtension("revoke_device", {
-        device_id: id
+      await fetch("/api/recovery/approve", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "x-qm-device-id": getDeviceId()
+        },
+        body: JSON.stringify({
+          request_id: window.currentRequestId
+        })
       });
+
+      alert("Approved");
     };
   });
 }
 
 /* =========================
-   RECOVERY BUTTONS
+   RECOVERY FLOW
 ========================= */
 
-let lastRecovery = null;
-
-$("startBtn")?.addEventListener("click", () => {
-  sendToExtension("start_recovery");
-});
-
-$("loadPendingBtn")?.addEventListener("click", () => {
-  sendToExtension("load_pending");
-});
-
-$("finishBtn")?.addEventListener("click", () => {
-  if (!lastRecovery) return;
-
-  sendToExtension("finish_recovery", {
-    request_id: lastRecovery.request_id
+$("startRecoveryBtn").onclick = async () => {
+  const res = await fetch("/api/recovery/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+      "x-qm-device-id": getDeviceId()
+    }
   });
-});
 
-/* =========================
-   MESSAGE LISTENER
-========================= */
-window.addEventListener("message", (event) => {
-  const msg = event.data;
-  if (!msg || msg.source !== "qm-ext") return;
+  const data = await res.json();
 
-  console.log("Vault received:", msg);
+  window.currentRequestId = data.request_id;
 
-  /* DEVICES */
-  if (msg.type === "devices_loaded") {
-    renderDevices(msg.payload.devices);
+  $("recoveryStatus").textContent = "Waiting for approvals...";
+};
+
+$("checkRecoveryBtn").onclick = async () => {
+  const res = await fetch("/api/recovery/pending", {
+    headers: { Authorization: `Bearer ${getToken()}` }
+  });
+
+  const data = await res.json();
+
+  const req = data.pending.find(
+    r => r.request_id === window.currentRequestId
+  );
+
+  $("recoveryStatus").textContent = req?.status || "Not found";
+};
+
+$("finishRecoveryBtn").onclick = async () => {
+  const res = await fetch(
+    `/api/recovery/finish/${window.currentRequestId}`,
+    { headers: { Authorization: `Bearer ${getToken()}` } }
+  );
+
+  const data = await res.json();
+
+  if (!data.vault) {
+    $("recoveryStatus").textContent = "Not ready";
+    return;
   }
 
-  if (msg.type === "device_trusted") {
-    console.log("Device trusted!");
-    loadDevices();
-  }
+  sendToExtension("restore_key", data.vault);
 
-  if (msg.type === "device_revoked") {
-    console.log("Device revoked!");
-    loadDevices();
-  }
-
-  /* RECOVERY */
-  if (msg.type === "recovery_started") {
-    lastRecovery = msg.payload;
-    $("reqOut").textContent = JSON.stringify(msg.payload, null, 2);
-  }
-
-  if (msg.type === "pending_loaded") {
-    renderPending(msg.payload.pending);
-  }
-
-  if (msg.type === "recovery_approved") {
-    $("approveMsg").textContent = "Approved!";
-  }
-
-  if (msg.type === "vault_recovered") {
-    $("recoverMsg").textContent = "Recovery complete!";
-  }
-
-  if (msg.type === "vault_error") {
-    alert(msg.payload.error);
-  }
-});
-
+  $("recoveryStatus").textContent = "Recovery complete 🎉";
+};
