@@ -291,7 +291,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
               iv: ivB64Url,
               ciphertext: ctB64Url,
               wrappedKeys,
-              attachments: msg.attachments || []
+              attachments: Array.isArray(msg.attachments) ? msg.attachments : []
             }
           });
 
