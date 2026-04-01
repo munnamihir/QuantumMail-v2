@@ -193,45 +193,63 @@ function getMsgIdFromPath() {
 
 console.log("QuantumMail decrypt bridge active on:", location.pathname);
 
-window.addEventListener("message", (event) => {
-  const data = event.data || {};
+chrome.runtime.sendMessage(
+  {
+    type: "QM_LOGIN_AND_DECRYPT",
+    msgId,
+    serverBase: data.serverBase,
+    orgId: data.orgId,
+    username: data.username,
+    password: data.password
+  },
+  (resp) => {
+    /* 🔥 CRITICAL FIX */
+    if (chrome.runtime.lastError) {
+      console.error("🚨 EXTENSION ERROR:", chrome.runtime.lastError.message);
 
-  if (data?.source !== "quantummail-portal") return;
-  if (data?.type !== "QM_LOGIN_AND_DECRYPT_REQUEST") return;
-
-  console.log("CONTENT: decrypt request received", data);
-
-  const msgId = data.msgId || getMsgIdFromPath();
-
-  chrome.runtime.sendMessage(
-    {
-      type: "QM_LOGIN_AND_DECRYPT",
-      msgId,
-      serverBase: data.serverBase,
-      orgId: data.orgId,
-      username: data.username,
-      password: data.password
-    },
-    (resp) => {
-      console.log("CONTENT: response from background", resp);
-
-      const out = resp?.ok
-        ? {
-            source: "quantummail-extension",
-            type: "QM_DECRYPT_RESULT",
-            ok: true,
-            plaintext: resp.plaintext,
-            attachments: resp.attachments || [],
-            message: "Decrypted ✅ (access audited)"
-          }
-        : {
-            source: "quantummail-extension",
-            type: "QM_DECRYPT_RESULT",
-            ok: false,
-            error: resp?.error || "Decrypt failed"
-          };
-
-      window.postMessage(out, "*");
+      window.postMessage(
+        {
+          source: "quantummail-extension",
+          type: "QM_DECRYPT_RESULT",
+          ok: false,
+          error: chrome.runtime.lastError.message
+        },
+        "*"
+      );
+      return;
     }
-  );
-});
+
+    console.log("CONTENT: response from background", resp);
+
+    if (!resp) {
+      window.postMessage(
+        {
+          source: "quantummail-extension",
+          type: "QM_DECRYPT_RESULT",
+          ok: false,
+          error: "No response from background"
+        },
+        "*"
+      );
+      return;
+    }
+
+    const out = resp.ok
+      ? {
+          source: "quantummail-extension",
+          type: "QM_DECRYPT_RESULT",
+          ok: true,
+          plaintext: resp.plaintext,
+          attachments: resp.attachments || [],
+          message: "Decrypted ✅ (access audited)"
+        }
+      : {
+          source: "quantummail-extension",
+          type: "QM_DECRYPT_RESULT",
+          ok: false,
+          error: resp.error || "Decrypt failed"
+        };
+
+    window.postMessage(out, "*");
+  }
+);
