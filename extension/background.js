@@ -325,7 +325,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
       /* =========================
          DECRYPT (FIXED)
       ========================= */
-      if (msg.type === "QM_LOGIN_AND_DECRYPT_REQUEST") {
+      if (msg.type === "QM_LOGIN_AND_DECRYPT_REQUEST" || msg.type === "QM_LOGIN_AND_DECRYPT") {
         try {
           const s = await getSession();
 
