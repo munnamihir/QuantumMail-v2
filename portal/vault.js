@@ -6,8 +6,20 @@ function getToken() {
   return localStorage.getItem("qm_token");
 }
 
-function getDeviceId() {
-  return localStorage.getItem("qm_device_id");
+async function getDeviceId() {
+  return new Promise((resolve) => {
+    window.postMessage(
+      { source: "qm-portal", type: "GET_DEVICE_ID" },
+      "*"
+    );
+
+    window.addEventListener("message", function handler(event) {
+      if (event.data?.type === "QM_DEVICE_ID_RESPONSE") {
+        window.removeEventListener("message", handler);
+        resolve(event.data.deviceId);
+      }
+    });
+  });
 }
 
 function sendToExtension(type, payload = {}) {
