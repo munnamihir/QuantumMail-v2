@@ -2315,43 +2315,30 @@ app.get("/super/companies/:companyId/orgs", requireAuth, requireSuperAdmin, asyn
   });
 });
 
-app.get("/api/inbox", requireAuth, (req, res) => {
-  const { org, user } = req.qm;
+app.get("/api/inbox", requireAuth, async (req, res) => {
+  try {
+    const { org, user } = req.qm;
 
-  const items = [];
-  const ids = Object.keys(org.messages || {});
-  ids.sort((a, b) => (Date.parse(org.messages[b]?.createdAt || "") || 0) - (Date.parse(org.messages[a]?.createdAt || "") || 0));
+    const items = [];
 
-  for (const id of ids) {
-    const rec = org.messages[id];
-    if (!rec) continue;
-
-    const kv = String(rec.kekVersion || org.keyring?.active || "1");
-    const kk = getKekByVersion(org, kv);
-    if (!kk) continue;
-
-    let msg;
-    try {
-      msg = openWithKek(kk.kekBytes, rec.sealed);
-    } catch {
-      continue;
+    for (const [id, msg] of Object.entries(org.messages || {})) {
+      items.push({
+        id,
+        createdAt: msg.createdAt,
+        from: msg.createdByUsername || "unknown",
+        attachmentCount: msg.sealed?.attachments?.length || 0
+      });
     }
-    if (!msg?.wrappedKeys?.[user.userId]) continue;
 
-    const attCount = Array.isArray(msg.attachments) ? msg.attachments.length : 0;
-    const attBytes = Array.isArray(msg.attachments) ? msg.attachments.reduce((s, a) => s + Number(a?.size || 0), 0) : 0;
+    // newest first
+    items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    items.push({
-      id,
-      createdAt: rec.createdAt,
-      from: rec.createdByUsername || null,
-      fromUserId: rec.createdByUserId || null,
-      attachmentCount: attCount,
-      attachmentsTotalBytes: attBytes,
-    });
+    res.json({ items });
+
+  } catch (e) {
+    console.error("inbox error:", e);
+    res.status(500).json({ error: "Failed to load inbox" });
   }
-
-  res.json({ items });
 });
 
 app.get("/api/messages/:id", requireAuth, async (req, res) => {
