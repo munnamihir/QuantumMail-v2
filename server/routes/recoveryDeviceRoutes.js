@@ -79,7 +79,7 @@ recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
 /* =========================
    FINISH RECOVERY
 ========================= */
-recoveryVaultRoutes.get("/finish/:id", requireAuth, async (req, res) => {
+recoveryDeviceRoutes.get("/finish/:id", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
 
   const { rows } = await pool.query(`
