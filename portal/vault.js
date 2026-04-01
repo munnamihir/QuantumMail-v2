@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
 async function loadDevices() {
   const token = getToken();
 
-  const res = await fetch("/api/devices", {
+  const res = await fetch("/api/devices/list", {
     headers: { Authorization: `Bearer ${token}` }
   });
 
