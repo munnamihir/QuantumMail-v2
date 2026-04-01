@@ -2439,6 +2439,45 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
 });
 
 /* =========================================================
+   REWRAP FOR NEW DEVICE (CRITICAL)
+========================================================= */
+app.post("/api/messages/:id/rewrap", requireAuth, async (req, res) => {
+  try {
+    const { org, user } = req.qm;
+    const messageId = req.params.id;
+    const deviceId = req.headers["x-qm-device-id"];
+
+    if (!deviceId) {
+      return res.status(400).json({ error: "Missing deviceId" });
+    }
+
+    const msg = org.messages?.[messageId];
+    if (!msg) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    // 🔓 Unseal message
+    const kv = String(msg.kekVersion || org.keyring?.active || "1");
+    const kk = getKekByVersion(org, kv);
+
+    const decrypted = openWithKek(kk.kekBytes, msg.sealed);
+
+    // 🚨 IMPORTANT: return full encrypted payload
+    res.json({
+      iv: decrypted.iv,
+      ciphertext: decrypted.ciphertext,
+      aad: decrypted.aad,
+      wrappedKeys: decrypted.wrappedKeys,
+      attachments: decrypted.attachments || []
+    });
+
+  } catch (err) {
+    console.error("rewrap error:", err);
+    res.status(500).json({ error: "Rewrap failed" });
+  }
+});
+   
+/* =========================================================
    Portal static + routes + outlook addin 
 ========================================================= */
 const portalDir = path.join(__dirname, "..", "portal");
