@@ -251,7 +251,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           });
 
           const devices = devicesRes.devices || [];
-
+          console.log("DEVICES FROM API:", devices);
           const wrappedKeys = {};
 
           for (const d of devices) {
@@ -274,7 +274,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           
             wrappedKeys[d.device_id] = await rsaWrapDek(pub, rawDek);
           }
-
+          console.log("WRAPPED KEYS:", wrappedKeys);
           if (Object.keys(wrappedKeys).length === 0) {
             sendResponse({
               ok: false,
