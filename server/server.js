@@ -229,6 +229,8 @@ function verifyToken(token) {
 ========================================================= */
 export async function requireAuth(req, res, next) {
   try {
+    console.log("🔐 requireAuth HIT");
+    console.log("AUTH HEADER:", req.headers.authorization);
     const auth = String(req.headers.authorization || "");
     const m = auth.match(/^Bearer\s+(.+)$/i);
     if (!m) return res.status(401).json({ error: "Missing Bearer token" });
