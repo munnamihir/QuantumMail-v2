@@ -5,6 +5,67 @@ function $(id) {
 function sendToExtension(type, payload = {}) {
   window.postMessage({ source: "qm-portal", type, payload }, "*");
 }
+/* ===================
+   RECOVERY
+   ===================*/
+async function startRecovery() {
+  const res = await fetch("/api/recovery/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-qm-device-id": newDeviceId
+    }
+  });
+
+  const data = await res.json();
+  window.currentRequestId = data.request_id;
+}
+
+async function checkStatus() {
+  const res = await fetch("/api/recovery/pending", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = await res.json();
+
+  const req = data.pending.find(p => p.request_id === window.currentRequestId);
+
+  if (req?.status === "approved") {
+    finishRecovery();
+  }
+}
+
+
+async function finishRecovery() {
+  const res = await fetch(`/api/recovery/finish/${window.currentRequestId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = await res.json();
+
+  const vault = data.vault;
+
+  // 🔓 decrypt vault
+  const privateKey = await decryptVault(vault);
+
+  // 💾 store in extension
+  sendToExtension("restore_key", { privateKey });
+
+  // 🔐 register new device
+  await fetch("/org/register-key", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      publicKeySpkiB64: privateKey.publicKey,
+      deviceId: newDeviceId
+    })
+  });
+
+  alert("Recovery successful 🎉");
+}
 
 /* =========================
    INIT
