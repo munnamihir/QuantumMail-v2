@@ -45,18 +45,42 @@ async function loadDevices() {
 
   const data = await res.json();
 
-  renderDevices(data.devices || []);
-  renderCurrentDevice(data.devices || []);
+  await renderDevices(data.devices || []);
+  await renderCurrentDevice(data.devices || []);
+}
+
+async function renderCurrentDevice(devices) {
+  const el = $("currentDeviceBox");
+
+  const id = await getDeviceId();
+
+  const d = devices.find(x => x.device_id === id);
+
+  if (!d) {
+    el.innerHTML = `
+      <span style="color:#ff5d5d">
+        Current device not registered
+      </span>
+    `;
+    return;
+  }
+
+  el.innerHTML = `
+    <b>${d.label || "This Device"}</b><br/>
+    ${d.device_id}<br/>
+    <span style="color:#2bd576">ACTIVE</span>
+  `;
 }
 
 /* =========================
    CURRENT DEVICE
 ========================= */
-function renderDevices(devices) {
+
+async function renderDevices(devices) {
   const el = $("devicesList");
   el.innerHTML = "";
 
-  const currentId = getDeviceId();
+  const currentId = await getDeviceId();
 
   devices.forEach(d => {
     const div = document.createElement("div");
