@@ -8,16 +8,21 @@ export const recoveryDeviceRoutes = express.Router();
 /* =========================
    START RECOVERY
 ========================= */
-app.post("/api/recovery/start", requireAuth, async (req, res) => {
+recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
   try {
     const userId = req.qm.user.userId;
     const deviceId = req.headers["x-qm-device-id"];
+
+    if (!deviceId) {
+      return res.status(400).json({ error: "missing device id header" });
+    }
 
     const requestId = crypto.randomUUID();
 
     await pool.query(
       `
-      INSERT INTO qm_recovery_requests (request_id, user_id, device_id, status)
+      INSERT INTO qm_recovery_requests
+      (request_id, user_id, requester_device_id, status)
       VALUES ($1, $2, $3, 'pending')
       `,
       [requestId, userId, deviceId]
