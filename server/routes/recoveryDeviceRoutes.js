@@ -8,24 +8,27 @@ export const recoveryDeviceRoutes = express.Router();
 /* =========================
    START RECOVERY
 ========================= */
-recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
-  const userId = req.qm.user.userId;
-  const requesterDevice = req.headers["x-qm-device-id"];
+app.post("/api/recovery/start", requireAuth, async (req, res) => {
+  try {
+    const userId = req.qm.user.userId;
+    const deviceId = req.headers["x-qm-device-id"];
 
-  const requestId = crypto.randomBytes(16).toString("hex");
-  const nonce = crypto.randomBytes(32).toString("base64");
-  const tokenId = crypto.randomBytes(16).toString("hex");
+    const requestId = crypto.randomUUID();
 
-   await pool.query(`
-     INSERT INTO qm_recovery_requests
-     (request_id, user_id, token_id, requester_device_id, nonce_b64, status)
-     VALUES ($1,$2,$3,$4,$5,'pending')
-   `, [requestId, userId, tokenId, requesterDevice, nonce]);
+    await pool.query(
+      `
+      INSERT INTO qm_recovery_requests (request_id, user_id, device_id, status)
+      VALUES ($1, $2, $3, 'pending')
+      `,
+      [requestId, userId, deviceId]
+    );
 
-  res.json({
-    request_id: requestId,
-    nonce
-  });
+    res.json({ ok: true, request_id: requestId });
+
+  } catch (e) {
+    console.error("START ERROR:", e);
+    res.status(500).json({ error: "start_failed" });
+  }
 });
 
 /* =========================
