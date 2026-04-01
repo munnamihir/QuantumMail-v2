@@ -26,6 +26,25 @@ function sendToExtension(type, payload = {}) {
   window.postMessage({ source: "qm-portal", type, payload }, "*");
 }
 
+function setStep(step) {
+  ["step1", "step2", "step3"].forEach((id, i) => {
+    const el = document.getElementById(id);
+
+    el.classList.remove("active", "done");
+
+    if (i + 1 < step) el.classList.add("done");
+    if (i + 1 === step) el.classList.add("active");
+  });
+}
+
+function setStatus(text) {
+  document.getElementById("recoveryStatusText").textContent = text;
+}
+
+function setApprovals(count) {
+  document.getElementById("approvalCount").textContent = count;
+}
+
 /* =========================
    INIT
 ========================= */
