@@ -307,6 +307,76 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         }
       }
 
+
+
+      /* =========================
+           DECRYPT FLOW
+        ========================= */
+        if (msg.type === "QM_LOGIN_AND_DECRYPT" || msg.type === "QM_LOGIN_AND_DECRYPT_REQUEST") {
+          try {
+            const s = await getSession();
+        
+            if (!s?.token || !s?.serverBase) {
+              sendResponse({ ok: false, error: "Not logged in" });
+              return;
+            }
+        
+            const base = s.serverBase;
+        
+            console.log("🔓 DECRYPT START:", msg.msgId);
+        
+            const payload = await apiJson(
+              base,
+              `/api/messages/${encodeURIComponent(msg.msgId)}`,
+              { token: s.token }
+            );
+        
+            const wrappedDek = payload.wrappedDek || payload.wrappedKey;
+        
+            if (!wrappedDek) {
+              sendResponse({ ok: false, error: "Missing wrapped key" });
+              return;
+            }
+        
+            const kp = await getOrCreateRsaKeypair(s.user.userId);
+        
+            let rawDek;
+            try {
+              rawDek = await crypto.subtle.decrypt(
+                { name: "RSA-OAEP" },
+                kp.privateKey,
+                Uint8Array.from(atob(wrappedDek), c => c.charCodeAt(0))
+              );
+            } catch (e) {
+              sendResponse({
+                ok: false,
+                error: "Device key mismatch. Re-encrypt message."
+              });
+              return;
+            }
+        
+            const plaintext = await aesDecrypt(
+              payload.iv,
+              payload.ciphertext,
+              payload.aad,
+              new Uint8Array(rawDek)
+            );
+        
+            console.log("✅ DECRYPT SUCCESS");
+        
+            sendResponse({
+              ok: true,
+              plaintext,
+              attachments: payload.attachments || []
+            });
+        
+          } catch (e) {
+            console.error("❌ DECRYPT ERROR:", e);
+            sendResponse({ ok: false, error: e.message });
+          }
+        
+          return;
+        }
       /* DEFAULT */
       sendResponse({ ok: false });
 
