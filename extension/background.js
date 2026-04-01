@@ -290,7 +290,8 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
             body: {
               iv: ivB64Url,
               ciphertext: ctB64Url,
-              wrappedKeys
+              wrappedKeys,
+              attachments: msg.attachments || []
             }
           });
 
