@@ -14,6 +14,18 @@
   }
 
   window.addEventListener("message", async (event) => {
+    if (event.data?.type === "GET_DEVICE_ID") {
+      const { deviceId } = await chrome.storage.local.get("deviceId");
+  
+      window.postMessage({
+        type: "QM_DEVICE_ID_RESPONSE",
+        deviceId
+      }, "*");
+    }
+  });
+
+  
+  window.addEventListener("message", async (event) => {
     const msg = event.data;
     if (!msg || msg.source !== "qm-portal") return;
 
