@@ -60,6 +60,57 @@
       border-radius: 10px;
       margin-bottom: 10px;
     }
+
+    .recovery-card {
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .steps {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .step {
+      width: 35px;
+      height: 35px;
+      border-radius: 50%;
+      background: #1a2240;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa6d6;
+      font-weight: bold;
+      transition: all 0.3s;
+    }
+    
+    .step.active {
+      background: #6ea8fe;
+      color: #fff;
+      box-shadow: 0 0 10px #6ea8fe;
+    }
+    
+    .step.done {
+      background: #2bd576;
+      color: #000;
+    }
+    
+    .status-box {
+      background: rgba(255,255,255,0.05);
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .counter {
+      margin-bottom: 10px;
+      color: #aab4d6;
+    }
+    
+    .actions button {
+      margin-top: 5px;
+    }
   </style>
 </head>
 
