@@ -237,19 +237,63 @@ $("checkRecoveryBtn").onclick = async () => {
 };
 
 $("finishRecoveryBtn").onclick = async () => {
+  const token = getToken();
+  const deviceId = await getDeviceId();
+
+  /* =========================
+     STEP 1: COMPLETE RECOVERY
+  ========================= */
   const res = await fetch(
     `/api/recovery/finish/${window.currentRequestId}`,
-    { headers: { Authorization: `Bearer ${getToken()}` } }
+    {
+      headers: { Authorization: `Bearer ${token}` }
+    }
   );
 
   const data = await res.json();
 
-  if (!data.vault) {
-    $("recoveryStatus").textContent = "Not ready";
+  if (!data.encrypted_key) {
+    $("recoveryStatus").textContent = "Recovery not ready";
     return;
   }
 
-  sendToExtension("restore_key", data.vault);
+  /* =========================
+     STEP 2: SEND KEY TO EXTENSION
+  ========================= */
+  sendToExtension("restore_key", data);
 
-  $("recoveryStatus").textContent = "Recovery complete 🎉";
+  /* =========================
+     STEP 3: REWRAP ALL MESSAGES
+  ========================= */
+  const inboxRes = await fetch("/api/inbox", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const inbox = await inboxRes.json();
+
+  for (const msg of inbox.items || []) {
+    try {
+      const r = await fetch(`/api/messages/${msg.id}/rewrap`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-qm-device-id": deviceId
+        }
+      });
+
+      const payload = await r.json();
+
+      // 🔥 send to extension for rewrap
+      sendToExtension("rewrap_message", {
+        messageId: msg.id,
+        payload
+      });
+
+    } catch (e) {
+      console.error("rewrap failed for", msg.id);
+    }
+  }
+
+  $("recoveryStatus").textContent =
+    "Recovery complete + messages rewrapped 🎉";
 };
