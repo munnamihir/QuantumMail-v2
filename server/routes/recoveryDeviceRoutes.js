@@ -14,12 +14,13 @@ recoveryDeviceRoutes.post("/start", requireAuth, async (req, res) => {
 
   const requestId = crypto.randomBytes(16).toString("hex");
   const nonce = crypto.randomBytes(32).toString("base64");
+  const tokenId = crypto.randomBytes(16).toString("hex");
 
-  await pool.query(`
-    INSERT INTO qm_recovery_requests
-    (request_id, user_id, requester_device_id, nonce_b64, status)
-    VALUES ($1,$2,$3,$4,'pending')
-  `, [requestId, userId, requesterDevice, nonce]);
+   await pool.query(`
+     INSERT INTO qm_recovery_requests
+     (request_id, user_id, token_id, requester_device_id, nonce_b64, status)
+     VALUES ($1,$2,$3,$4,$5,'pending')
+   `, [requestId, userId, tokenId, requesterDevice, nonce]);
 
   res.json({
     request_id: requestId,
