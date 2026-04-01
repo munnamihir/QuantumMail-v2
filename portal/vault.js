@@ -316,3 +316,91 @@ $("finishRecoveryBtn").onclick = async () => {
   $("recoveryStatus").textContent =
     "Recovery complete + messages rewrapped 🎉";
 };
+
+$("startRecoveryBtn").onclick = async () => {
+  setStep(1);
+  setStatus("Starting recovery...");
+
+  const res = await fetch("/api/recovery/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getToken()}`,
+      "x-qm-device-id": await getDeviceId()
+    }
+  });
+
+  const data = await res.json();
+
+  window.currentRequestId = data.request_id;
+
+  setStep(2);
+  setStatus("Waiting for approvals...");
+  setApprovals(0);
+};
+
+$("checkRecoveryBtn").onclick = async () => {
+  const res = await fetch("/api/recovery/pending", {
+    headers: { Authorization: `Bearer ${getToken()}` }
+  });
+
+  const data = await res.json();
+
+  const req = data.pending.find(
+    r => r.request_id === window.currentRequestId
+  );
+
+  if (!req) {
+    setStatus("Request not found");
+    return;
+  }
+
+  const approvals = req.approvals || 0;
+
+  setApprovals(approvals);
+
+  if (req.status === "approved") {
+    setStatus("Quorum reached ✅");
+    setStep(3);
+  } else {
+    setStatus(`Waiting for approvals (${approvals}/2)`);
+  }
+};
+
+$("finishRecoveryBtn").onclick = async () => {
+  setStatus("Completing recovery...");
+
+  const res = await fetch(
+    `/api/recovery/finish/${window.currentRequestId}`,
+    {
+      headers: { Authorization: `Bearer ${getToken()}` }
+    }
+  );
+
+  const data = await res.json();
+
+  if (!data.encrypted_key) {
+    setStatus("Not ready yet ❌");
+    return;
+  }
+
+  /* SEND TO EXTENSION */
+  sendToExtension("restore_key", data);
+
+  setStatus("Rewrapping messages...");
+
+  /* 🔁 REWRAP LOOP */
+  const inboxRes = await fetch("/api/inbox", {
+    headers: { Authorization: `Bearer ${getToken()}` }
+  });
+
+  const inbox = await inboxRes.json();
+
+  for (const msg of inbox.items || []) {
+    sendToExtension("rewrap_message", {
+      messageId: msg.id,
+      payload: msg
+    });
+  }
+
+  setStatus("Recovery complete 🎉");
+};
