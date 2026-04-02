@@ -160,7 +160,7 @@ $("startRecoveryBtn").onclick = async () => {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getToken()}`,
-      "x-qm-device-id": getDeviceId()
+      "x-qm-device-id": await getDeviceId()
     }
   });
 
