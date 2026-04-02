@@ -334,48 +334,76 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         try {
           const { messageId, payload } = msg;
       
-          const s = await getSession();
+          console.log("🔁 Rewrapping message:", messageId);
+      
           const deviceId = await getDeviceId();
       
-          const { privateKey, publicKey } =
-            await getOrCreateRsaKeypair(s.user.userId);
+          /* =========================
+             1. GET CURRENT KEYPAIR
+          ========================= */
+          const { privateKey, publicKey } = await getOrCreateRsaKeypair();
       
-          const wrappedB64 = payload.wrappedKeys[deviceId];
+          /* =========================
+             2. FIND ANY EXISTING WRAPPED KEY
+          ========================= */
+          const wrappedEntries = Object.entries(payload.wrappedKeys || {});
       
-          if (!wrappedB64) {
-            throw new Error("No wrapped key for this device");
+          if (!wrappedEntries.length) {
+            throw new Error("No wrapped keys found");
           }
+      
+          // pick first available key
+          const [existingDeviceId, wrappedB64] = wrappedEntries[0];
+      
+          console.log("Using wrapped key from:", existingDeviceId);
+      
+          /* =========================
+             3. UNWRAP DEK (RSA DECRYPT)
+          ========================= */
+          const wrappedBytes = Uint8Array.from(atob(wrappedB64), c => c.charCodeAt(0));
       
           const rawDek = await crypto.subtle.decrypt(
             { name: "RSA-OAEP" },
             privateKey,
-            Uint8Array.from(atob(wrappedB64), c => c.charCodeAt(0))
+            wrappedBytes
           );
       
+          const dekBytes = new Uint8Array(rawDek);
+      
+          /* =========================
+             4. WRAP FOR CURRENT DEVICE
+          ========================= */
           const newWrapped = await crypto.subtle.encrypt(
             { name: "RSA-OAEP" },
             publicKey,
-            rawDek
+            dekBytes
           );
       
           const newWrappedB64 = btoa(
             String.fromCharCode(...new Uint8Array(newWrapped))
           );
       
-          await fetch(`${s.serverBase}/api/messages/${messageId}/add-device-key`, {
+          /* =========================
+             5. SEND TO SERVER
+          ========================= */
+          const { serverBase, token } = await getSession();
+      
+          await fetch(`${serverBase}/api/messages/${messageId}/add-device-key`, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${s.token}`,
+              Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
               "x-qm-device-id": deviceId
             },
-            body: JSON.stringify({ wrappedKey: newWrappedB64 })
+            body: JSON.stringify({
+              wrappedKey: newWrappedB64
+            })
           });
       
-          console.log("✅ Rewrap done");
+          console.log("✅ Rewrap complete for:", messageId);
       
-        } catch (e) {
-          console.error("❌ Rewrap failed:", e);
+        } catch (err) {
+          console.error("❌ Rewrap failed:", err);
         }
       }
       
