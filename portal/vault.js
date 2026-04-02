@@ -1,8 +1,10 @@
+/* =========================
+   HELPERS
+========================= */
+
 function $(id) {
   const el = document.getElementById(id);
-  if (!el) {
-    console.warn(`⚠️ Element not found: ${id}`);
-  }
+  if (!el) console.warn(`⚠️ Element not found: ${id}`);
   return el;
 }
 
@@ -33,6 +35,7 @@ function sendToExtension(type, payload = {}) {
 function setStep(step) {
   ["step1", "step2", "step3"].forEach((id, i) => {
     const el = document.getElementById(id);
+    if (!el) return;
 
     el.classList.remove("active", "done");
 
@@ -42,16 +45,21 @@ function setStep(step) {
 }
 
 function setStatus(text) {
-  document.getElementById("recoveryStatusText").textContent = text;
+  const el = document.getElementById("recoveryStatusText");
+  if (!el) return;
+  el.textContent = text;
 }
 
 function setApprovals(count) {
-  document.getElementById("approvalCount").textContent = count;
+  const el = document.getElementById("approvalCount");
+  if (!el) return;
+  el.textContent = count;
 }
 
 /* =========================
    INIT
 ========================= */
+
 document.addEventListener("DOMContentLoaded", () => {
   loadDevices();
 });
@@ -59,11 +67,10 @@ document.addEventListener("DOMContentLoaded", () => {
 /* =========================
    LOAD DEVICES
 ========================= */
-async function loadDevices() {
-  const token = getToken();
 
+async function loadDevices() {
   const res = await fetch("/api/devices/list", {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${getToken()}` }
   });
 
   const data = await res.json();
@@ -72,19 +79,18 @@ async function loadDevices() {
   await renderCurrentDevice(data.devices || []);
 }
 
+/* =========================
+   CURRENT DEVICE
+========================= */
+
 async function renderCurrentDevice(devices) {
   const el = $("currentDeviceBox");
-
   const id = await getDeviceId();
 
   const d = devices.find(x => x.device_id === id);
 
   if (!d) {
-    el.innerHTML = `
-      <span style="color:#ff5d5d">
-        Current device not registered
-      </span>
-    `;
+    el.innerHTML = `<span style="color:#ff5d5d">Current device not registered</span>`;
     return;
   }
 
@@ -95,21 +101,21 @@ async function renderCurrentDevice(devices) {
   `;
 }
 
-/*===========================
-  Recovery State
-  ===========================*/
+/* =========================
+   LOAD RECOVERY STATE
+========================= */
+
 async function loadRecoveryState() {
   const res = await fetch("/api/recovery/pending", {
     headers: { Authorization: `Bearer ${getToken()}` }
   });
 
   const data = await res.json();
-
   return data.pending || [];
 }
 
 /* =========================
-   CURRENT DEVICE
+   DEVICES UI
 ========================= */
 
 async function renderDevices(devices) {
@@ -118,50 +124,34 @@ async function renderDevices(devices) {
 
   const currentDeviceId = await getDeviceId();
   const pending = await loadRecoveryState();
-
-  // 👉 get active recovery request
   const activeRequest = pending.find(r => r.status === "pending");
 
   devices.forEach(d => {
     const div = document.createElement("div");
     div.className = "device";
 
-    /* =========================
-       TRUST BUTTON (UNCHANGED)
-    ========================= */
     const trustBtn =
       d.status === "pending" && d.device_id === currentDeviceId
         ? `<button data-trust="${d.device_id}" class="success">Trust</button>`
         : "";
 
-    /* =========================
-       REVOKE BUTTON (UNCHANGED)
-    ========================= */
     const revokeBtn =
       d.status === "active"
         ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
         : "";
 
-    /* =========================
-       ✅ FIXED APPROVE LOGIC
-    ========================= */
     let approveBtn = "";
 
     if (!activeRequest) {
-      // ❌ no recovery started
       approveBtn = `<button disabled style="opacity:.4">No active recovery</button>`;
     } else if (activeRequest.requester_device_id === currentDeviceId) {
-      // ❌ Device C (self)
-      approveBtn = `<button disabled style="opacity:.4">Your recovery request</button>`;
+      approveBtn = `<button disabled style="opacity:.4">Your request</button>`;
     } else if (d.device_id === currentDeviceId) {
-      // ✅ Only current device can approve
       approveBtn = `
         <button data-approve="${activeRequest.request_id}" class="success">
           🔓 Approve Recovery
-        </button>
-      `;
+        </button>`;
     } else {
-      // ❌ other rows (just display)
       approveBtn = `<button disabled style="opacity:.4">Not this device</button>`;
     }
 
@@ -178,62 +168,47 @@ async function renderDevices(devices) {
     el.appendChild(div);
   });
 
-  /* =========================
-     TRUST HANDLER (KEEP)
-  ========================= */
+  /* TRUST */
   el.querySelectorAll("[data-trust]").forEach(btn => {
     btn.onclick = async () => {
-      const token = getToken();
-
       await fetch("/api/devices/trust", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          device_id: btn.dataset.trust
-        })
+        body: JSON.stringify({ device_id: btn.dataset.trust })
       });
 
       loadDevices();
     };
   });
 
-  /* =========================
-     REVOKE HANDLER (KEEP)
-  ========================= */
+  /* REVOKE */
   el.querySelectorAll("[data-revoke]").forEach(btn => {
     btn.onclick = async () => {
-      const token = getToken();
-
       await fetch("/api/devices/revoke", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          device_id: btn.dataset.revoke
-        })
+        body: JSON.stringify({ device_id: btn.dataset.revoke })
       });
 
       loadDevices();
     };
   });
 
-  /* =========================
-     APPROVE HANDLER (FIXED)
-  ========================= */
+  /* APPROVE */
   el.querySelectorAll("[data-approve]").forEach(btn => {
     btn.onclick = async () => {
-      const token = getToken();
       const deviceId = await getDeviceId();
 
       await fetch("/api/recovery/approve", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
           "Content-Type": "application/json",
           "x-qm-device-id": deviceId
         },
@@ -251,52 +226,11 @@ async function renderDevices(devices) {
    RECOVERY FLOW
 ========================= */
 
-$("checkRecoveryBtn").onclick = async () => {
-  const res = await fetch("/api/recovery/pending", {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
-
-  const data = await res.json();
-
-  const req = data.pending.find(
-    r => r.request_id === window.currentRequestId
-  );
-  setStatus(req?.status);
-  
-
-$("finishRecoveryBtn").onclick = async () => {
-  if (!window.currentRequestId) {
-    console.error("❌ No requestId found");
-    const statusEl = $("recoveryStatus");
-    if (statusEl) statusEl.textContent = "Start recovery first ❌";
-    return;
-  }
-
-  console.log("Using requestId:", window.currentRequestId);
-
-  const token = getToken();
-
-  const res = await fetch(
-    `/api/recovery/finish/${window.currentRequestId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` }
-    }
-  );
-
-  const data = await res.json();
-  console.log("FINISH RESPONSE:", data);
-
-  if (!data.vault) {
-   setStatus("Recovery not ready ❌");
-    return;
-  }
-
-  sendToExtension("restore_key", data.vault);
-
-  setStatus("Recovery complete 🎉");
-};
-
+/* START */
 $("startRecoveryBtn").onclick = async () => {
+  setStep(1);
+  setStatus("Starting recovery...");
+
   const deviceId = await getDeviceId();
 
   const res = await fetch("/api/recovery/start", {
@@ -309,22 +243,20 @@ $("startRecoveryBtn").onclick = async () => {
 
   const data = await res.json();
 
-  console.log("START RESPONSE:", data); // 🔥 MUST SEE THIS
-
   if (!data.request_id) {
-    console.error("❌ request_id missing");
     setStatus("Failed to start recovery ❌");
     return;
   }
 
-  // ✅ THIS IS THE MOST IMPORTANT LINE
   window.currentRequestId = data.request_id;
+  localStorage.setItem("qm_recovery_id", data.request_id);
 
-  console.log("✅ Stored requestId:", window.currentRequestId);
-
+  setStep(2);
   setStatus("Waiting for approvals...");
+  setApprovals(0);
 };
 
+/* CHECK */
 $("checkRecoveryBtn").onclick = async () => {
   const res = await fetch("/api/recovery/pending", {
     headers: { Authorization: `Bearer ${getToken()}` }
@@ -332,9 +264,11 @@ $("checkRecoveryBtn").onclick = async () => {
 
   const data = await res.json();
 
-  const req = data.pending.find(
-    r => r.request_id === window.currentRequestId
-  );
+  const requestId =
+    window.currentRequestId ||
+    localStorage.getItem("qm_recovery_id");
+
+  const req = data.pending.find(r => r.request_id === requestId);
 
   if (!req) {
     setStatus("Request not found");
@@ -349,35 +283,42 @@ $("checkRecoveryBtn").onclick = async () => {
     setStatus("Quorum reached ✅");
     setStep(3);
   } else {
-    setStatus(`Waiting for approvals (${approvals}/2)`);
+    setStatus(`Waiting (${approvals}/2 approvals)`);
   }
 };
 
+/* FINISH */
 $("finishRecoveryBtn").onclick = async () => {
   setStatus("Completing recovery...");
 
-  const res = await fetch(
-    `/api/recovery/finish/${window.currentRequestId}`,
-    {
-      headers: { Authorization: `Bearer ${getToken()}` }
-    }
-  );
+  const token = getToken();
+
+  const requestId =
+    window.currentRequestId ||
+    localStorage.getItem("qm_recovery_id");
+
+  if (!requestId) {
+    setStatus("Start recovery first ❌");
+    return;
+  }
+
+  const res = await fetch(`/api/recovery/finish/${requestId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
 
   const data = await res.json();
 
-  if (!data.encrypted_key) {
+  if (!data.vault) {
     setStatus("Not ready yet ❌");
     return;
   }
 
-  /* SEND TO EXTENSION */
-  sendToExtension("restore_key", data);
+  sendToExtension("restore_key", data.vault);
 
   setStatus("Rewrapping messages...");
 
-  /* 🔁 REWRAP LOOP */
   const inboxRes = await fetch("/api/inbox", {
-    headers: { Authorization: `Bearer ${getToken()}` }
+    headers: { Authorization: `Bearer ${token}` }
   });
 
   const inbox = await inboxRes.json();
