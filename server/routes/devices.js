@@ -45,6 +45,7 @@ deviceRoutes.post("/trust", requireAuth, async (req, res) => {
     const userId = req.qm.user.userId;
     const { device_id } = req.body;
 
+    // ✅ activate device
     await pool.query(
       `
       UPDATE qm_devices
@@ -54,7 +55,35 @@ deviceRoutes.post("/trust", requireAuth, async (req, res) => {
       [userId, device_id]
     );
 
+    /* =========================
+       🔐 ENSURE VAULT EXISTS
+    ========================= */
+    const { rows } = await pool.query(
+      `SELECT user_id FROM qm_recovery_vault WHERE user_id=$1`,
+      [userId]
+    );
+
+    if (!rows.length) {
+      console.log("🔐 Creating vault for user:", userId);
+
+      await pool.query(
+        `
+        INSERT INTO qm_recovery_vault
+        (user_id, token_id, token_verifier_hash, enc_wk_b64, iv_b64)
+        VALUES ($1, $2, $3, $4, $5)
+        `,
+        [
+          userId,
+          crypto.randomUUID(),
+          crypto.createHash("sha256").update(userId).digest("hex"),
+          "TEMP_KEY",   // later: encrypted private key
+          "TEMP_IV"
+        ]
+      );
+    }
+
     res.json({ ok: true });
+
   } catch (e) {
     console.error("TRUST ERROR:", e);
     res.status(500).json({ error: "device_trust_failed" });
