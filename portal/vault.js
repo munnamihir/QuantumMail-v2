@@ -169,9 +169,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function initVault() {
   setStatus("Loading vault...");
 
-  VaultState.currentDeviceId = await getDeviceId();
+  console.log("INIT START");
 
+  VaultState.currentDeviceId = await getDeviceId();
+  
+  console.log("DEVICE ID:", VaultState.currentDeviceId);
+  
   await loadDevices();
+  
+  console.log("DEVICES LOADED");
+  
   await syncRecoveryState();
 
   renderAll();
