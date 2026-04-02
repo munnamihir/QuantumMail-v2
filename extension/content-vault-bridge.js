@@ -13,38 +13,43 @@
 
   window.addEventListener("message", async (event) => {
     const msg = event.data;
-
+  
     if (!msg) return;
-
+  
+    console.log("📥 Incoming message:", msg);
+  
     /* =========================
-       🔥 GET DEVICE ID (PRIORITY)
+       GET DEVICE ID (ALWAYS ALLOWED)
     ========================= */
     if (msg.type === "GET_DEVICE_ID") {
       console.log("📩 Bridge received: GET_DEVICE_ID");
-
+  
       chrome.storage.local.get("deviceId", (result) => {
         const deviceId = result.deviceId;
-
+  
         if (!deviceId) {
-          console.error("❌ No deviceId found in extension");
-
           window.postMessage({
             type: "QM_DEVICE_ID_RESPONSE",
             error: "NO_DEVICE_ID"
           }, "*");
           return;
         }
-
+  
         console.log("✅ Sending deviceId:", deviceId);
-
+  
         window.postMessage({
           type: "QM_DEVICE_ID_RESPONSE",
           deviceId
         }, "*");
       });
-
-      return; // ✅ STOP further processing
+  
+      return;
     }
+  
+    /* =========================
+       FILTER OTHER MESSAGES
+    ========================= */
+    if (msg.source !== "qm-portal") return;
 
     /* =========================
        🔥 REWRAP MESSAGE (FIXED)
