@@ -54,17 +54,46 @@ function getToken() {
 
 async function getDeviceId() {
   return new Promise((resolve) => {
+    let done = false;
+
+    function finish(id) {
+      if (done) return;
+      done = true;
+      resolve(id);
+    }
+
+    // 🔥 listen first (important)
+    function handler(event) {
+      if (event.data?.type === "QM_DEVICE_ID_RESPONSE") {
+        console.log("✅ Got deviceId from extension:", event.data.deviceId);
+        window.removeEventListener("message", handler);
+        finish(event.data.deviceId);
+      }
+    }
+
+    window.addEventListener("message", handler);
+
+    // 🔥 send request
     window.postMessage(
       { source: "qm-portal", type: "GET_DEVICE_ID" },
       "*"
     );
 
-    window.addEventListener("message", function handler(event) {
-      if (event.data?.type === "QM_DEVICE_ID_RESPONSE") {
-        window.removeEventListener("message", handler);
-        resolve(event.data.deviceId);
+    // 🔥 fallback (CRITICAL)
+    setTimeout(() => {
+      console.warn("⚠️ Extension not responding, using fallback");
+
+      window.removeEventListener("message", handler);
+
+      let id = localStorage.getItem("qm_device_id");
+
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("qm_device_id", id);
       }
-    });
+
+      finish(id);
+    }, 1200);
   });
 }
 
