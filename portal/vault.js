@@ -1,5 +1,9 @@
 function $(id) {
-  return document.getElementById(id);
+  const el = document.getElementById(id);
+  if (!el) {
+    console.warn(`⚠️ Element not found: ${id}`);
+  }
+  return el;
 }
 
 function getToken() {
@@ -257,14 +261,15 @@ $("checkRecoveryBtn").onclick = async () => {
   const req = data.pending.find(
     r => r.request_id === window.currentRequestId
   );
-
-  $("recoveryStatus").textContent = req?.status || "Not found";
+  const statusEl = $("recoveryStatus");
+  if (statusEl) statusEl.textContent = req?.status || "Not found";
 };
 
 $("finishRecoveryBtn").onclick = async () => {
   if (!window.currentRequestId) {
     console.error("❌ No requestId found");
-    $("recoveryStatus").textContent = "Start recovery first ❌";
+    const statusEl = $("recoveryStatus");
+    if (statusEl) statusEl.textContent = "Start recovery first ❌";
     return;
   }
 
@@ -283,13 +288,15 @@ $("finishRecoveryBtn").onclick = async () => {
   console.log("FINISH RESPONSE:", data);
 
   if (!data.vault) {
-    $("recoveryStatus").textContent = "Recovery not ready ❌";
+    const statusEl = $("recoveryStatus");
+  if (statusEl) statusEl.textContent = "Recovery not ready ❌";
     return;
   }
 
   sendToExtension("restore_key", data.vault);
 
-  $("recoveryStatus").textContent = "Recovery complete 🎉";
+  const statusEl = $("recoveryStatus");
+  if (statusEl) statusEl.textContent = "Recovery complete 🎉";
 };
 
 $("startRecoveryBtn").onclick = async () => {
@@ -309,7 +316,8 @@ $("startRecoveryBtn").onclick = async () => {
 
   if (!data.request_id) {
     console.error("❌ request_id missing");
-    $("recoveryStatus").textContent = "Failed to start recovery ❌";
+    const statusEl = $("recoveryStatus");
+    if (statusEl) statusEl.textContent = "Failed to start recovery ❌";
     return;
   }
 
@@ -318,7 +326,8 @@ $("startRecoveryBtn").onclick = async () => {
 
   console.log("✅ Stored requestId:", window.currentRequestId);
 
-  $("recoveryStatus").textContent = "Waiting for approvals...";
+  const statusEl = $("recoveryStatus");
+  if (statusEl) statusEl.textContent = "Waiting for approvals...";
 };
 
 $("checkRecoveryBtn").onclick = async () => {
