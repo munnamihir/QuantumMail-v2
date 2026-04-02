@@ -119,7 +119,7 @@ async function renderDevices(devices) {
   devices.forEach(d => {
     const canApprove =
       activeRequest &&
-      d.device_id !== activeRequest.device_id; // not self
+      d.device_id !== activeRequest.requester_device_id; // not self
 
     const div = document.createElement("div");
 
@@ -154,22 +154,6 @@ async function renderDevices(devices) {
 /* =========================
    RECOVERY FLOW
 ========================= */
-
-$("startRecoveryBtn").onclick = async () => {
-  const res = await fetch("/api/recovery/start", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getToken()}`,
-      "x-qm-device-id": await getDeviceId()
-    }
-  });
-
-  const data = await res.json();
-
-  window.currentRequestId = data.request_id;
-
-  $("recoveryStatus").textContent = "Waiting for approvals...";
-};
 
 $("checkRecoveryBtn").onclick = async () => {
   const res = await fetch("/api/recovery/pending", {
