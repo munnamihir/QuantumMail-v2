@@ -106,6 +106,10 @@
         case "finish_recovery":
           reply("vault_recovered", {});
           break;
+        
+        case "QM_RESTORE_KEY":
+          reply("vault_recovered", {});
+          break;
 
         default:
           console.warn("Unknown message:", msg.type);
