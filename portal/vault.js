@@ -1,15 +1,9 @@
-/* =========================
-   GLOBAL STATE
-========================= */
 const VaultState = {
   devices: [],
   currentDeviceId: null,
   currentRequestId: null
 };
 
-/* =========================
-   HELPERS
-========================= */
 function $(id) {
   return document.getElementById(id);
 }
@@ -23,7 +17,7 @@ function sendToExtension(type, payload = {}) {
 }
 
 /* =========================
-   SAFE DEVICE ID (FIXED)
+   FIXED DEVICE ID (NO RANDOM)
 ========================= */
 async function getDeviceId() {
   return new Promise((resolve, reject) => {
@@ -41,12 +35,8 @@ async function getDeviceId() {
 
     window.addEventListener("message", handler);
 
-    window.postMessage(
-      { type: "GET_DEVICE_ID" },
-      "*"
-    );
+    window.postMessage({ type: "GET_DEVICE_ID" }, "*");
 
-    // 🔥 HARD FAIL if no response
     setTimeout(() => {
       window.removeEventListener("message", handler);
       reject("Extension not responding");
@@ -62,9 +52,14 @@ document.addEventListener("DOMContentLoaded", initVault);
 async function initVault() {
   console.log("INIT START");
 
-  VaultState.currentDeviceId = await getDeviceId();
-
-  console.log("🔥 DEVICE ID:", VaultState.currentDeviceId);
+  try {
+    VaultState.currentDeviceId = await getDeviceId();
+    console.log("DEVICE ID:", VaultState.currentDeviceId);
+  } catch (e) {
+    console.error("❌ Cannot get deviceId:", e);
+    $("devicesList").innerHTML = "Extension required ❌";
+    return;
+  }
 
   await loadDevices();
 }
@@ -98,28 +93,19 @@ async function loadDevices() {
 function renderCurrentDevice() {
   const el = $("currentDeviceBox");
 
-  if (!VaultState.devices.length) {
-    el.innerHTML = `<span style="color:#9aa6d6">No devices</span>`;
-    return;
-  }
-
   const d = VaultState.devices.find(
     x => x.device_id === VaultState.currentDeviceId
   );
 
   if (!d) {
-    el.innerHTML = `
-      <span style="color:#ff5d5d">
-        Device not matched (ID mismatch)
-      </span>
-    `;
+    el.innerHTML = `<span style="color:#ff5d5d">Device mismatch ❌</span>`;
     return;
   }
 
   el.innerHTML = `
     <b>${d.label || "This Device"}</b><br/>
     ${d.device_id}<br/>
-    <span style="color:#2bd576">${d.status.toUpperCase()}</span>
+    <span style="color:#2bd576">${d.status}</span>
   `;
 }
 
@@ -129,11 +115,6 @@ function renderCurrentDevice() {
 function renderDevices() {
   const el = $("devicesList");
   el.innerHTML = "";
-
-  if (!VaultState.devices.length) {
-    el.innerHTML = `<span style="color:#9aa6d6">No devices found</span>`;
-    return;
-  }
 
   VaultState.devices.forEach(d => {
     const isCurrent = d.device_id === VaultState.currentDeviceId;
@@ -148,17 +129,13 @@ function renderDevices() {
 
       ${
         d.status === "pending" && isCurrent
-          ? `<button data-trust="${d.device_id}" class="primary">
-              🔐 Trust this device
-            </button>`
+          ? `<button data-trust="${d.device_id}" class="primary">Trust</button>`
           : ""
       }
 
       ${
         d.status === "active"
-          ? `<button data-revoke="${d.device_id}" class="danger">
-              ❌ Revoke
-            </button>`
+          ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
           : ""
       }
     `;
@@ -166,19 +143,15 @@ function renderDevices() {
     el.appendChild(div);
   });
 
-  bindDeviceActions();
+  bindActions();
 }
 
-/* =========================
-   ACTIONS
-========================= */
-function bindDeviceActions() {
+function bindActions() {
   const token = getToken();
 
-  /* TRUST */
   document.querySelectorAll("[data-trust]").forEach(btn => {
     btn.onclick = async () => {
-      const nickname = prompt("Enter device name:");
+      const label = prompt("Device name:");
 
       await fetch("/api/devices/trust", {
         method: "POST",
@@ -188,7 +161,7 @@ function bindDeviceActions() {
         },
         body: JSON.stringify({
           device_id: btn.dataset.trust,
-          label: nickname
+          label
         })
       });
 
@@ -196,7 +169,6 @@ function bindDeviceActions() {
     };
   });
 
-  /* REVOKE */
   document.querySelectorAll("[data-revoke]").forEach(btn => {
     btn.onclick = async () => {
       await fetch("/api/devices/revoke", {
@@ -216,16 +188,14 @@ function bindDeviceActions() {
 }
 
 /* =========================
-   RECOVERY FLOW
+   RECOVERY
 ========================= */
-function setStatus(text) {
+function setStatus(t) {
   const el = $("recoveryStatusText");
-  if (el) el.textContent = text;
+  if (el) el.textContent = t;
 }
 
 $("startRecoveryBtn").onclick = async () => {
-  setStatus("Starting recovery...");
-
   const res = await fetch("/api/recovery/start", {
     method: "POST",
     headers: {
@@ -236,40 +206,12 @@ $("startRecoveryBtn").onclick = async () => {
 
   const data = await res.json();
 
-  console.log("START RESPONSE:", data);
-
   VaultState.currentRequestId = data.request_id;
 
-  setStatus("Waiting for approvals...");
-};
-
-$("checkRecoveryBtn").onclick = async () => {
-  const res = await fetch("/api/recovery/pending", {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
-
-  const data = await res.json();
-
-  const req = data.pending.find(
-    r => r.request_id === VaultState.currentRequestId
-  );
-
-  if (!req) {
-    setStatus("No request found");
-    return;
-  }
-
-  setStatus(`Approvals: ${req.approvals || 0}`);
+  setStatus("Waiting approvals...");
 };
 
 $("finishRecoveryBtn").onclick = async () => {
-  if (!VaultState.currentRequestId) {
-    setStatus("Start recovery first ❌");
-    return;
-  }
-
-  setStatus("Completing recovery...");
-
   const res = await fetch(
     `/api/recovery/finish/${VaultState.currentRequestId}`,
     {
@@ -279,15 +221,12 @@ $("finishRecoveryBtn").onclick = async () => {
 
   const data = await res.json();
 
-  console.log("FINISH RESPONSE:", data);
-
   if (!data.vault) {
-    setStatus("Quorum not reached ❌");
+    setStatus("Not ready ❌");
     return;
   }
 
-  /* 🔑 RESTORE KEY */
   sendToExtension("restore_key", data.vault);
 
-  setStatus("Recovery complete 🎉");
+  setStatus("Recovered 🎉");
 };
