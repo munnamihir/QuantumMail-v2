@@ -13,20 +13,16 @@
 
   window.addEventListener("message", async (event) => {
     const msg = event.data;
-  
-    if (!msg) return;
-  
-    console.log("📥 Incoming message:", msg);
-  
+
     /* =========================
-       GET DEVICE ID (ALWAYS ALLOWED)
+       GET DEVICE ID
     ========================= */
-    if (msg.type === "GET_DEVICE_ID") {
+    if (msg?.type === "GET_DEVICE_ID") {
       console.log("📩 Bridge received: GET_DEVICE_ID");
-  
+
       chrome.storage.local.get("deviceId", (result) => {
         const deviceId = result.deviceId;
-  
+
         if (!deviceId) {
           window.postMessage({
             type: "QM_DEVICE_ID_RESPONSE",
@@ -34,36 +30,24 @@
           }, "*");
           return;
         }
-  
-        console.log("✅ Sending deviceId:", deviceId);
-  
+
         window.postMessage({
           type: "QM_DEVICE_ID_RESPONSE",
           deviceId
         }, "*");
       });
-  
+
       return;
     }
-  
-    /* =========================
-       FILTER OTHER MESSAGES
-    ========================= */
-    if (msg.source !== "qm-portal") return;
 
     /* =========================
-       🔥 REWRAP MESSAGE (FIXED)
+       REWRAP MESSAGE (FIXED)
     ========================= */
     if (msg.type === "rewrap_message") {
-      const { messageId, payload } = msg.payload || {};
-
-      if (!messageId || !payload) {
-        console.error("❌ Invalid rewrap payload", msg);
-        return;
-      }
-
+      const { messageId, payload } = event.data.payload;
+    
       console.log("🔁 Rewrapping message:", messageId);
-
+    
       chrome.runtime.sendMessage(
         {
           type: "QM_REWRAP_MESSAGE",
@@ -78,14 +62,12 @@
           }
         }
       );
-
-      return; // ✅ STOP
     }
 
     /* =========================
-       🔥 ONLY HANDLE PORTAL MESSAGES BELOW
+       VAULT → EXTENSION FLOW
     ========================= */
-    if (msg.source !== "qm-portal") return;
+    if (!msg || msg.source !== "qm-portal") return;
 
     console.log("📩 Bridge received:", msg.type);
 
@@ -126,7 +108,7 @@
           break;
 
         default:
-          console.warn("⚠️ Unknown message:", msg.type);
+          console.warn("Unknown message:", msg.type);
       }
 
     } catch (e) {
