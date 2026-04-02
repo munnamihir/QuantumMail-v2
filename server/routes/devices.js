@@ -44,16 +44,17 @@ deviceRoutes.post("/register", requireAuth, async (req, res) => {
 deviceRoutes.post("/trust", requireAuth, async (req, res) => {
   try {
     const userId = req.qm.user.userId;
-    const { device_id } = req.body;
+    const { device_id, label } = req.body;
 
     // ✅ activate device
     await pool.query(
       `
       UPDATE qm_devices
-      SET status = 'active'
+      SET status = 'active',
+          label = COALESCE($3, label)
       WHERE user_id = $1 AND device_id = $2
       `,
-      [userId, device_id]
+      [userId, device_id, label]
     );
 
     /* =========================
