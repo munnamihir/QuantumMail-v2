@@ -330,6 +330,33 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         return;
       }
 
+      if (msg.type === "QM_RESTORE_KEY") {
+        try {
+          const s = await getSession();
+      
+          console.log("🔑 Restoring key...");
+      
+          await chrome.storage.local.set({
+            [`qm_rsa_${s.user.userId}`]: msg.payload
+          });
+      
+          console.log("✅ Key restored");
+      
+          sendResponse({ ok: true });
+      
+        } catch (e) {
+          console.error("❌ Restore failed:", e);
+      
+          sendResponse({
+            ok: false,
+            error: e.message
+          });
+        }
+      
+        return;
+      }
+
+      
       if (msg.type === "QM_REWRAP_MESSAGE") {
         try {
           const { messageId, payload } = msg;
