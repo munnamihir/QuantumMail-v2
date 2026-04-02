@@ -184,14 +184,24 @@ async function initVault() {
 ========================= */
 
 async function loadDevices() {
-  const res = await fetch("/api/devices/list", {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
+  try {
+    const res = await fetch("/api/devices/list", {
+      headers: { Authorization: `Bearer ${getToken()}` }
+    });
 
-  const data = await res.json();
-  VaultState.devices = data.devices || [];
-  await renderDevices(data.devices || []);
-  await renderCurrentDevice(data.devices || []);
+    const data = await res.json();
+
+    console.log("DEVICES API:", data);
+
+    /* 🔥 CRITICAL FIX */
+    VaultState.devices = data.devices || [];
+
+    renderDevices();
+    renderCurrentDevice();
+
+  } catch (e) {
+    console.error("LOAD DEVICES FAILED:", e);
+  }
 }
 
 /* =========================
