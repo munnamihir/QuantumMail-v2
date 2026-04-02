@@ -62,9 +62,15 @@ recoveryDeviceRoutes.get("/pending", requireAuth, async (req, res) => {
   const userId = req.qm.user.userId;
 
   const { rows } = await pool.query(`
-    SELECT request_id, requester_device_id, nonce_b64, status
-    FROM qm_recovery_requests
-    WHERE user_id=$1 AND status='pending'
+    SELECT r.request_id,
+       r.requester_device_id,
+       r.status,
+       COUNT(a.device_id) as approvals
+   FROM qm_recovery_requests r
+   LEFT JOIN qm_recovery_approvals a
+     ON r.request_id = a.request_id
+   WHERE r.user_id = $1 AND r.status = 'pending'
+   GROUP BY r.request_id, r.requester_device_id, r.status
   `, [userId]);
 
   res.json({ pending: rows });
