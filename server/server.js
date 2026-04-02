@@ -1733,7 +1733,7 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
     /* =========================
        ✅ SAVE IN POSTGRES (REAL SOURCE)
     ========================= */
-
+   
     await pool.query(
       `
       insert into qm_devices
@@ -1755,6 +1755,18 @@ app.post("/org/register-key", requireAuth, async (req, res) => {
         })
       ]
     );
+     await pool.query(`
+        INSERT INTO qm_recovery_vault
+        (user_id, token_id, token_verifier_hash, enc_wk_b64, iv_b64)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (user_id) DO NOTHING
+      `, [
+        user.userId,
+        crypto.randomUUID(),             // token_id
+        crypto.createHash("sha256").update("vault").digest("hex"), // simple hash
+        publicKeySpkiB64,                // 🔥 TEMP: use pub key for now
+        "iv_placeholder"
+      ]);
 
     /* =========================
        (optional) keep JSON store
