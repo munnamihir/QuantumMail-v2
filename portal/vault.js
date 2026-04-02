@@ -141,7 +141,7 @@ async function renderDevices(devices) {
       ${
         d.status === "active"
           ? `<button data-revoke="${d.device_id}" class="danger">
-               🚫 Revoke
+               🚫 Revoke Device
              </button>`
           : ""
       }
@@ -158,6 +158,62 @@ async function renderDevices(devices) {
     `;
 
     el.appendChild(div);
+    el.querySelectorAll("[data-trust]").forEach(btn => {
+      btn.onclick = async () => {
+        const token = getToken();
+    
+        await fetch("/api/devices/trust", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            device_id: btn.dataset.trust
+          })
+        });
+    
+        loadDevices();
+      };
+    });
+    el.querySelectorAll("[data-revoke]").forEach(btn => {
+      btn.onclick = async () => {
+        const token = getToken();
+    
+        await fetch("/api/devices/revoke", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            device_id: btn.dataset.revoke
+          })
+        });
+    
+        loadDevices();
+      };
+    });
+    el.querySelectorAll("[data-approve]").forEach(btn => {
+      btn.onclick = async () => {
+        const token = getToken();
+        const deviceId = await getDeviceId();
+    
+        await fetch("/api/recovery/approve", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "x-qm-device-id": deviceId
+          },
+          body: JSON.stringify({
+            request_id: window.currentRequestId
+          })
+        });
+    
+        alert("Approved ✅");
+      };
+    });
   });
 }
 
