@@ -129,21 +129,31 @@ async function renderDevices(devices) {
       <b>${d.label || "Device"}</b><br/>
       ${d.device_id}<br/>
       <span>${d.status}</span><br/><br/>
-
+    
       ${
-        d.status === "active"
-          ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
+        d.status === "pending"
+          ? `<button data-trust="${d.device_id}" class="primary">
+               🔐 Trust Device
+             </button>`
           : ""
       }
-
+    
+      ${
+        d.status === "active"
+          ? `<button data-revoke="${d.device_id}" class="danger">
+               🚫 Revoke
+             </button>`
+          : ""
+      }
+    
       ${
         canApprove
           ? `<button data-approve="${d.device_id}" class="success">
-              🔓 Approve Recovery
-            </button>`
+               🔓 Approve Recovery
+             </button>`
           : `<button disabled style="opacity:.4">
-              Waiting for recovery
-            </button>`
+               Waiting for recovery
+             </button>`
       }
     `;
 
