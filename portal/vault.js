@@ -115,7 +115,7 @@ async function renderDevices(devices) {
   const pending = await loadRecoveryState();
 
   const activeRequest = pending.find(r => r.status === "pending");
-
+  const currentDeviceId = await getDeviceId();
   devices.forEach(d => {
     const canApprove =
       activeRequest &&
@@ -132,9 +132,13 @@ async function renderDevices(devices) {
     
       ${
         d.status === "pending"
-          ? `<button data-trust="${d.device_id}" class="primary">
-               🔐 Trust Device
-             </button>`
+          ? d.device_id === currentDeviceId
+            ? `<button data-trust="${d.device_id}" class="primary">
+                 🔐 Trust This Device
+               </button>`
+            : `<button disabled style="opacity:.4">
+                 🔒 Trust from that device
+               </button>`
           : ""
       }
     
