@@ -249,6 +249,11 @@ function renderDevices() {
   const el = $("devicesList");
   el.innerHTML = "";
 
+  if (!VaultState.devices.length) {
+    el.innerHTML = `<span style="color:#ff5d5d">No devices found</span>`;
+    return;
+  }
+  
   VaultState.devices.forEach(d => {
     const isCurrent = d.device_id === VaultState.currentDeviceId;
 
@@ -265,27 +270,27 @@ function renderDevices() {
       <b>${d.label || "Unnamed Device"}</b><br/>
       <small>${d.device_id}</small><br/>
       <span>${d.status}</span><br/><br/>
-
+    
       ${
-        d.status === "pending" && isCurrent
-          ? `<button data-trust="${d.device_id}" class="primary">Trust</button>`
+        d.status === "pending"
+          ? `<button data-trust="${d.device_id}" class="primary">
+               ${isCurrent ? "Trust this device" : "Pending (other device)"}
+             </button>`
           : ""
       }
-
+    
       ${
         d.status === "active"
           ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
           : ""
       }
-
+    
       ${
         canApprove
           ? `<button data-approve="${d.device_id}" class="success">
               🔓 Approve
             </button>`
-          : `<button disabled style="opacity:.4">
-              Waiting
-            </button>`
+          : ""
       }
     `;
 
