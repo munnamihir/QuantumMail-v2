@@ -104,7 +104,7 @@ recoveryDeviceRoutes.post("/approve", requireAuth, async (req, res) => {
     }
 
     // prevent self-approval
-    if (reqRow.device_id === approverDeviceId) {
+    if (reqRow.requester_device_id === approverDeviceId) {
       return res.status(400).json({ error: "cannot approve your own request" });
     }
 
