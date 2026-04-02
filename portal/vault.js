@@ -189,7 +189,7 @@ async function loadDevices() {
   });
 
   const data = await res.json();
-
+  VaultState.devices = data.devices || [];
   await renderDevices(data.devices || []);
   await renderCurrentDevice(data.devices || []);
 }
