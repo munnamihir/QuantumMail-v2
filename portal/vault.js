@@ -95,7 +95,8 @@ async function renderCurrentDevice(devices) {
   }
 
   el.innerHTML = `
-    <b>${d.label || "This Device"}</b><br/>
+    <b>${d.label || "Unnamed Device"}</b>
+    <small style="color:#9aa6d6">(${d.device_type || "unknown"})</small>
     ${d.device_id}<br/>
     <span style="color:#2bd576">ACTIVE</span>
   `;
@@ -156,7 +157,8 @@ async function renderDevices(devices) {
     }
 
     div.innerHTML = `
-      <b>${d.label || "Device"}</b><br/>
+      <b>${d.label || "Unnamed Device"}</b>
+      <small style="color:#9aa6d6">(${d.device_type || "unknown"})</small>
       ${d.device_id}<br/>
       <span>${d.status}</span><br/><br/>
 
