@@ -54,22 +54,6 @@ async function getDeviceId() {
       { source: "qm-portal", type: "GET_DEVICE_ID" },
       "*"
     );
-
-    // 🔥 fallback (NO RANDOM GENERATION)
-    setTimeout(() => {
-      console.warn("⚠️ Extension not responding, using stored deviceId");
-
-      window.removeEventListener("message", handler);
-
-      const stored = localStorage.getItem("qm_device_id");
-
-      if (!stored) {
-        console.error("❌ No deviceId found anywhere");
-        finish(null);
-      } else {
-        finish(stored);
-      }
-    }, 1200);
   });
 }
 
