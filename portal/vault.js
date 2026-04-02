@@ -26,34 +26,31 @@ function sendToExtension(type, payload = {}) {
    SAFE DEVICE ID (FIXED)
 ========================= */
 async function getDeviceId() {
-  return new Promise((resolve) => {
-    let done = false;
-
-    function finish(id) {
-      if (done) return;
-      done = true;
-
-      if (id) {
-        localStorage.setItem("qm_device_id", id); // 🔥 persist
-      }
-
-      resolve(id);
-    }
-
+  return new Promise((resolve, reject) => {
     function handler(event) {
       if (event.data?.type === "QM_DEVICE_ID_RESPONSE") {
-        console.log("✅ Extension deviceId:", event.data.deviceId);
         window.removeEventListener("message", handler);
-        finish(event.data.deviceId);
+
+        if (event.data.error) {
+          reject(event.data.error);
+        } else {
+          resolve(event.data.deviceId);
+        }
       }
     }
 
     window.addEventListener("message", handler);
 
     window.postMessage(
-      { source: "qm-portal", type: "GET_DEVICE_ID" },
+      { type: "GET_DEVICE_ID" },
       "*"
     );
+
+    // 🔥 HARD FAIL if no response
+    setTimeout(() => {
+      window.removeEventListener("message", handler);
+      reject("Extension not responding");
+    }, 1500);
   });
 }
 
