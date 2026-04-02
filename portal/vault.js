@@ -169,36 +169,20 @@ async function renderDevices(devices) {
   });
 
   /* TRUST */
-el.querySelectorAll("[data-trust]").forEach(btn => {
-  btn.onclick = async () => {
-    const token = getToken();
-    const deviceId = btn.dataset.trust;
+  el.querySelectorAll("[data-trust]").forEach(btn => {
+    btn.onclick = async () => {
+      await fetch("/api/devices/trust", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ device_id: btn.dataset.trust })
+      });
 
-    /* 🔥 Ask nickname */
-    const label = prompt("Enter a name for this device:");
-
-    if (!label) {
-      alert("Device name required");
-      return;
-    }
-
-    await fetch("/api/devices/trust", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        device_id: deviceId,
-        label
-      })
-    });
-
-    setStatus("Device trusted ✅");
-
-    await loadDevices(); // refresh UI
-  };
-});
+      loadDevices();
+    };
+  });
 
   /* REVOKE */
   el.querySelectorAll("[data-revoke]").forEach(btn => {
