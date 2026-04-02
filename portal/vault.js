@@ -277,18 +277,21 @@ $("finishRecoveryBtn").onclick = async () => {
 
   const data = await res.json();
 
-  if (!data.encrypted_key) {
-    $("recoveryStatus").textContent = "Recovery not ready";
+  /* ✅ FIX 1 */
+  if (!data.vault) {
+    $("recoveryStatus").textContent = "Recovery not ready ❌";
     return;
   }
 
   /* =========================
-     STEP 2: SEND KEY TO EXTENSION
+     STEP 2: RESTORE KEY IN EXTENSION
   ========================= */
-  sendToExtension("restore_key", data);
+  sendToExtension("restore_key", data.vault);
+
+  $("recoveryStatus").textContent = "Key restored. Rewrapping...";
 
   /* =========================
-     STEP 3: REWRAP ALL MESSAGES
+     STEP 3: LOAD MESSAGES
   ========================= */
   const inboxRes = await fetch("/api/inbox", {
     headers: { Authorization: `Bearer ${token}` }
@@ -296,31 +299,17 @@ $("finishRecoveryBtn").onclick = async () => {
 
   const inbox = await inboxRes.json();
 
+  /* =========================
+     STEP 4: TRIGGER REWRAP (EXTENSION DOES REAL WORK)
+  ========================= */
   for (const msg of inbox.items || []) {
-    try {
-      const r = await fetch(`/api/messages/${msg.id}/rewrap`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-qm-device-id": deviceId
-        }
-      });
-
-      const payload = await r.json();
-
-      // 🔥 send to extension for rewrap
-      sendToExtension("rewrap_message", {
-        messageId: msg.id,
-        payload
-      });
-
-    } catch (e) {
-      console.error("rewrap failed for", msg.id);
-    }
+    sendToExtension("rewrap_message", {
+      messageId: msg.id
+    });
   }
 
   $("recoveryStatus").textContent =
-    "Recovery complete + messages rewrapped 🎉";
+    "Recovery complete + rewrap triggered 🎉";
 };
 
 $("startRecoveryBtn").onclick = async () => {
