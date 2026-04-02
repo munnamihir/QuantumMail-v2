@@ -324,11 +324,24 @@ $("finishRecoveryBtn").onclick = async () => {
   const inbox = await inboxRes.json();
 
   for (const msg of inbox.items || []) {
-    sendToExtension("rewrap_message", {
-      messageId: msg.id,
-      payload: msg
-    });
-  }
+     try {
+       const full = await fetch(`/api/messages/${msg.id}`, {
+         headers: {
+           Authorization: `Bearer ${token}`
+         }
+       });
+   
+       const fullPayload = await full.json();
+   
+       sendToExtension("rewrap_message", {
+         messageId: msg.id,
+         payload: fullPayload
+       });
+   
+     } catch (e) {
+       console.error("rewrap failed for", msg.id);
+     }
+   }
 
   setStatus("Recovery complete 🎉");
 };
