@@ -262,12 +262,16 @@ $("checkRecoveryBtn").onclick = async () => {
 };
 
 $("finishRecoveryBtn").onclick = async () => {
-  const token = getToken();
-  const deviceId = await getDeviceId();
+  if (!window.currentRequestId) {
+    console.error("❌ No requestId found");
+    $("recoveryStatus").textContent = "Start recovery first ❌";
+    return;
+  }
 
-  /* =========================
-     STEP 1: COMPLETE RECOVERY
-  ========================= */
+  console.log("Using requestId:", window.currentRequestId);
+
+  const token = getToken();
+
   const res = await fetch(
     `/api/recovery/finish/${window.currentRequestId}`,
     {
@@ -276,61 +280,45 @@ $("finishRecoveryBtn").onclick = async () => {
   );
 
   const data = await res.json();
+  console.log("FINISH RESPONSE:", data);
 
-  /* ✅ FIX 1 */
   if (!data.vault) {
     $("recoveryStatus").textContent = "Recovery not ready ❌";
     return;
   }
 
-  /* =========================
-     STEP 2: RESTORE KEY IN EXTENSION
-  ========================= */
   sendToExtension("restore_key", data.vault);
 
-  $("recoveryStatus").textContent = "Key restored. Rewrapping...";
-
-  /* =========================
-     STEP 3: LOAD MESSAGES
-  ========================= */
-  const inboxRes = await fetch("/api/inbox", {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  const inbox = await inboxRes.json();
-
-  /* =========================
-     STEP 4: TRIGGER REWRAP (EXTENSION DOES REAL WORK)
-  ========================= */
-  for (const msg of inbox.items || []) {
-    sendToExtension("rewrap_message", {
-      messageId: msg.id
-    });
-  }
-
-  $("recoveryStatus").textContent =
-    "Recovery complete + rewrap triggered 🎉";
+  $("recoveryStatus").textContent = "Recovery complete 🎉";
 };
 
 $("startRecoveryBtn").onclick = async () => {
-  setStep(1);
-  setStatus("Starting recovery...");
+  const deviceId = await getDeviceId();
 
   const res = await fetch("/api/recovery/start", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getToken()}`,
-      "x-qm-device-id": await getDeviceId()
+      "x-qm-device-id": deviceId
     }
   });
 
   const data = await res.json();
 
+  console.log("START RESPONSE:", data); // 🔥 MUST SEE THIS
+
+  if (!data.request_id) {
+    console.error("❌ request_id missing");
+    $("recoveryStatus").textContent = "Failed to start recovery ❌";
+    return;
+  }
+
+  // ✅ THIS IS THE MOST IMPORTANT LINE
   window.currentRequestId = data.request_id;
 
-  setStep(2);
-  setStatus("Waiting for approvals...");
-  setApprovals(0);
+  console.log("✅ Stored requestId:", window.currentRequestId);
+
+  $("recoveryStatus").textContent = "Waiting for approvals...";
 };
 
 $("checkRecoveryBtn").onclick = async () => {
