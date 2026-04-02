@@ -261,9 +261,8 @@ $("checkRecoveryBtn").onclick = async () => {
   const req = data.pending.find(
     r => r.request_id === window.currentRequestId
   );
-  const statusEl = $("recoveryStatus");
-  if (statusEl) statusEl.textContent = req?.status || "Not found";
-};
+  setStatus(req?.status);
+  
 
 $("finishRecoveryBtn").onclick = async () => {
   if (!window.currentRequestId) {
@@ -288,15 +287,13 @@ $("finishRecoveryBtn").onclick = async () => {
   console.log("FINISH RESPONSE:", data);
 
   if (!data.vault) {
-    const statusEl = $("recoveryStatus");
-  if (statusEl) statusEl.textContent = "Recovery not ready ❌";
+   setStatus("Recovery not ready ❌");
     return;
   }
 
   sendToExtension("restore_key", data.vault);
 
-  const statusEl = $("recoveryStatus");
-  if (statusEl) statusEl.textContent = "Recovery complete 🎉";
+  setStatus("Recovery complete 🎉");
 };
 
 $("startRecoveryBtn").onclick = async () => {
@@ -316,8 +313,7 @@ $("startRecoveryBtn").onclick = async () => {
 
   if (!data.request_id) {
     console.error("❌ request_id missing");
-    const statusEl = $("recoveryStatus");
-    if (statusEl) statusEl.textContent = "Failed to start recovery ❌";
+    setStatus("Failed to start recovery ❌");
     return;
   }
 
@@ -326,8 +322,7 @@ $("startRecoveryBtn").onclick = async () => {
 
   console.log("✅ Stored requestId:", window.currentRequestId);
 
-  const statusEl = $("recoveryStatus");
-  if (statusEl) statusEl.textContent = "Waiting for approvals...";
+  setStatus("Waiting for approvals...");
 };
 
 $("checkRecoveryBtn").onclick = async () => {
