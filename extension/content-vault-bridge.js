@@ -43,18 +43,25 @@
     /* =========================
        REWRAP MESSAGE (FIXED)
     ========================= */
-    if (msg?.type === "rewrap_message") {
-      const { messageId, payload } = msg.payload || {};
-
+    if (msg.type === "rewrap_message") {
+      const { messageId, payload } = event.data.payload;
+    
       console.log("🔁 Rewrapping message:", messageId);
-
-      chrome.runtime.sendMessage({
-        type: "QM_REWRAP_MESSAGE",
-        messageId,
-        payload
-      });
-
-      return;
+    
+      chrome.runtime.sendMessage(
+        {
+          type: "QM_REWRAP_MESSAGE",
+          messageId,
+          payload
+        },
+        (response) => {
+          if (!response?.ok) {
+            console.error("❌ Rewrap failed:", response);
+          } else {
+            console.log("✅ Rewrap success:", messageId);
+          }
+        }
+      );
     }
 
     /* =========================
