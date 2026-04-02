@@ -35,7 +35,10 @@ async function getDeviceId() {
 
     window.addEventListener("message", handler);
 
-    window.postMessage({ type: "GET_DEVICE_ID" }, "*");
+    window.postMessage({
+      source: "qm-portal",
+      type: "GET_DEVICE_ID"
+    }, "*");
 
     setTimeout(() => {
       window.removeEventListener("message", handler);
