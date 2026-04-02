@@ -1,6 +1,46 @@
+const VaultState = {
+  devices: [],
+  currentDeviceId: null,
+  activeRequest: null,
+  approvals: 0,
+  threshold: 2
+};
+
 /* =========================
    HELPERS
 ========================= */
+
+function renderAll() {
+  renderCurrentDevice();
+  renderDevices();
+  renderRecovery();
+}
+
+function startAutoRefresh() {
+  setInterval(async () => {
+    await syncRecoveryState();
+    renderRecovery();
+  }, 3000); // every 3 seconds
+}
+
+async function syncRecoveryState() {
+  const res = await fetch("/api/recovery/pending", {
+    headers: { Authorization: `Bearer ${getToken()}` }
+  });
+
+  const data = await res.json();
+
+  const req = data.pending?.[0];
+
+  if (!req) {
+    VaultState.activeRequest = null;
+    VaultState.approvals = 0;
+    return;
+  }
+
+  VaultState.activeRequest = req;
+  VaultState.approvals = req.approvals || 0;
+}
 
 function $(id) {
   const el = document.getElementById(id);
@@ -56,13 +96,88 @@ function setApprovals(count) {
   el.textContent = count;
 }
 
+function bindDeviceActions() {
+  /* TRUST */
+  document.querySelectorAll("[data-trust]").forEach(btn => {
+    btn.onclick = async () => {
+      const label = prompt("Device name:");
+
+      await fetch("/api/devices/trust", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: btn.dataset.trust,
+          label
+        })
+      });
+
+      await loadDevices();
+      renderAll();
+    };
+  });
+
+  /* REVOKE */
+  document.querySelectorAll("[data-revoke]").forEach(btn => {
+    btn.onclick = async () => {
+      await fetch("/api/devices/revoke", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          device_id: btn.dataset.revoke
+        })
+      });
+
+      await loadDevices();
+      renderAll();
+    };
+  });
+
+  /* APPROVE */
+  document.querySelectorAll("[data-approve]").forEach(btn => {
+    btn.onclick = async () => {
+      await fetch("/api/recovery/approve", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          "Content-Type": "application/json",
+          "x-qm-device-id": VaultState.currentDeviceId
+        },
+        body: JSON.stringify({
+          request_id: VaultState.activeRequest.request_id
+        })
+      });
+
+      setStatus("Approved ✅");
+    };
+  });
+}
+
 /* =========================
    INIT
 ========================= */
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadDevices();
+document.addEventListener("DOMContentLoaded", async () => {
+  await initVault();
 });
+
+async function initVault() {
+  setStatus("Loading vault...");
+
+  VaultState.currentDeviceId = await getDeviceId();
+
+  await loadDevices();
+  await syncRecoveryState();
+
+  renderAll();
+
+  startAutoRefresh();
+}
 
 /* =========================
    LOAD DEVICES
@@ -83,24 +198,25 @@ async function loadDevices() {
    CURRENT DEVICE
 ========================= */
 
-async function renderCurrentDevice(devices) {
+async function renderCurrentDevice() {
   const el = $("currentDeviceBox");
-  const id = await getDeviceId();
 
-  const d = devices.find(x => x.device_id === id);
+  const d = VaultState.devices.find(
+    x => x.device_id === VaultState.currentDeviceId
+  );
 
   if (!d) {
-    el.innerHTML = `<span style="color:#ff5d5d">Current device not registered</span>`;
+    el.innerHTML = `<span style="color:#ff5d5d">Not registered</span>`;
     return;
   }
 
   el.innerHTML = `
-    <b>${d.label || "Unnamed Device"}</b>
-    <small style="color:#9aa6d6">(${d.device_type || "unknown"})</small>
-    ${d.device_id}<br/>
+    <b>${d.label || "This Device"}</b><br/>
+    <small>${d.device_id}</small><br/>
     <span style="color:#2bd576">ACTIVE</span>
   `;
 }
+
 
 /* =========================
    LOAD RECOVERY STATE
@@ -119,125 +235,76 @@ async function loadRecoveryState() {
    DEVICES UI
 ========================= */
 
-async function renderDevices(devices) {
+function renderDevices() {
   const el = $("devicesList");
   el.innerHTML = "";
 
-  const currentDeviceId = await getDeviceId();
-  const pending = await loadRecoveryState();
-  const activeRequest = pending.find(r => r.status === "pending");
+  VaultState.devices.forEach(d => {
+    const isCurrent = d.device_id === VaultState.currentDeviceId;
 
-  devices.forEach(d => {
+    const canApprove =
+      VaultState.activeRequest &&
+      d.device_id !== VaultState.activeRequest.requester_device_id &&
+      d.status === "active";
+
     const div = document.createElement("div");
+
     div.className = "device";
 
-    const trustBtn =
-      d.status === "pending" && d.device_id === currentDeviceId
-        ? `<button data-trust="${d.device_id}" class="success">Trust</button>`
-        : "";
-
-    const revokeBtn =
-      d.status === "active"
-        ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
-        : "";
-
-    let approveBtn = "";
-
-    if (!activeRequest) {
-      approveBtn = `<button disabled style="opacity:.4">No active recovery</button>`;
-    } else if (activeRequest.requester_device_id === currentDeviceId) {
-      approveBtn = `<button disabled style="opacity:.4">Your request</button>`;
-    } else if (d.device_id === currentDeviceId) {
-      approveBtn = `
-        <button data-approve="${activeRequest.request_id}" class="success">
-          🔓 Approve Recovery
-        </button>`;
-    } else {
-      approveBtn = `<button disabled style="opacity:.4">Not this device</button>`;
-    }
-
     div.innerHTML = `
-      <b>${d.label || "Unnamed Device"}</b>
-      <small style="color:#9aa6d6">(${d.device_type || "unknown"})</small>
-      ${d.device_id}<br/>
+      <b>${d.label || "Unnamed Device"}</b><br/>
+      <small>${d.device_id}</small><br/>
       <span>${d.status}</span><br/><br/>
 
-      ${trustBtn}
-      ${revokeBtn}
-      ${approveBtn}
+      ${
+        d.status === "pending" && isCurrent
+          ? `<button data-trust="${d.device_id}" class="primary">Trust</button>`
+          : ""
+      }
+
+      ${
+        d.status === "active"
+          ? `<button data-revoke="${d.device_id}" class="danger">Revoke</button>`
+          : ""
+      }
+
+      ${
+        canApprove
+          ? `<button data-approve="${d.device_id}" class="success">
+              🔓 Approve
+            </button>`
+          : `<button disabled style="opacity:.4">
+              Waiting
+            </button>`
+      }
     `;
 
     el.appendChild(div);
   });
 
-  /* TRUST */
-el.querySelectorAll("[data-trust]").forEach(btn => {
-  btn.onclick = async () => {
-    const token = getToken();
-    const deviceId = btn.dataset.trust;
+  bindDeviceActions();
+}
 
-    /* 🔥 Ask nickname */
-    const label = prompt("Enter a name for this device:");
 
-    if (!label) {
-      alert("Device name required");
-      return;
-    }
+function renderRecovery() {
+  if (!VaultState.activeRequest) {
+    setStatus("No active recovery");
+    setStep(1);
+    setApprovals(0);
+    return;
+  }
 
-    await fetch("/api/devices/trust", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        device_id: deviceId,
-        label
-      })
-    });
+  setStep(2);
 
-    setStatus("Device trusted ✅");
+  const count = VaultState.approvals;
+  setApprovals(count);
 
-    await loadDevices(); // refresh UI
-  };
-});
-
-  /* REVOKE */
-  el.querySelectorAll("[data-revoke]").forEach(btn => {
-    btn.onclick = async () => {
-      await fetch("/api/devices/revoke", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getToken()}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ device_id: btn.dataset.revoke })
-      });
-
-      loadDevices();
-    };
-  });
-
-  /* APPROVE */
-  el.querySelectorAll("[data-approve]").forEach(btn => {
-    btn.onclick = async () => {
-      const deviceId = await getDeviceId();
-
-      await fetch("/api/recovery/approve", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getToken()}`,
-          "Content-Type": "application/json",
-          "x-qm-device-id": deviceId
-        },
-        body: JSON.stringify({
-          request_id: btn.dataset.approve
-        })
-      });
-
-      alert("✅ Approved");
-    };
-  });
+  if (count >= VaultState.threshold) {
+    setStatus("Quorum reached ✅");
+    setStep(3);
+  } else {
+    setStatus(`Waiting approvals (${count}/${VaultState.threshold})`);
+  }
 }
 
 /* =========================
@@ -245,33 +312,25 @@ el.querySelectorAll("[data-trust]").forEach(btn => {
 ========================= */
 
 /* START */
+
 $("startRecoveryBtn").onclick = async () => {
-  setStep(1);
-  setStatus("Starting recovery...");
-
-  const deviceId = await getDeviceId();
-
   const res = await fetch("/api/recovery/start", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getToken()}`,
-      "x-qm-device-id": deviceId
+      "x-qm-device-id": VaultState.currentDeviceId
     }
   });
 
   const data = await res.json();
 
-  if (!data.request_id) {
-    setStatus("Failed to start recovery ❌");
-    return;
-  }
+  VaultState.activeRequest = {
+    request_id: data.request_id,
+    requester_device_id: VaultState.currentDeviceId
+  };
 
-  window.currentRequestId = data.request_id;
-  localStorage.setItem("qm_recovery_id", data.request_id);
-
+  setStatus("Recovery started 🚀");
   setStep(2);
-  setStatus("Waiting for approvals...");
-  setApprovals(0);
 };
 
 /* CHECK */
