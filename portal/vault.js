@@ -313,7 +313,7 @@ $("finishRecoveryBtn").onclick = async () => {
     return;
   }
 
-  sendToExtension("restore_key", data.vault);
+  sendToExtension("QM_RESTORE_KEY", data,vault);
 
   setStatus("Rewrapping messages...");
 
