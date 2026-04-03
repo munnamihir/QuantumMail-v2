@@ -44,7 +44,13 @@
        REWRAP MESSAGE (FIXED)
     ========================= */
     if (msg.type === "QM_REWRAP_MESSAGE" || msg.type === "rewrap_message") {
-      const { messageId, payload } = msg.payload || {};
+      const messageId = msg.payload?.messageId || msg.messageId;
+      const payload = msg.payload?.payload || msg.payload;
+    
+      if (!messageId || !payload) {
+        console.warn("⚠️ Invalid rewrap payload:", msg);
+        return;
+      }
     
       console.log("🔁 Rewrapping message:", messageId);
     
@@ -69,6 +75,9 @@
     ========================= */
     if (!msg || msg.source !== "qm-portal") return;
 
+    if (msg.type === "QM_REWRAP_MESSAGE" || msg.type === "rewrap_message") {
+      return; // already handled above
+    }
     console.log("📩 Bridge received:", msg.type);
 
     try {
