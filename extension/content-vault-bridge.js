@@ -74,7 +74,7 @@
     try {
       const res = await sendToBackground(msg.type, msg.payload);
 
-      if (!res?.ok) {
+      if (!res?.ok && !res?.skipped) {
         throw new Error(res?.error || "Action failed");
       }
 
