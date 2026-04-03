@@ -64,6 +64,41 @@ document.addEventListener("DOMContentLoaded", () => {
   loadDevices();
 });
 
+let recoveryInterval = null;
+
+function startAutoPolling() {
+  if (recoveryInterval) return;
+
+  recoveryInterval = setInterval(async () => {
+    const requestId =
+      window.currentRequestId ||
+      localStorage.getItem("qm_recovery_id");
+
+    if (!requestId) return;
+
+    const res = await fetch("/api/recovery/pending", {
+      headers: { Authorization: `Bearer ${getToken()}` }
+    });
+
+    const data = await res.json();
+    const req = data.pending.find(r => r.request_id === requestId);
+
+    if (!req) return;
+
+    const approvals = req.approvals || 0;
+    setApprovals(approvals);
+
+    if (req.status === "approved") {
+      setStatus("Quorum reached ✅");
+      setStep(3);
+      clearInterval(recoveryInterval);
+    } else {
+      setStatus(`Waiting (${approvals}/2 approvals)`);
+    }
+
+  }, 2000); // every 2 sec
+}
+
 /* =========================
    LOAD DEVICES
 ========================= */
@@ -230,7 +265,7 @@ async function renderDevices(devices) {
 $("startRecoveryBtn").onclick = async () => {
   setStep(1);
   setStatus("Starting recovery...");
-
+  startAutoPolling();
   const deviceId = await getDeviceId();
 
   const res = await fetch("/api/recovery/start", {
