@@ -342,7 +342,7 @@ $("finishRecoveryBtn").onclick = async () => {
   });
 
   const data = await res.json();
-
+  console.log("🧾 FULL RECOVERY RESPONSE:", data);
   if (!data.vault) {
     setStatus("Not ready yet ❌");
     return;
@@ -357,7 +357,7 @@ $("finishRecoveryBtn").onclick = async () => {
   });
 
   const inbox = await inboxRes.json();
-
+  const vaultDek = data.vault?.dek || data.vaultDek;
   for (const msg of inbox.items || []) {
      try {
        const res = await fetch(
@@ -382,7 +382,7 @@ $("finishRecoveryBtn").onclick = async () => {
        sendToExtension("QM_REWRAP_MESSAGE", {
          messageId: msg.id,        // ✅ FIXED
          payload: fullPayload,
-         dek: data.vaultDek
+         dek: vaultDek
        });
    
      } catch (e) {
