@@ -363,10 +363,11 @@ $("finishRecoveryBtn").onclick = async () => {
     const res = await fetch(
       `/api/messages/${msg.id}/rewrap`,
       {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
+       method: "POST",
+       headers: {
+         Authorization: `Bearer ${token}`
+       }
+     }
     );
 
     const fullPayload = await res.json();
