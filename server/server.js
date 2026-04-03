@@ -2513,6 +2513,11 @@ app.post("/api/messages/:id/add-device-key", requireAuth, async (req, res) => {
     const deviceId = req.headers["x-qm-device-id"];
     const { wrappedKey } = req.body;
 
+    console.log("🔥 ADD DEVICE KEY:", {
+      messageId,
+      deviceId,
+      wrappedKeyLength: wrappedKey?.length
+    });
     const msg = org.messages?.[messageId];
     if (!msg) return res.status(404).json({ error: "Message not found" });
 
