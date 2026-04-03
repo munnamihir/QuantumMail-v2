@@ -378,9 +378,10 @@ $("finishRecoveryBtn").onclick = async () => {
     }
 
     sendToExtension("QM_REWRAP_MESSAGE", {
-      messageId: msg.id,
-      payload: fullPayload
-    });
+     messageId,
+     payload: fullPayload,
+     dek: data.vaultDek   
+   });
 
   } catch (e) {
     console.error("❌ Rewrap failed for", msg.id, e);
