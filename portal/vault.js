@@ -325,13 +325,24 @@ $("finishRecoveryBtn").onclick = async () => {
 
   for (const msg of inbox.items || []) {
      try {
-       const full = await fetch(`/api/messages/${msg.id}`, {
-         headers: {
-           Authorization: `Bearer ${token}`
-         }
-       });
+       const deviceId = await getDeviceId();
    
-       const fullPayload = await full.json();
+       const res = await fetch(
+         `/api/messages/${msg.id}?mode=recovery`,
+         {
+           headers: {
+             Authorization: `Bearer ${token}`,
+             "x-qm-device-id": deviceId
+           }
+         }
+       );
+   
+       const fullPayload = await res.json();
+   
+       if (!fullPayload?.wrappedKeys) {
+         console.warn("⚠️ No wrappedKeys for", msg.id);
+         continue;
+       }
    
        sendToExtension("rewrap_message", {
          messageId: msg.id,
@@ -339,7 +350,7 @@ $("finishRecoveryBtn").onclick = async () => {
        });
    
      } catch (e) {
-       console.error("rewrap failed for", msg.id);
+       console.error("❌ Rewrap failed for", msg.id, e);
      }
    }
 
