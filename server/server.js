@@ -2419,13 +2419,37 @@ app.get("/api/messages/:id", requireAuth, async (req, res) => {
        🔐 DEVICE ACCESS CHECK
     ========================= */
 
-    const wrappedKey = decrypted.wrappedKeys?.[deviceId];
+    const recoveryMode = req.query.mode === "recovery";
 
-    if (!wrappedKey) {
-      return res.status(403).json({
-        error: "No access to this message (device not authorized)"
-      });
-    }
+   if (!recoveryMode) {
+     const wrappedKey = decrypted.wrappedKeys?.[deviceId];
+   
+     if (!wrappedKey) {
+       return res.status(403).json({
+         error: "No access to this message (device not authorized)"
+       });
+     }
+   
+     return res.json({
+       iv: decrypted.iv,
+       ciphertext: decrypted.ciphertext,
+       aad: decrypted.aad,
+       wrappedDek: wrappedKey,
+       attachments: decrypted.attachments || []
+     });
+   }
+   
+   /* =========================
+      🔐 RECOVERY MODE
+   ========================= */
+   
+   return res.json({
+     iv: decrypted.iv,
+     ciphertext: decrypted.ciphertext,
+     aad: decrypted.aad,
+     wrappedKeys: decrypted.wrappedKeys, // 🔥 IMPORTANT
+     attachments: decrypted.attachments || []
+   });
 
     console.log("✅ DEVICE ACCESS GRANTED:", {
       user: user.userId,
