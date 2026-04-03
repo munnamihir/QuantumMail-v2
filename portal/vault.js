@@ -376,7 +376,7 @@ $("finishRecoveryBtn").onclick = async () => {
       continue;
     }
 
-    sendToExtension("rewrap_message", {
+    sendToExtension("QM_REWRAP_MESSAGE", {
       messageId: msg.id,
       payload: fullPayload
     });
