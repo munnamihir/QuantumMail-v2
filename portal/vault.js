@@ -380,9 +380,9 @@ $("finishRecoveryBtn").onclick = async () => {
        console.log("🚀 Sending rewrap:", msg.id);
    
        sendToExtension("QM_REWRAP_MESSAGE", {
-         messageId: msg.id,
-         payload: fullPayload,
-         vault: data.vault 
+        messageId: msg.id,
+        payload: fullPayload,
+        vault: data.vault
        });
    
      } catch (e) {
