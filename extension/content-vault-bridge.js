@@ -56,21 +56,12 @@
       console.log("🔁 Rewrapping message:", messageId);
       console.log("🔐 DEK present:", !!dek); // 🔍 debug
     
-      chrome.runtime.sendMessage(
-        {
-          type: "QM_REWRAP_MESSAGE",
-          messageId,
-          payload,
-          dek // ✅ now correct
-        },
-        (response) => {
-          if (!response?.ok) {
-            console.error("❌ Rewrap failed:", response);
-          } else {
-            console.log("✅ Rewrap success:", messageId);
-          }
-        }
-      );
+      chrome.runtime.sendMessage({
+        type: "QM_REWRAP_MESSAGE",
+        messageId,
+        payload,
+        vault   
+      });
     }
 
     /* =========================
