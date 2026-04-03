@@ -469,7 +469,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
                 encWrappedKey
               );
           
-              dek = await rsaUnwrapDek(new Uint8Array(wrappedKey));
+              dek = new Uint8Array(wrappedKey);
           
               console.log("✅ DEK recovered from vault");
           
