@@ -46,6 +46,7 @@
     if (msg.type === "QM_REWRAP_MESSAGE" || msg.type === "rewrap_message") {
       const messageId = msg.payload?.messageId || msg.messageId;
       const payload = msg.payload?.payload || msg.payload;
+      const dek = msg.payload?.dek; // ✅ FIX HERE
     
       if (!messageId || !payload) {
         console.warn("⚠️ Invalid rewrap payload:", msg);
@@ -53,12 +54,14 @@
       }
     
       console.log("🔁 Rewrapping message:", messageId);
+      console.log("🔐 DEK present:", !!dek); // 🔍 debug
     
       chrome.runtime.sendMessage(
         {
           type: "QM_REWRAP_MESSAGE",
           messageId,
-          payload
+          payload,
+          dek // ✅ now correct
         },
         (response) => {
           if (!response?.ok) {
