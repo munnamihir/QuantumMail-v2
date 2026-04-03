@@ -40,7 +40,16 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
     body: body ? JSON.stringify(body) : undefined
   });
 
-  const data = await res.json().catch(() => ({}));
+  const text = await res.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    console.error("❌ API returned HTML:", text.slice(0, 200));
+    throw new Error("Invalid server response");
+  }
+  
   if (!res.ok) throw new Error(data.error || "Request failed");
 
   return data;
@@ -58,8 +67,26 @@ async function loginAndStoreSession({ serverBase, orgId, username, password }) {
     body: JSON.stringify({ orgId, username, password })
   });
 
-  const data = await res.json();
-  if (!data.token) throw new Error("Login failed");
+  console.log("📡 LOGIN URL:", res.url);
+  console.log("📡 STATUS:", res.status);
+
+  const text = await res.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error("❌ Non-JSON response:", text.slice(0, 300));
+    throw new Error("Server returned HTML instead of JSON");
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || "Login failed");
+  }
+
+  if (!data.token) {
+    throw new Error("Invalid login response");
+  }
 
   await ensureDeviceRegistered(base, data.token, data.user.userId);
 
