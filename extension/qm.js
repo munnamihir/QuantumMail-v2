@@ -184,6 +184,33 @@ export async function deriveKek(password) {
 }
 
 
+// ===========================
+// KEK STORAGE (ZERO TRUST)
+// ===========================
+export async function storeKek(kek) {
+  const raw = await crypto.subtle.exportKey("raw", kek);
+
+  await chrome.storage.local.set({
+    qm_kek: Array.from(new Uint8Array(raw))
+  });
+}
+
+export async function getKek() {
+  const { qm_kek } = await chrome.storage.local.get("qm_kek");
+
+  if (!qm_kek) {
+    throw new Error("No KEK available");
+  }
+
+  return crypto.subtle.importKey(
+    "raw",
+    new Uint8Array(qm_kek),
+    "AES-GCM",
+    false,
+    ["decrypt"]
+  );
+}
+
 // =========================
 // AES ENCRYPT
 // =========================
