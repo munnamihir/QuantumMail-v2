@@ -388,39 +388,63 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         try {
           const { messageId, payload } = msg;
       
-          if (!payload?.wrappedKeys) {
-            return sendResponse({ ok: false, error: "Missing wrappedKeys" });
+          /* =========================
+             🔥 FIX 1: Normalize payload
+          ========================= */
+          if (!payload?.wrappedKeys && payload?.wrappedDek) {
+            console.warn("⚠️ Legacy message detected:", messageId);
+      
+            payload.wrappedKeys = {
+              legacy: payload.wrappedDek
+            };
+          }
+      
+          /* =========================
+             🔥 FIX 2: HARD GUARD (NO CRASH)
+          ========================= */
+          if (!payload?.wrappedKeys || Object.keys(payload.wrappedKeys).length === 0) {
+            console.warn("⚠️ Skipping message (no wrappedKeys):", messageId);
+      
+            return sendResponse({
+              ok: true,
+              skipped: true,
+              reason: "NO_WRAPPED_KEYS"
+            });
           }
       
           const session = await getSession();
+      
           if (!session?.user?.userId) {
             return sendResponse({ ok: false, error: "No session" });
           }
       
-          const deviceId = await getDeviceId(); // your existing helper
+          const deviceId = await getDeviceId();
       
-          const myWrappedKey = payload.wrappedKeys?.[deviceId];
-      
-          if (myWrappedKey) {
-            console.log("⚠️ Already wrapped for this device:", messageId);
+          /* =========================
+             🔥 FIX 3: Already wrapped?
+          ========================= */
+          if (payload.wrappedKeys[deviceId]) {
+            console.log("⏭️ Already wrapped:", messageId);
             return sendResponse({ ok: true });
           }
       
           /* =========================
-             🔐 STEP 1: FIND ANY VALID KEY
+             🔐 STEP 1: FIND VALID KEY
           ========================= */
-      
-          const availableWrappedKeys = Object.values(payload.wrappedKeys);
+          const availableWrappedKeys = Object.entries(payload.wrappedKeys)
+            .filter(([id]) => id !== deviceId)
+            .map(([, wk]) => wk);
       
           if (!availableWrappedKeys.length) {
-            return sendResponse({ ok: false, error: "No wrapped keys available" });
+            console.warn("⚠️ No usable wrapped keys:", messageId);
+            return sendResponse({ ok: true, skipped: true });
           }
       
-          let dek;
+          let dek = null;
       
           for (const wk of availableWrappedKeys) {
             try {
-              dek = await rsaUnwrapDek(wk); // your existing function
+              dek = await rsaUnwrapDek(wk);
               break;
             } catch (e) {
               continue;
@@ -428,21 +452,20 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           }
       
           if (!dek) {
-            return sendResponse({ ok: false, error: "Cannot unwrap DEK" });
+            console.warn("⚠️ Cannot unwrap DEK:", messageId);
+            return sendResponse({ ok: true, skipped: true });
           }
       
           /* =========================
-             🔐 STEP 2: WRAP FOR NEW DEVICE
+             🔐 STEP 2: WRAP FOR DEVICE
           ========================= */
-      
-          const { publicKey } = await getOrCreateRsaKeypair();
+          const { publicKey } = await getOrCreateRsaKeypair(session.user.userId);
       
           const newWrappedKey = await rsaWrapDek(publicKey, dek);
       
           /* =========================
              🔐 STEP 3: SEND TO SERVER
           ========================= */
-      
           const res = await fetch(
             `${session.serverBase}/api/messages/${messageId}/add-device-key`,
             {
@@ -460,6 +483,7 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
       
           if (!res.ok) {
             const errText = await res.text();
+            console.error("❌ Server error:", errText);
             return sendResponse({ ok: false, error: errText });
           }
       
@@ -469,7 +493,11 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
       
         } catch (e) {
           console.error("❌ REWRAP ERROR:", e);
-          return sendResponse({ ok: false, error: e.message });
+      
+          return sendResponse({
+            ok: false,
+            error: e.message
+          });
         }
       }
       
