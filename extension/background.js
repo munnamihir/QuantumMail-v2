@@ -440,15 +440,12 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
             return sendResponse({ ok: true, skipped: true });
           }
       
-          let dek = null;
-      
-          for (const wk of availableWrappedKeys) {
-            try {
-              dek = await rsaUnwrapDek(wk);
-              break;
-            } catch (e) {
-              continue;
-            }
+          let dek;
+
+          if (msg.dek) {
+            dek = Uint8Array.from(atob(msg.dek), c => c.charCodeAt(0));
+          } else {
+            return sendResponse({ ok: false, error: "No DEK from vault" });
           }
       
           if (!dek) {
