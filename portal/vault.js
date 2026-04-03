@@ -359,34 +359,36 @@ $("finishRecoveryBtn").onclick = async () => {
   const inbox = await inboxRes.json();
 
   for (const msg of inbox.items || []) {
-  try {
-    const res = await fetch(
-      `/api/messages/${msg.id}/rewrap`,
-      {
-       method: "POST",
-       headers: {
-         Authorization: `Bearer ${token}`
+     try {
+       const res = await fetch(
+         `/api/messages/${msg.id}/rewrap`,
+         {
+           method: "POST",
+           headers: {
+             Authorization: `Bearer ${token}`
+           }
+         }
+       );
+   
+       const fullPayload = await res.json();
+   
+       if (!fullPayload?.wrappedKeys) {
+         console.warn("⚠️ No wrappedKeys for", msg.id);
+         continue;
        }
+   
+       console.log("🚀 Sending rewrap:", msg.id);
+   
+       sendToExtension("QM_REWRAP_MESSAGE", {
+         messageId: msg.id,        // ✅ FIXED
+         payload: fullPayload,
+         dek: data.vaultDek
+       });
+   
+     } catch (e) {
+       console.error("❌ Rewrap failed for", msg.id, e);
      }
-    );
-
-    const fullPayload = await res.json();
-
-    if (!fullPayload?.wrappedKeys) {
-      console.warn("⚠️ No wrappedKeys for", msg.id);
-      continue;
-    }
-
-    sendToExtension("QM_REWRAP_MESSAGE", {
-     messageId,
-     payload: fullPayload,
-     dek: data.vaultDek   
-   });
-
-  } catch (e) {
-    console.error("❌ Rewrap failed for", msg.id, e);
-  }
-}
+   }
 
   setStatus("Recovery complete 🎉");
 };
