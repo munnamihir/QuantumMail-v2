@@ -442,15 +442,24 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
       
           let dek;
 
-          if (msg.dek) {
-            dek = Uint8Array.from(atob(msg.dek), c => c.charCodeAt(0));
-          } else {
-            return sendResponse({ ok: false, error: "No DEK from vault" });
-          }
-      
-          if (!dek) {
-            console.warn("⚠️ Cannot unwrap DEK:", messageId);
-            return sendResponse({ ok: true, skipped: true });
+          if (msg.vault?.enc_wk_b64) {
+            console.log("🔐 Using vault sealed key");
+          
+            // 1. decode
+            const encWrappedKey = Uint8Array.from(atob(msg.vault.enc_wk_b64), c => c.charCodeAt(0));
+            const iv = Uint8Array.from(atob(msg.vault.iv_b64), c => c.charCodeAt(0));
+          
+            // 2. decrypt with KEK (you must already have KEK logic)
+            const kek = await getKek(); // 🔥 your KEK retrieval
+          
+            const wrappedKey = await crypto.subtle.decrypt(
+              { name: "AES-GCM", iv },
+              kek,
+              encWrappedKey
+            );
+          
+            // 3. unwrap DEK using RSA
+            dek = await rsaUnwrapDek(new Uint8Array(wrappedKey));
           }
       
           /* =========================
