@@ -444,24 +444,59 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
       
           let dek;
 
-          if (msg.vault?.enc_wk_b64) {
+          /* =========================
+             🔐 ZERO TRUST VAULT FLOW
+          ========================= */
+          if (msg.vault?.enc_wk_b64 && msg.vault?.iv_b64) {
             console.log("🔐 Using vault sealed key");
           
-            // 1. decode
-            const encWrappedKey = Uint8Array.from(atob(msg.vault.enc_wk_b64), c => c.charCodeAt(0));
-            const iv = Uint8Array.from(atob(msg.vault.iv_b64), c => c.charCodeAt(0));
+            try {
+              const encWrappedKey = Uint8Array.from(
+                atob(msg.vault.enc_wk_b64),
+                c => c.charCodeAt(0)
+              );
           
-            // 2. decrypt with KEK (you must already have KEK logic)
-            const kek = await getKek(); // 🔥 your KEK retrieval
+              const iv = Uint8Array.from(
+                atob(msg.vault.iv_b64),
+                c => c.charCodeAt(0)
+              );
           
-            const wrappedKey = await crypto.subtle.decrypt(
-              { name: "AES-GCM", iv },
-              kek,
-              encWrappedKey
-            );
+              const kek = await getKek();
           
-            // 3. unwrap DEK using RSA
-            dek = await rsaUnwrapDek(new Uint8Array(wrappedKey));
+              const wrappedKey = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv },
+                kek,
+                encWrappedKey
+              );
+          
+              dek = await rsaUnwrapDek(new Uint8Array(wrappedKey));
+          
+              console.log("✅ DEK recovered from vault");
+          
+            } catch (e) {
+              console.error("❌ Vault decrypt failed:", e);
+              return sendResponse({ ok: false, error: "Vault decryption failed" });
+            }
+          }
+          
+          /* =========================
+             FALLBACK (OLD DEVICES)
+          ========================= */
+          if (!dek) {
+            console.warn("⚠️ Falling back to existing wrappedKeys");
+          
+            for (const wk of availableWrappedKeys) {
+              try {
+                dek = await rsaUnwrapDek(wk);
+                break;
+              } catch (e) {
+                continue;
+              }
+            }
+          
+            if (!dek) {
+              return sendResponse({ ok: false, error: "Cannot unwrap DEK" });
+            }
           }
       
           /* =========================
