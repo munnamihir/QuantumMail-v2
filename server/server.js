@@ -905,6 +905,37 @@ app.get("/super/orgs/:orgId/overview", requireAuth, requireSuperAdmin, async (re
   });
 });
 
+/* ====================
+      UNSEAL
+   ====================*/
+
+
+app.get("/debug/unseal/:id", requireAuth, async (req, res) => {
+  try {
+    const { org } = req.qm;
+    const msg = org.messages?.[req.params.id];
+
+    if (!msg) {
+      return res.json({ error: "Message not found" });
+    }
+
+    const kv = String(msg.kekVersion || "1");
+    const kk = getKekByVersion(org, kv);
+
+    const decrypted = openWithKek(kk.kekBytes, msg.sealed);
+
+    res.json({
+      wrappedKeys: Object.keys(decrypted.wrappedKeys || {}),
+      full: decrypted   // optional (for deep debug)
+    });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 
 
 /* =========================================================
