@@ -361,68 +361,89 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
         try {
           const { messageId, payload } = msg;
       
-          console.log("🔁 Rewrapping message:", messageId);
-      
-          const deviceId = await getDeviceId();
-      
-          const s = await getSession();
-      
-          /* 🔥 IMPORTANT FIX */
-          const { privateKey, publicKey } = await getOrCreateRsaKeypair(s.user.userId);
-      
-          const wrappedEntries = Object.entries(payload.wrappedKeys || {});
-      
-          if (!wrappedEntries.length) {
-            throw new Error("No wrapped keys found");
+          if (!payload?.wrappedKeys) {
+            return sendResponse({ ok: false, error: "Missing wrappedKeys" });
           }
       
-          const [, wrappedB64] = wrappedEntries[0];
+          const session = await getSession();
+          if (!session?.user?.userId) {
+            return sendResponse({ ok: false, error: "No session" });
+          }
       
-          const wrappedBytes = Uint8Array.from(atob(wrappedB64), c => c.charCodeAt(0));
+          const deviceId = await getDeviceId(); // your existing helper
       
-          const rawDek = await crypto.subtle.decrypt(
-            { name: "RSA-OAEP" },
-            privateKey,
-            wrappedBytes
+          const myWrappedKey = payload.wrappedKeys?.[deviceId];
+      
+          if (myWrappedKey) {
+            console.log("⚠️ Already wrapped for this device:", messageId);
+            return sendResponse({ ok: true });
+          }
+      
+          /* =========================
+             🔐 STEP 1: FIND ANY VALID KEY
+          ========================= */
+      
+          const availableWrappedKeys = Object.values(payload.wrappedKeys);
+      
+          if (!availableWrappedKeys.length) {
+            return sendResponse({ ok: false, error: "No wrapped keys available" });
+          }
+      
+          let dek;
+      
+          for (const wk of availableWrappedKeys) {
+            try {
+              dek = await rsaUnwrapDek(wk); // your existing function
+              break;
+            } catch (e) {
+              continue;
+            }
+          }
+      
+          if (!dek) {
+            return sendResponse({ ok: false, error: "Cannot unwrap DEK" });
+          }
+      
+          /* =========================
+             🔐 STEP 2: WRAP FOR NEW DEVICE
+          ========================= */
+      
+          const { publicKey } = await getOrCreateRsaKeypair();
+      
+          const newWrappedKey = await rsaWrapDek(publicKey, dek);
+      
+          /* =========================
+             🔐 STEP 3: SEND TO SERVER
+          ========================= */
+      
+          const res = await fetch(
+            `${session.serverBase}/api/messages/${messageId}/add-device-key`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${session.token}`,
+                "Content-Type": "application/json",
+                "x-qm-device-id": deviceId
+              },
+              body: JSON.stringify({
+                wrappedKey: newWrappedKey
+              })
+            }
           );
       
-          const newWrapped = await crypto.subtle.encrypt(
-            { name: "RSA-OAEP" },
-            publicKey,
-            new Uint8Array(rawDek)
-          );
+          if (!res.ok) {
+            const errText = await res.text();
+            return sendResponse({ ok: false, error: errText });
+          }
       
-          const newWrappedB64 = btoa(
-            String.fromCharCode(...new Uint8Array(newWrapped))
-          );
+          console.log("✅ Rewrap success:", messageId);
       
-          await fetch(`${s.serverBase}/api/messages/${messageId}/add-device-key`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${s.token}`,
-              "Content-Type": "application/json",
-              "x-qm-device-id": deviceId
-            },
-            body: JSON.stringify({
-              wrappedKey: newWrappedB64
-            })
-          });
+          return sendResponse({ ok: true });
       
-          console.log("✅ Rewrap complete for:", messageId);
-      
-          /* 🔥 THIS WAS MISSING */
-          sendResponse({ ok: true });
-      
-        } catch (err) {
-          console.error("❌ Rewrap failed:", err);
-      
-          sendResponse({
-            ok: false,
-            error: err.message
-          });
+        } catch (e) {
+          console.error("❌ REWRAP ERROR:", e);
+          return sendResponse({ ok: false, error: e.message });
         }
-      
-        return;
       }
       
       /* =========================
