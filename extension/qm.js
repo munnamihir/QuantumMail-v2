@@ -165,7 +165,7 @@ export async function deriveKek(password) {
     "raw",
     enc.encode(password),
     "PBKDF2",
-    true,
+    false,
     ["deriveKey"]
   );
 
@@ -178,7 +178,7 @@ export async function deriveKek(password) {
     },
     baseKey,
     { name: "AES-GCM", length: 256 },
-    false,
+    true,
     ["encrypt", "decrypt"]
   );
 }
