@@ -165,7 +165,7 @@ export async function deriveKek(password) {
     "raw",
     enc.encode(password),
     "PBKDF2",
-    false,
+    true,
     ["deriveKey"]
   );
 
