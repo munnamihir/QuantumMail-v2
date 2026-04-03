@@ -459,7 +459,25 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
           /* =========================
              🔐 STEP 2: WRAP FOR DEVICE
           ========================= */
-          const { publicKey } = await getOrCreateRsaKeypair(session.user.userId);
+          const devices = await apiJson(
+            session.serverBase,
+            "/api/devices/list",
+            { token: session.token }
+          );
+          
+          const device = devices.devices.find(d => d.device_id === deviceId);
+          
+          if (!device || !device.pub_jwk) {
+            return sendResponse({ ok: false, error: "Device public key not found" });
+          }
+          
+          const publicKey = await crypto.subtle.importKey(
+            "jwk",
+            device.pub_jwk,
+            { name: "RSA-OAEP", hash: "SHA-256" },
+            true,
+            ["encrypt"]
+          );
       
           const newWrappedKey = await rsaWrapDek(publicKey, dek);
       
