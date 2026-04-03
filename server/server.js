@@ -2511,27 +2511,43 @@ app.post("/api/messages/:id/add-device-key", requireAuth, async (req, res) => {
 ========================================================= */
 app.post("/api/messages/:id/rewrap", requireAuth, async (req, res) => {
   try {
-    const { org, user } = req.qm;
+    const { org } = req.qm;
     const messageId = req.params.id;
-    const deviceId = req.headers["x-qm-device-id"];
-
-    if (!deviceId) {
-      return res.status(400).json({ error: "Missing deviceId" });
-    }
 
     const msg = org.messages?.[messageId];
+
     if (!msg) {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // 🔓 Unseal message
     const kv = String(msg.kekVersion || org.keyring?.active || "1");
     const kk = getKekByVersion(org, kv);
 
-    const decrypted = openWithKek(kk.kekBytes, msg.sealed);
+    if (!kk) {
+      return res.status(500).json({ error: "KEK not found" });
+    }
 
-    // 🚨 IMPORTANT: return full encrypted payload
-    res.json({
+    let decrypted;
+    try {
+      decrypted = openWithKek(kk.kekBytes, msg.sealed);
+    } catch (e) {
+      console.error("❌ Unseal failed:", e);
+      return res.status(500).json({ error: "Failed to decrypt message" });
+    }
+
+    // 🔥 CRITICAL FIX
+    if (!decrypted?.wrappedKeys) {
+      return res.status(200).json({
+        warning: "No wrappedKeys found",
+        iv: decrypted.iv,
+        ciphertext: decrypted.ciphertext,
+        aad: decrypted.aad,
+        wrappedKeys: {},
+        attachments: decrypted.attachments || []
+      });
+    }
+
+    return res.json({
       iv: decrypted.iv,
       ciphertext: decrypted.ciphertext,
       aad: decrypted.aad,
@@ -2540,7 +2556,7 @@ app.post("/api/messages/:id/rewrap", requireAuth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error("rewrap error:", err);
+    console.error("❌ Rewrap error:", err);
     res.status(500).json({ error: "Rewrap failed" });
   }
 });
