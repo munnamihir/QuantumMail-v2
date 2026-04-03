@@ -11,6 +11,7 @@ import {
   ensureDeviceRegistered,
   getDeviceId
 } from "./qm.js";
+import { deriveKek, storeKek } from "./qm.js";
 
 /* =========================
    HELPERS
@@ -60,7 +61,8 @@ async function apiJson(serverBase, path, { method = "GET", token = "", body = nu
 ========================= */
 async function loginAndStoreSession({ serverBase, orgId, username, password }) {
   const base = normalizeBase(serverBase);
-
+  const kek = await deriveKek(password);
+  await storeKek(kek);
   const res = await fetch(`${base}/auth/login`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
