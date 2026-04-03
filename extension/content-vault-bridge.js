@@ -43,8 +43,8 @@
     /* =========================
        REWRAP MESSAGE (FIXED)
     ========================= */
-    if (msg.type === "rewrap_message") {
-      const { messageId, payload } = event.data.payload;
+    if (msg.type === "QM_REWRAP_MESSAGE" || msg.type === "rewrap_message") {
+      const { messageId, payload } = msg.payload || {};
     
       console.log("🔁 Rewrapping message:", messageId);
     
