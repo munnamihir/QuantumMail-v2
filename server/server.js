@@ -13,7 +13,6 @@ import { recoveryRoutes } from "./routes/recovery.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { recoveryQuorumRoutes } from "./routes/recoveryQuorum.js";
 import { recoveryVaultRoutes } from "./routes/recoveryVault.js";
-import { recoveryDeviceRoutes } from "./routes/recoveryDeviceRoutes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -183,7 +182,6 @@ app.use("/api/recovery", requireAuth, recoveryVaultRoutes);
 app.use("/api/recovery", requireAuth, recoveryQuorumRoutes);
 
 // Device recovery (your file)
-app.use("/api/recovery", requireAuth, recoveryDeviceRoutes);
 
 /* =========================================================
    No-cache for portal + /m
@@ -540,7 +538,10 @@ await pool.query(`
       primary key (user_id, device_id)
     );
   `);
-
+  await pool.query(`
+    alter table qm_devices
+      add column if not exists status text not null default 'pending'
+  `);
   await pool.query(`
     create table if not exists qm_recovery_requests (
       request_id text primary key,
@@ -1459,8 +1460,7 @@ app.post("/auth/login", async (req, res) => {
 
     let okPassword = false;
     try {
-      const passwordMatch = await verifyPassword(password, user.passwordHash)
-      okPassword = !!user.passwordHash && timingSafeEq(ph, user.passwordHash);
+      okPassword = await verifyPassword(password, user.passwordHash);
     } catch (e) {
       console.error("LOGIN password verify failed:", { orgId, username, err: e?.message || e });
       return deny(500, "Password verification failed", "password_verify_error");
@@ -2277,24 +2277,17 @@ const validDeviceIds = new Set(validDevices.map(d => d.device_id));
 
 app.get("/super/companies", requireAuth, requireSuperAdmin, async (_req, res) => {
   const { rows } = await pool.query(`
-    select
+    SELECT
       c.company_id,
       c.company_name,
-      (
-        select count(*)
-        from qm_org_store s
-        where (SELECT
-                 o.org_id,
-                 o.company_id,
-                 c.company_name
-               FROM qm_org_store o
-               LEFT JOIN qm_companies c
-                 ON c.company_id = o.company_id;
-                 ) = c.company_id
-      ) as org_count
-    from qm_companies c
-    order by c.company_name asc
-    limit 500
+      COUNT(DISTINCT o.org_id) as org_count
+    FROM qm_companies c
+    LEFT JOIN qm_org_requests o
+      ON o.company_id = c.company_id
+      AND o.status = 'approved'
+    GROUP BY c.company_id, c.company_name
+    ORDER BY c.company_name ASC
+    LIMIT 500
   `);
 
   res.json({
