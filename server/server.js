@@ -25,7 +25,7 @@ app.use(express.json())
 ========================================================= */
 const NODE_ENV = process.env.NODE_ENV || "development";
 const IS_PROD = NODE_ENV === "production";
-const bcrypt = require('bcrypt')
+import bcrypt from 'bcrypt'
 const SALT_ROUNDS = 12
 const PLATFORM_ORG_ID = process.env.QM_PLATFORM_ORG_ID;
 if (!PLATFORM_ORG_ID) throw new Error("QM_PLATFORM_ORG_ID is required.");
