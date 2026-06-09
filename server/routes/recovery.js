@@ -83,6 +83,15 @@ export function recoveryRoutes({
     return { ok: true, message: "If an account exists, you’ll receive a reset link shortly." };
   }
 
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   /* =========================================================
      POST /auth/forgot-username
      body: { orgId, email }
@@ -114,8 +123,8 @@ export function recoveryRoutes({
         html: `
           <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
             <h2 style="margin:0 0 8px 0">Your QuantumMail username</h2>
-            <p style="margin:0 0 6px 0">Org: <b>${orgId}</b></p>
-            <p style="margin:0 0 6px 0">Username: <b>${String(user.username || "")}</b></p>
+            <p style="margin:0 0 6px 0">Org: <b>${escapeHtml(orgId)}</b></p>
+            <p style="margin:0 0 6px 0">Username: <b>${escapeHtml(user.username)}</b></p>
             <p style="color:#6b7280;margin:10px 0 0 0">If you didn’t request this, ignore this email.</p>
           </div>
         `
@@ -261,7 +270,7 @@ export function recoveryRoutes({
 
       await sendMail({
         to: email,
-        subject: `QuantumMail — Verification code (${code})`,
+        subject: "QuantumMail — Your verification code",
         text: `Your QuantumMail verification code is ${code}. It expires in 10 minutes.`,
         html: `
           <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.4">
