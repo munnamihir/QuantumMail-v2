@@ -1,6 +1,8 @@
 // server/routes/recoveryQuorum.js
+// server/routes/recoveryQuorum.js
 import express from "express";
 import crypto from "crypto";
+import { webcrypto } from "crypto";
 import { pool } from "../db.js";
 
 export const recoveryQuorumRoutes = express.Router();
@@ -24,13 +26,22 @@ function isRecent(ts, minutes) {
   return Date.now() - t <= minutes * 60 * 1000;
 }
 
+function timingSafeStringEqual(a, b) {
+  try {
+    const ab = Buffer.from(String(a));
+    const bb = Buffer.from(String(b));
+    if (ab.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+
 async function importEd25519PublicJwk(pub_jwk) {
-  const { webcrypto } = await import("crypto");
   return webcrypto.subtle.importKey("jwk", pub_jwk, { name: "Ed25519" }, true, ["verify"]);
 }
 
 async function verifyEd25519(pubKey, msgBytes, sigBytes) {
-  const { webcrypto } = await import("crypto");
   return webcrypto.subtle.verify({ name: "Ed25519" }, pubKey, sigBytes, msgBytes);
 }
 
@@ -52,8 +63,8 @@ recoveryQuorumRoutes.post("/quorum/start", requireAuth, async (req, res) => {
   if (!vault.rows.length) return res.status(404).json({ error: "vault_not_found" });
 
   const v = vault.rows[0];
-  if (v.token_id !== token_id) return res.status(403).json({ error: "token_id_mismatch" });
-  if (v.token_verifier_hash !== token_verifier_hash) return res.status(403).json({ error: "bad_token" });
+  if (!timingSafeStringEqual(v.token_id, token_id)) return res.status(403).json({ error: "token_id_mismatch" });
+  if (!timingSafeStringEqual(v.token_verifier_hash, token_verifier_hash)) return res.status(403).json({ error: "bad_token" });
 
   const devs = await pool.query(
     `select device_id
@@ -176,7 +187,7 @@ recoveryQuorumRoutes.post("/quorum/fetch", requireAuth, async (req, res) => {
   }
 
   const rq = await pool.query(
-    `select request_id, status, token_id, created_at
+    `select request_id, status, token_id, created_at, approved_at
        from qm_recovery_requests
       where request_id = $1
         and user_id = $2`,
@@ -186,8 +197,19 @@ recoveryQuorumRoutes.post("/quorum/fetch", requireAuth, async (req, res) => {
   if (!rq.rows.length) return res.status(404).json({ error: "request_not_found" });
 
   const reqRow = rq.rows[0];
-  if (reqRow.status !== "APPROVED") return res.status(403).json({ error: "not_approved" });
-  if (!isRecent(reqRow.created_at, 15)) return res.status(410).json({ error: "expired" });
+
+  if (reqRow.status === "COMPLETED") {
+    return res.status(410).json({ error: "already_consumed" });
+  }
+
+  if (reqRow.status !== "APPROVED") {
+    return res.status(403).json({ error: "not_approved" });
+  }
+
+  // Use approved_at for the fetch window — not created_at
+  if (!reqRow.approved_at || !isRecent(reqRow.approved_at, 15)) {
+    return res.status(410).json({ error: "expired" });
+  }
 
   const vault = await pool.query(
     `select token_id, token_verifier_hash, enc_wk_b64, iv_b64, wk_version
@@ -199,8 +221,21 @@ recoveryQuorumRoutes.post("/quorum/fetch", requireAuth, async (req, res) => {
   if (!vault.rows.length) return res.status(404).json({ error: "vault_not_found" });
 
   const v = vault.rows[0];
-  if (v.token_id !== token_id) return res.status(403).json({ error: "token_id_mismatch" });
-  if (v.token_verifier_hash !== token_verifier_hash) return res.status(403).json({ error: "bad_token" });
+
+  if (!timingSafeStringEqual(v.token_id, token_id)) {
+    return res.status(403).json({ error: "token_id_mismatch" });
+  }
+  if (!timingSafeStringEqual(v.token_verifier_hash, token_verifier_hash)) {
+    return res.status(403).json({ error: "bad_token" });
+  }
+
+  // Mark consumed BEFORE returning vault
+  await pool.query(
+    `update qm_recovery_requests
+        set status = 'COMPLETED'
+      where request_id = $1`,
+    [request_id]
+  );
 
   res.json({
     ok: true,
