@@ -21,8 +21,20 @@ deviceRoutes.post("/register", requireAuth, async (req, res) => {
     if (typeof pub_jwk !== "object" || pub_jwk === null) {
       return res.status(400).json({ error: "pub_jwk must be a JWK object" });
     }
-    if (pub_jwk.kty !== "OKP" || pub_jwk.crv !== "Ed25519" || !pub_jwk.x || pub_jwk.d) {
-      return res.status(400).json({ error: "pub_jwk must be an Ed25519 public key (no private key material)" });
+    // Accept RSA-OAEP (extension) or Ed25519 (recovery quorum) public keys
+    // Reject anything with private key material
+    if (pub_jwk.kty === "RSA") {
+      // RSA public key — must not have private key material (d component)
+      if (!pub_jwk.n || !pub_jwk.e || pub_jwk.d) {
+        return res.status(400).json({ error: "Invalid RSA public key" });
+      }
+    } else if (pub_jwk.kty === "OKP") {
+      // Ed25519 public key — must not have private key material (d component)
+      if (!pub_jwk.x || pub_jwk.d) {
+        return res.status(400).json({ error: "Invalid Ed25519 public key" });
+      }
+    } else {
+      return res.status(400).json({ error: "pub_jwk must be an RSA or Ed25519 public key" });
     }
 
     await pool.query(
