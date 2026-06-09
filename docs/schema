@@ -1,0 +1,151 @@
+BEGIN;
+
+-- ===============================
+-- ORG STORE
+-- ===============================
+create table if not exists qm_org_store (
+  org_id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_qm_org_store_company_id_json
+on qm_org_store ((data->>'companyId'));
+
+create index if not exists idx_qm_org_store_updated
+on qm_org_store(updated_at desc);
+
+
+-- ===============================
+-- ORG REQUESTS
+-- ===============================
+create table if not exists qm_org_requests (
+  id text primary key,
+  company_id text,
+  company_name text,
+  org_name text not null,
+  requester_name text not null,
+  requester_email text not null,
+  notes text,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  reviewed_by_user_id text,
+  reviewed_at timestamptz,
+  reject_reason text,
+  approved_org_id text,
+  approved_admin_user_id text,
+  email_sent_at timestamptz,
+  email_last_error text,
+  email_last_type text
+);
+
+create index if not exists idx_qm_org_requests_status
+on qm_org_requests(status, created_at);
+
+create index if not exists idx_qm_org_requests_company
+on qm_org_requests(company_id, created_at);
+
+
+-- ===============================
+-- SETUP TOKENS
+-- ===============================
+create table if not exists qm_setup_tokens (
+  id text primary key,
+  org_id text not null,
+  user_id text not null,
+  token_hash text not null,
+  purpose text not null,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now(),
+
+  email text,
+  org_name text,
+  admin_username text,
+
+  email_verified_at timestamptz,
+
+  otp_hash text,
+  otp_expires_at timestamptz,
+  otp_sent_at timestamptz,
+  otp_attempts int not null default 0,
+  otp_last_attempt_at timestamptz
+);
+
+create index if not exists idx_qm_setup_tokens_org_hash
+on qm_setup_tokens(org_id, token_hash);
+
+
+-- ===============================
+-- COMPANIES
+-- ===============================
+create table if not exists qm_companies (
+  company_id text primary key,
+  company_name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+
+-- ===============================
+-- RECOVERY VAULT
+-- ===============================
+create table if not exists qm_recovery_vault (
+  user_id text primary key,
+  token_id text not null,
+  token_verifier_hash text not null,
+  enc_wk_b64 text not null,
+  iv_b64 text not null,
+  wk_version int not null default 2,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_qm_recovery_vault_token_id
+on qm_recovery_vault(token_id);
+
+
+-- ===============================
+-- DEVICES
+-- ===============================
+create table if not exists qm_devices (
+  user_id text not null,
+  device_id text not null,
+  label text not null default '',
+  device_type text not null default 'desktop',
+  pub_jwk jsonb not null,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  revoked boolean not null default false,
+  primary key (user_id, device_id)
+);
+
+
+-- ===============================
+-- RECOVERY REQUESTS
+-- ===============================
+create table if not exists qm_recovery_requests (
+  request_id text primary key,
+  user_id text not null,
+  token_id text not null,
+  requester_device_id text not null,
+  nonce_b64 text not null,
+  status text not null default 'PENDING',
+  created_at timestamptz not null default now(),
+  approved_at timestamptz
+);
+
+
+-- ===============================
+-- RECOVERY APPROVALS
+-- ===============================
+create table if not exists qm_recovery_approvals (
+  request_id text not null,
+  user_id text not null,
+  device_id text not null,
+  sig_b64 text not null,
+  approved_at timestamptz not null default now(),
+  primary key (request_id, device_id)
+);
+
+COMMIT;

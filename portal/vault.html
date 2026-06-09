@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>QuantumMail Vault</title>
+
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --card: #12182a;
+      --border: rgba(255,255,255,.08);
+      --text: #e9eefc;
+      --muted: #9aa6d6;
+      --accent: #6ea8fe;
+      --green: #2bd576;
+      --danger: #ff5d5d;
+    }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #0f1730, #0b0f1a);
+      color: var(--text);
+      font-family: system-ui;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: auto;
+      padding: 30px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .card {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+    }
+
+    button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: none;
+      margin-right: 8px;
+    }
+
+    .primary { background: var(--accent); }
+    .success { background: var(--green); }
+    .danger { background: var(--danger); }
+
+    .device {
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    .recovery-card {
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .steps {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .step {
+      width: 35px;
+      height: 35px;
+      border-radius: 50%;
+      background: #1a2240;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa6d6;
+      font-weight: bold;
+      transition: all 0.3s;
+    }
+    
+    .step.active {
+      background: #6ea8fe;
+      color: #fff;
+      box-shadow: 0 0 10px #6ea8fe;
+    }
+    
+    .step.done {
+      background: #2bd576;
+      color: #000;
+    }
+    
+    .status-box {
+      background: rgba(255,255,255,0.05);
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .counter {
+      margin-bottom: 10px;
+      color: #aab4d6;
+    }
+    
+    .actions button {
+      margin-top: 5px;
+    }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <h1>🔐 QuantumMail Vault</h1>
+
+  <div class="grid">
+
+    <!-- CURRENT DEVICE -->
+    <div class="card">
+      <h2>🖥 Current Device</h2>
+      <div id="currentDeviceBox"></div>
+    </div>
+
+    <!-- RECOVERY -->
+    <div class="card recovery-card">
+    <h2>🔐 Device Recovery</h2>
+  
+    <!-- STEP INDICATOR -->
+    <div class="steps">
+      <div class="step active" id="step1">1</div>
+      <div class="step" id="step2">2</div>
+      <div class="step" id="step3">3</div>
+    </div>
+  
+    <!-- STATUS -->
+    <div id="recoveryStatusBox" class="status-box">
+      <span id="recoveryStatusText">Not started</span>
+    </div>
+  
+    <!-- COUNTER -->
+    <div class="counter">
+      Approvals: <b id="approvalCount">0</b> / 2
+    </div>
+  
+    <!-- ACTION BUTTONS -->
+    <div class="actions">
+      <button id="startRecoveryBtn" class="primary">
+        🚀 Start Recovery
+      </button>
+  
+      <button id="checkRecoveryBtn" class="secondary">
+        🔄 Check Status
+      </button>
+  
+      <button id="finishRecoveryBtn" class="success">
+        ✅ Complete Recovery
+      </button>
+    </div>
+  </div>
+
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h2>📱 Devices</h2>
+    <div id="devicesList"></div>
+  </div>
+
+</div>
+
+<script src="vault.js"></script>
+</body>
+</html>

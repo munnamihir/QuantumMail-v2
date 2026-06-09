@@ -1,0 +1,22 @@
+{
+  "name": "quantummail-portal",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.0.7",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^6.x.x",
+    "openai": "^4.56.0",
+    "pg": "^8.12.0"
+  }
+}
