@@ -2,6 +2,7 @@
 import express from "express";
 import crypto from "crypto";
 import { pool } from "../db.js";
+import { requireAuth } from "../server.js";
 
 export const recoveryVaultRoutes = express.Router();
 
