@@ -5,20 +5,33 @@ import { pool } from "../db.js";
 
 export const recoveryVaultRoutes = express.Router();
 
-function requireAuth(req, res, next) {
-  if (!req.qm?.user?.userId) return res.status(401).json({ error: "Unauthorized" });
-  next();
-}
 
-recoveryVaultRoutes.post("/init", requireAuth, async (_req, res) => {
-  const token_id = "rrt_" + crypto.randomBytes(8).toString("hex");
-  res.json({ ok: true, token_id });
+recoveryVaultRoutes.post("/init", requireAuth, async (req, res) => {
+  try {
+    const userId = req.qm.user.userId;
+    const token_id = "rrt_" + crypto.randomBytes(16).toString("hex");
+
+    // Store the token_id temporarily so we can verify it on PUT /vault
+    await pool.query(
+      `INSERT INTO qm_recovery_vault
+         (user_id, token_id, token_verifier_hash, enc_wk_b64, iv_b64, wk_version, updated_at)
+       VALUES ($1, $2, 'pending', 'pending', 'pending', 2, now())
+       ON CONFLICT (user_id) DO UPDATE SET
+         token_id = excluded.token_id,
+         updated_at = now()`,
+      [userId, token_id]
+    );
+
+    res.json({ ok: true, token_id });
+  } catch (e) {
+    console.error("POST /api/recovery/init failed:", e);
+    res.status(500).json({ error: "init_failed" });
+  }
 });
 
 recoveryVaultRoutes.put("/vault", requireAuth, async (req, res) => {
   try {
     const userId = req.qm.user.userId;
-
     const {
       token_id,
       token_verifier_hash,
@@ -31,35 +44,56 @@ recoveryVaultRoutes.put("/vault", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "missing_fields" });
     }
 
-    const q = `
-      insert into qm_recovery_vault
+    // Reject placeholder values from TEMP_KEY era
+    if (
+      enc_wk_b64 === "TEMP_KEY" ||
+      iv_b64 === "TEMP_IV" ||
+      iv_b64 === "iv_placeholder" ||
+      token_verifier_hash === "pending"
+    ) {
+      return res.status(400).json({ error: "invalid_vault_content" });
+    }
+
+    // Validate wk_version
+    const version = Number.isInteger(wk_version) && wk_version > 0 ? wk_version : 2;
+
+    // Check if vault exists with real data — if so require token_id to match
+    const { rows: existing } = await pool.query(
+      `SELECT token_id, token_verifier_hash FROM qm_recovery_vault WHERE user_id = $1`,
+      [userId]
+    );
+
+    if (existing.length && existing[0].token_verifier_hash !== "pending") {
+      // Vault already has real data — verify token_id matches what was issued by /init
+      try {
+        const match = crypto.timingSafeEqual(
+          Buffer.from(String(existing[0].token_id)),
+          Buffer.from(String(token_id))
+        );
+        if (!match) return res.status(403).json({ error: "token_id_mismatch" });
+      } catch {
+        return res.status(403).json({ error: "token_id_mismatch" });
+      }
+    }
+
+    const { rows } = await pool.query(`
+      INSERT INTO qm_recovery_vault
         (user_id, token_id, token_verifier_hash, enc_wk_b64, iv_b64, wk_version, updated_at)
-      values
-        ($1,$2,$3,$4,$5,$6, now())
-      on conflict (user_id) do update set
+      VALUES ($1,$2,$3,$4,$5,$6, now())
+      ON CONFLICT (user_id) DO UPDATE SET
         token_id = excluded.token_id,
         token_verifier_hash = excluded.token_verifier_hash,
         enc_wk_b64 = excluded.enc_wk_b64,
         iv_b64 = excluded.iv_b64,
         wk_version = excluded.wk_version,
         updated_at = now()
-      returning user_id, token_id, wk_version, updated_at
-    `;
+      RETURNING user_id, token_id, wk_version, updated_at
+    `, [userId, String(token_id), String(token_verifier_hash), String(enc_wk_b64), String(iv_b64), version]);
 
-    const vals = [
-      userId,
-      String(token_id),
-      String(token_verifier_hash),
-      String(enc_wk_b64),
-      String(iv_b64),
-      Number(wk_version || 2)
-    ];
-
-    const { rows } = await pool.query(q, vals);
     res.json({ ok: true, vault: rows[0] });
   } catch (e) {
     console.error("PUT /api/recovery/vault failed:", e);
-    res.status(500).json({ error: "vault_write_failed", detail: String(e?.message || e) });
+    res.status(500).json({ error: "vault_write_failed" });
   }
 });
 
